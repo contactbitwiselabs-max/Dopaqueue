@@ -1,51 +1,30 @@
 # DopaQueue
 
-Privacy-first, gamified digital wellbeing app. This repo currently contains
-the **Chrome extension** (Manifest V3) — the `/app` web dashboard hasn't been
-built yet. All data lives in `chrome.storage.local` on your machine.
+A privacy-first, local-first Chrome extension that gamifies your productivity. Save videos for later, manage your dopamine budget, and reclaim your focus.
 
-## Load the extension in Chrome
+## How to Install and Test the Extension
 
-1. Open `chrome://extensions`.
-2. Enable **Developer mode** (top-right toggle).
-3. Click **Load unpacked** and select the `extension/` folder.
-4. Pin the DopaQueue icon to your toolbar if you'd like.
+1. Open **Google Chrome** and navigate to `chrome://extensions/`.
+2. Enable **Developer mode** (toggle in the top right corner).
+3. Click the **Load unpacked** button.
+4. Select the `dist/` directory located inside the `extension/` folder on your computer.
+   - **Path:** `C:\Users\AMAAN\Desktop\Dopaqueue\extension\dist`
+   - **IMPORTANT:** Do NOT select the `extension/` folder directly. You must select the `dist/` folder, which contains the compiled React build.
 
-## Try it out
+## How to Develop
 
-- **Save a video**: open any YouTube video (or Shorts) or Instagram Reel, click
-  the DopaQueue toolbar icon, then **🌱 Save to DopaQueue**. The category badge
-  is only populated for YouTube `watch` pages (the content script scrapes it);
-  other pages default to "Uncategorized".
-- **Budget tracking**: navigate to a `youtube.com/shorts/...` or
-  `instagram.com/reels/...` page and leave it active. Every ~60 seconds the
-  background service worker deducts a minute from your daily budget (default
-  60 min/day) and updates the toolbar badge — green (thriving) → amber (okay)
-  → red (wilting). At 0 minutes you'll get a "Your garden is wilting" browser
-  notification once per day.
-- **Inspect stored data**: on `chrome://extensions`, click "service worker"
-  under DopaQueue to open its DevTools console, then run:
-  ```js
-  chrome.storage.local.get(null, console.log)
-  ```
-  to see `dq_queue`, `dq_game`, `dq_settings`, and `dq_scrape_cache`.
-
-## Known limitations (by design, for now)
-
-- No options page yet — the daily budget is fixed at 60 minutes until the
-  web app's Settings page exists.
-- No reminder notifications for videos sitting unwatched — that's tied to
-  queue/reminder UI that will live in the web app.
-- Icons are placeholder solid-color PNGs, not final branding.
-
-## Project structure
-
+### Chrome Extension (`/extension`)
+The extension is built with React, Vite, and Tailwind CSS.
+```bash
+cd extension
+npm run dev
+# Vite will automatically recompile into the /dist folder on save.
 ```
-extension/
-├── manifest.json
-├── icons/                 placeholder icons
-├── shared/                storage schema + helpers, used by background & popup
-├── popup/                 toolbar popup UI
-├── background/            service worker (budget tracking, notifications)
-└── content/                YouTube watch-page metadata scraper
+
+### Web Landing Page (`/landing`)
+The landing page is a Next.js application.
+```bash
+cd landing
+npm run dev
+# The landing page will run on http://localhost:3000
 ```
