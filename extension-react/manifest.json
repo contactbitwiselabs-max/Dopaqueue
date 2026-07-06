@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "DopaQueue",
+  "version": "0.1.0",
+  "description": "Save videos intentionally, watch them distraction-free, and keep your daily scroll budget in check.",
+  "permissions": ["activeTab", "storage", "tabs", "alarms", "notifications"],
+  "host_permissions": [
+    "*://www.youtube.com/*",
+    "*://www.instagram.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "index.html",
+    "default_icon": {
+      "16": "src/icons/icon16.png",
+      "48": "src/icons/icon48.png",
+      "128": "src/icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://www.youtube.com/watch*", "*://www.youtube.com/shorts/*", "*://www.instagram.com/*"],
+      "js": ["src/content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dashboard.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "16": "src/icons/icon16.png",
+    "48": "src/icons/icon48.png",
+    "128": "src/icons/icon128.png"
+  }
+}
