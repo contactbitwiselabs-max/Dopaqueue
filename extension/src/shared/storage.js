@@ -44,7 +44,13 @@ export async function initStorage() {
       STORAGE_KEYS.GAME,
       STORAGE_KEYS.SETTINGS,
       STORAGE_KEYS.SCRAPE_CACHE
-    ], (res) => {
+      ], (res) => {
+      // Check for errors or undefined responses to prevent crashes
+      if (chrome.runtime.lastError) {
+        console.error('initStorage error:', chrome.runtime.lastError);
+      }
+      if (!res) res = {}; // Fallback to empty object if get fails
+
       localQueue = Array.isArray(res[STORAGE_KEYS.QUEUE]) ? res[STORAGE_KEYS.QUEUE] : [];
       localNotes = Array.isArray(res[STORAGE_KEYS.NOTES]) ? res[STORAGE_KEYS.NOTES] : [];
       localGameState = { ...DEFAULT_GAME_STATE, ...(res[STORAGE_KEYS.GAME] || {}) };

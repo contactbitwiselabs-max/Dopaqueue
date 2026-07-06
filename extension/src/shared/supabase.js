@@ -9,9 +9,16 @@ const storageAdapter =
   typeof chrome !== 'undefined' && chrome?.storage?.local
     ? {
         getItem: (key) =>
-          new Promise((resolve) =>
-            chrome.storage.local.get([key], (res) => resolve(res[key] ?? null))
-          ),
+          new Promise((resolve) => {
+            if (!key) return resolve(null);
+            chrome.storage.local.get([key], (res) => {
+              if (chrome.runtime.lastError) {
+                console.warn('Supabase getItem error:', chrome.runtime.lastError);
+                return resolve(null);
+              }
+              resolve(res && res[key] ? res[key] : null);
+            });
+          }),
         setItem: (key, value) =>
           new Promise((resolve) =>
             chrome.storage.local.set({ [key]: value }, resolve)

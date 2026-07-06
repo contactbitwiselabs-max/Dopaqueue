@@ -10,6 +10,7 @@ export const STORAGE_KEYS = {
   GAME: 'dq_game',
   SETTINGS: 'dq_settings',
   SCRAPE_CACHE: 'dq_scrape_cache',
+  NOTES: 'dq_notes',
 };
 
 export const DEFAULT_GAME_STATE = {
