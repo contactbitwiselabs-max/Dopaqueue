@@ -7,6 +7,7 @@ import {
   getGameState,
   getQueue,
   addToQueue,
+  updateQueueItem,
   subscribe,
 } from '../shared/storage.js';
 import { isChannelUrl, extractChannelId } from '../shared/constants.js';
@@ -52,9 +53,13 @@ function usePopupData() {
           };
           setPageInfo(info);
 
-          // Check if already saved
+          // Check if already saved. Deleted items are soft-deleted
+          // (kept in the queue with deleted: true so the sync engine
+          // can propagate the removal) — they must be excluded here,
+          // otherwise a video removed from the dashboard would show
+          // as "Already Saved" forever in the popup.
           const queue = getQueue();
-          setAlreadySaved(queue.some((i) => i.url === tab.url));
+          setAlreadySaved(queue.some((i) => i.url === tab.url && !i.deleted));
         });
       } else {
         setTabError('Extension APIs unavailable in this context.');
@@ -80,23 +85,48 @@ export default function PopupApp() {
     if (!pageInfo || saved || alreadySaved) return;
     setSaveError(null);
     try {
+      // If this URL was saved before and later soft-deleted (deleted
+      // items stay in the queue so the sync engine can propagate the
+      // removal), resurrect that entry instead of adding a duplicate
+      // row that would pile up on every delete-then-resave cycle.
+      const existing = getQueue().find((i) => i.url === pageInfo.url && i.deleted);
+
       if (isChannel) {
-        addToQueue({
-          id: crypto.randomUUID(),
-          url: pageInfo.url,
-          title: extractChannelId(pageInfo.url) || pageInfo.title,
-          type: 'channel',
-          savedAt: Date.now(),
-        });
+        if (existing) {
+          updateQueueItem(existing.id, {
+            title: extractChannelId(pageInfo.url) || pageInfo.title,
+            type: 'channel',
+            savedAt: Date.now(),
+            deleted: false,
+          });
+        } else {
+          addToQueue({
+            id: crypto.randomUUID(),
+            url: pageInfo.url,
+            title: extractChannelId(pageInfo.url) || pageInfo.title,
+            type: 'channel',
+            savedAt: Date.now(),
+          });
+        }
       } else {
-        addToQueue({
-          id: crypto.randomUUID(),
-          url: pageInfo.url,
-          title: pageInfo.title,
-          type: 'video',
-          savedAt: Date.now(),
-          watched: false,
-        });
+        if (existing) {
+          updateQueueItem(existing.id, {
+            title: pageInfo.title,
+            type: 'video',
+            savedAt: Date.now(),
+            watched: false,
+            deleted: false,
+          });
+        } else {
+          addToQueue({
+            id: crypto.randomUUID(),
+            url: pageInfo.url,
+            title: pageInfo.title,
+            type: 'video',
+            savedAt: Date.now(),
+            watched: false,
+          });
+        }
 
         // Trigger on-demand transcript scraping on the active tab.
         // This fires the content script's SCRAPE_NOW handler so the
@@ -169,7 +199,12 @@ export default function PopupApp() {
 
       {/* Content */}
       <div className="z-10 flex-1 p-4 flex flex-col">
-        {pageInfo ? (
+        {tabError ? (
+          <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 mb-4 text-red-400">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+            <p className="text-xs leading-snug">{tabError}</p>
+          </div>
+        ) : pageInfo ? (
           <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/5 mb-4">
             {pageInfo.favIconUrl ? (
               <img src={pageInfo.favIconUrl} className="w-8 h-8 rounded mt-0.5 shrink-0" alt="" />
@@ -195,23 +230,33 @@ export default function PopupApp() {
 
         <ShimmerButton
           onClick={handleSave}
-          disabled={alreadySaved}
+          disabled={alreadySaved || !pageInfo}
           className="w-full mb-2"
         >
           {alreadySaved ? (
             <span className="flex items-center justify-center gap-2 text-green-400">
-              <Check className="w-4 h-4" /> Already Saved
+              <Check className="w-4 h-4" aria-hidden="true" /> Already Saved
             </span>
           ) : saved ? (
             <span className="flex items-center justify-center gap-2 text-green-400">
-              <Check className="w-4 h-4" /> Saved!
+              <Check className="w-4 h-4" aria-hidden="true" /> Saved!
+            </span>
+          ) : isChannel ? (
+            <span className="flex items-center justify-center gap-2">
+              <Hash className="w-4 h-4" aria-hidden="true" /> Save Channel
             </span>
           ) : (
             <span className="flex items-center justify-center gap-2">
-              <Save className="w-4 h-4" /> Save for Later
+              <Save className="w-4 h-4" aria-hidden="true" /> Save for Later
             </span>
           )}
         </ShimmerButton>
+
+        {saveError && (
+          <p role="alert" className="flex items-center gap-1.5 text-xs text-red-400 mb-2">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> {saveError}
+          </p>
+        )}
 
         <button
           onClick={openDashboard}

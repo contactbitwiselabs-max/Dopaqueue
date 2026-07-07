@@ -82,7 +82,18 @@ function AuthPage({ onAuthSuccess }) {
       });
       if (oauthError) throw oauthError;
     } catch (err) {
-      setError(err.message);
+      // Supabase returns this exact message when a provider hasn't
+      // been turned on for the project yet — surface it in plain
+      // language instead of the raw "provider is not enabled" JSON,
+      // since that's a Supabase dashboard config step, not a bug here.
+      if (/provider is not enabled/i.test(err.message)) {
+        setError(
+          `${provider === 'google' ? 'Google' : 'GitHub'} sign-in isn't enabled yet. ` +
+          'Enable it in your Supabase project under Authentication → Providers.'
+        );
+      } else {
+        setError(err.message);
+      }
     }
   };
 
