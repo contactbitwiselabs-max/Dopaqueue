@@ -13,6 +13,12 @@ export const STORAGE_KEYS = {
   NOTES: 'dq_notes',
 };
 
+// Cap on cached scrape results (genre/channel/transcript per URL), kept
+// small since transcripts can be large. Shared between storage.js
+// (local writes) and sync.js (post-merge trim) so both enforce the
+// same limit.
+export const MAX_SCRAPE_CACHE_ENTRIES = 20;
+
 export const DEFAULT_GAME_STATE = {
   plant: 'thriving',
   coins: 0,

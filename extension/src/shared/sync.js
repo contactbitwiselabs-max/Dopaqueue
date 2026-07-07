@@ -1,5 +1,9 @@
-import { getQueue, getNotes, getGameState, getSettings, setQueue, setNotes, setGameState, setSettings } from './storage.js';
+import {
+  getQueue, getNotes, getGameState, getSettings, getScrapeCache,
+  setQueue, setNotes, setGameState, setSettings, setScrapeCache,
+} from './storage.js';
 import { supabaseClient } from './supabase.js';
+import { MAX_SCRAPE_CACHE_ENTRIES } from './constants.js';
 
 /**
  * Merges a local array of items and a remote array of items based on `updatedAt`.
@@ -76,6 +80,62 @@ async function syncObjectTable(table, userId, getLocal, setLocal) {
   return merged;
 }
 
+// Merges the local scrape cache (map of url -> {genre, channel,
+// transcript, scrapedAt}) with remote rows keyed by url, keeping
+// whichever side scraped more recently per URL. Trims to the same
+// MAX_SCRAPE_CACHE_ENTRIES cap storage.js enforces on local writes,
+// so a sync pull can't grow the cache past that limit.
+function mergeScrapeCache(localCache, remoteRows) {
+  const merged = { ...localCache };
+  for (const row of remoteRows || []) {
+    const existing = merged[row.url];
+    if (!existing || (row.scrapedAt || 0) > (existing.scrapedAt || 0)) {
+      merged[row.url] = {
+        genre: row.genre,
+        channel: row.channel,
+        transcript: row.transcript,
+        scrapedAt: row.scrapedAt,
+      };
+    }
+  }
+
+  const entries = Object.entries(merged).sort(
+    (a, b) => (b[1].scrapedAt || 0) - (a[1].scrapedAt || 0)
+  );
+  return Object.fromEntries(entries.slice(0, MAX_SCRAPE_CACHE_ENTRIES));
+}
+
+// Same pull -> merge -> save-local -> push shape as syncArrayTable/
+// syncObjectTable, but for the scrape cache, which is a url-keyed map
+// rather than an id-keyed array or a single row.
+async function syncScrapeCache(userId, getLocal, setLocal) {
+  const { data: remote, error: pullError } = await supabaseClient
+    .from('scrape_cache')
+    .select('*')
+    .eq('user_id', userId);
+  if (pullError) throw pullError;
+
+  const merged = mergeScrapeCache(getLocal(), remote || []);
+  setLocal(merged);
+
+  const toUpsert = Object.entries(merged).map(([url, data]) => ({
+    user_id: userId,
+    url,
+    genre: data.genre ?? null,
+    channel: data.channel ?? null,
+    transcript: data.transcript ?? null,
+    scrapedAt: data.scrapedAt ?? null,
+  }));
+  if (toUpsert.length > 0) {
+    const { error: pushError } = await supabaseClient
+      .from('scrape_cache')
+      .upsert(toUpsert, { onConflict: 'user_id,url' });
+    if (pushError) throw pushError;
+  }
+
+  return merged;
+}
+
 export async function syncWithCloud() {
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (!session) {
@@ -92,6 +152,7 @@ export async function syncWithCloud() {
     { key: 'notes', run: () => syncArrayTable('notes', userId, getNotes, setNotes) },
     { key: 'game', run: () => syncObjectTable('game_state', userId, getGameState, setGameState) },
     { key: 'settings', run: () => syncObjectTable('settings', userId, getSettings, setSettings) },
+    { key: 'scrapeCache', run: () => syncScrapeCache(userId, getScrapeCache, setScrapeCache) },
   ];
 
   const settled = await Promise.allSettled(jobs.map((job) => job.run()));

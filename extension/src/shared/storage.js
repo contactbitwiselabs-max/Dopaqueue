@@ -3,6 +3,7 @@ import {
   STORAGE_KEYS,
   DEFAULT_GAME_STATE,
   DEFAULT_SETTINGS,
+  MAX_SCRAPE_CACHE_ENTRIES,
   getPlantStatus,
   todayLocalDateString,
 } from './constants.js';
@@ -191,7 +192,12 @@ export function updateGameState(patch) {
 }
 
 // --- Cache ---
-const MAX_SCRAPE_CACHE_ENTRIES = 20;
+export function getScrapeCache() { return localCache; }
+
+export function setScrapeCache(cache) {
+  localCache = cache;
+  storageSet(STORAGE_KEYS.SCRAPE_CACHE, cache);
+}
 
 export function getScrapeResult(url) {
   return localCache[url] || null;
