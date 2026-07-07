@@ -97,6 +97,20 @@ export default function PopupApp() {
           savedAt: Date.now(),
           watched: false,
         });
+
+        // Trigger on-demand transcript scraping on the active tab.
+        // This fires the content script's SCRAPE_NOW handler so the
+        // transcript is fetched and cached immediately at save time,
+        // not only when the user happens to visit the page later.
+        if (typeof chrome !== 'undefined' && chrome.tabs) {
+          chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+            if (tab?.id) {
+              chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }).catch(() => {
+                // Content script may not be injected (non-YouTube pages) — that's fine
+              });
+            }
+          });
+        }
       }
       setSaved(true);
       setAlreadySaved(true);

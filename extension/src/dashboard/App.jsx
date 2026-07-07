@@ -510,6 +510,7 @@ function VideoCard({ video, onRemove, onExport }) {
   }
 
   const [showExport, setShowExport] = useState(false);
+  const scrapeResult = getScrapeResult(video.url);
 
   return (
     <div className="group bg-zinc-900/50 border border-white/5 rounded-2xl overflow-hidden hover:border-white/20 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/10">
@@ -559,21 +560,27 @@ function VideoCard({ video, onRemove, onExport }) {
             Watch
           </a>
 
-          <div className="relative">
-            <button
-              onClick={() => setShowExport(!showExport)}
-              className="p-2 text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-colors"
-              title="Export Transcript"
-            >
-              <Download className="w-5 h-5" />
-            </button>
-            {showExport && (
-              <div className="absolute bottom-full right-0 mb-2 w-40 bg-zinc-800 border border-white/10 rounded-xl shadow-xl overflow-hidden z-20">
-                <button onClick={() => { onExport(video, 'markdown'); setShowExport(false); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-700 flex items-center gap-2"><FileText className="w-4 h-4" /> Markdown</button>
-                <button onClick={() => { onExport(video, 'csv'); setShowExport(false); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-700 flex items-center gap-2"><FileSpreadsheet className="w-4 h-4" /> CSV</button>
-              </div>
-            )}
-          </div>
+          {scrapeResult?.transcript ? (
+            <div className="relative">
+              <button
+                onClick={() => setShowExport(!showExport)}
+                className="p-2 text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-colors"
+                title="Export Transcript"
+              >
+                <Download className="w-5 h-5" />
+              </button>
+              {showExport && (
+                <div className="absolute bottom-full right-0 mb-2 w-40 bg-zinc-800 border border-white/10 rounded-xl shadow-xl overflow-hidden z-20">
+                  <button onClick={() => { onExport(video, 'markdown'); setShowExport(false); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-700 flex items-center gap-2"><FileText className="w-4 h-4" /> Markdown</button>
+                  <button onClick={() => { onExport(video, 'csv'); setShowExport(false); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-700 flex items-center gap-2"><FileSpreadsheet className="w-4 h-4" /> CSV</button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="px-2 py-2 text-[10px] uppercase tracking-wider font-semibold text-zinc-500 bg-zinc-800/50 rounded-xl flex items-center text-center leading-none">
+              No<br/>Transcript
+            </div>
+          )}
 
           <button
             onClick={onRemove}
