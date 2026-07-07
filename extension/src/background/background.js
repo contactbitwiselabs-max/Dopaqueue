@@ -133,9 +133,47 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         channel: message.channel || null,
         transcript: message.transcript || null,
       });
+      console.info('DopaQueue: GENRE_SCRAPED', {
+        url: message.url,
+        transcriptLength: message.transcript ? message.transcript.length : 0,
+        genre: message.genre,
+        channel: message.channel,
+      });
       sendResponse({ ok: true });
     });
     return true; // keep the message channel open for the async response
+  }
+
+  if (message?.type === 'SCRAPE_ATTEMPT') {
+    // Lightweight logging from content scripts so we can trace failures
+    try {
+      console.debug('DopaQueue: SCRAPE_ATTEMPT', {
+        url: message.url,
+        attempt: message.attempt,
+        maxAttempts: message.maxAttempts,
+        success: message.success,
+        hasTranscript: message.hasTranscript,
+        transcriptLength: message.transcriptLength,
+        reason: message.reason,
+        timestamp: new Date(message.timestamp).toISOString(),
+      });
+      // Store attempt in scrape cache metadata
+      initStorage().then(() => {
+        const cache = getScrapeResult(message.url) || {};
+        cache.lastAttempts = cache.lastAttempts || [];
+        cache.lastAttempts.push({
+          attempt: message.attempt,
+          success: message.success,
+          reason: message.reason,
+          hasTranscript: message.hasTranscript,
+          timestamp: message.timestamp,
+        });
+        // Keep only last 10 attempts
+        cache.lastAttempts = cache.lastAttempts.slice(-10);
+        cacheScrapeResult(message.url, cache);
+      });
+    } catch (e) {}
+    return false;
   }
 
   if (message?.type === 'GET_SCRAPE') {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { PlayCircle, LayoutDashboard, Save, Check, Hash, AlertCircle } from 'lucide-react';
+import { PlayCircle, LayoutDashboard, Save, Check, Hash, AlertCircle, Cloud, LogIn } from 'lucide-react';
 import { ShimmerButton } from '../components/ui/shimmer-button';
 import { Meteors } from '../components/ui/meteors';
 import {
@@ -11,6 +11,7 @@ import {
   subscribe,
 } from '../shared/storage.js';
 import { isChannelUrl, extractChannelId } from '../shared/constants.js';
+import { getCurrentUser, signInWithGoogle } from '../shared/auth.js';
 
 const PLANT_EMOJI = {
   thriving: '🌿',
@@ -78,6 +79,8 @@ export default function PopupApp() {
   const { ready, pageInfo, game, alreadySaved, setAlreadySaved, tabError } = usePopupData();
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [fetchingTranscript, setFetchingTranscript] = useState(false);
+  const [transcriptStatus, setTranscriptStatus] = useState(null); // 'fetching' | 'success' | 'failed' | null
 
   const isChannel = pageInfo ? isChannelUrl(pageInfo.url) : false;
 
@@ -130,16 +133,29 @@ export default function PopupApp() {
 
         // Trigger on-demand transcript scraping on the active tab.
         // This fires the content script's SCRAPE_NOW handler so the
-        // transcript is fetched and cached immediately at save time,
-        // not only when the user happens to visit the page later.
+        // transcript is fetched and cached immediately at save time.
+        setFetchingTranscript(true);
+        setTranscriptStatus('fetching');
         if (typeof chrome !== 'undefined' && chrome.tabs) {
           chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
             if (tab?.id) {
-              chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }).catch(() => {
+              chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (result) => {
+                if (result?.transcript) {
+                  setTranscriptStatus('success');
+                } else {
+                  setTranscriptStatus('failed');
+                }
+                setFetchingTranscript(false);
+              }).catch(() => {
                 // Content script may not be injected (non-YouTube pages) — that's fine
+                setTranscriptStatus('failed');
+                setFetchingTranscript(false);
               });
             }
           });
+        } else {
+          setFetchingTranscript(false);
+          setTranscriptStatus('failed');
         }
       }
       setSaved(true);
@@ -230,10 +246,15 @@ export default function PopupApp() {
 
         <ShimmerButton
           onClick={handleSave}
-          disabled={alreadySaved || !pageInfo}
+          disabled={alreadySaved || !pageInfo || fetchingTranscript}
           className="w-full mb-2"
         >
-          {alreadySaved ? (
+          {fetchingTranscript ? (
+            <span className="flex items-center justify-center gap-2">
+              <div className="w-4 h-4 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+              Fetching Transcript...
+            </span>
+          ) : alreadySaved ? (
             <span className="flex items-center justify-center gap-2 text-green-400">
               <Check className="w-4 h-4" aria-hidden="true" /> Already Saved
             </span>
@@ -251,6 +272,16 @@ export default function PopupApp() {
             </span>
           )}
         </ShimmerButton>
+
+        {transcriptStatus === 'failed' && !alreadySaved && (
+          <div className="flex items-start gap-2 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20 mb-2 text-yellow-600 text-xs">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+            <div>
+              <p className="font-medium">Transcript not available</p>
+              <p className="text-yellow-500/70 mt-0.5">Video may not have captions. You can still watch it later.</p>
+            </div>
+          </div>
+        )}
 
         {saveError && (
           <p role="alert" className="flex items-center gap-1.5 text-xs text-red-400 mb-2">

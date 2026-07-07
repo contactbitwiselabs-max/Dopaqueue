@@ -105,29 +105,56 @@ async function scrapeTranscript() {
 
     function pageFetch(url) {
       return new Promise((resolve, reject) => {
-        // Try normal fetch first
-        fetch(url, { credentials: 'same-origin' }).then(res => res.text()).then(text => {
-          resolve({ ok: true, text });
-        }).catch((err) => {
-          // Fallback to injected page fetcher
-          try {
-            ensureInjectedFetcher();
-            const id = crypto.randomUUID();
-            function onMsg(e) {
-              if (e.source !== window) return;
-              const d = e.data || {};
-              if (d.__DOPAQUEUE_FETCH_RESPONSE__ && d.id === id) {
-                window.removeEventListener('message', onMsg);
-                if (d.ok) resolve({ ok: true, text: d.text });
-                else reject(new Error(d.error || 'fetch failed'));
-              }
+        // Try normal fetch first with a short timeout
+        const tryFetch = () => fetch(url, { credentials: 'same-origin' });
+        let timedOut = false;
+        const timeoutMs = 8000;
+        const timeout = setTimeout(() => {
+          timedOut = true;
+        }, timeoutMs);
+
+        tryFetch()
+          .then((res) => res.text())
+          .then((text) => {
+            if (!timedOut) {
+              clearTimeout(timeout);
+              resolve({ ok: true, text });
             }
-            window.addEventListener('message', onMsg);
-            window.postMessage({ __DOPAQUEUE_FETCH_REQUEST__: true, id, url }, '*');
-          } catch (ex) {
-            reject(ex);
-          }
-        });
+          })
+          .catch(() => {
+            // Fallback to injected page fetcher
+            try {
+              ensureInjectedFetcher();
+              const id = crypto.randomUUID();
+              let settled = false;
+              function onMsg(e) {
+                if (e.source !== window) return;
+                const d = e.data || {};
+                if (d.__DOPAQUEUE_FETCH_RESPONSE__ && d.id === id) {
+                  if (settled) return;
+                  settled = true;
+                  window.removeEventListener('message', onMsg);
+                  clearTimeout(timeout);
+                  if (d.ok) resolve({ ok: true, text: d.text });
+                  else reject(new Error(d.error || 'fetch failed'));
+                }
+              }
+              window.addEventListener('message', onMsg);
+              window.postMessage({ __DOPAQUEUE_FETCH_REQUEST__: true, id, url }, '*');
+
+              // Safety timeout for injected fetcher
+              setTimeout(() => {
+                if (!settled) {
+                  settled = true;
+                  window.removeEventListener('message', onMsg);
+                  reject(new Error('injected fetch timed out'));
+                }
+              }, timeoutMs);
+            } catch (ex) {
+              clearTimeout(timeout);
+              reject(ex);
+            }
+          });
       });
     }
 
@@ -220,21 +247,52 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     // ads or player initialization are happening), poll for up to a few
     // seconds and return the first non-null transcript found.
     (async () => {
-      const maxAttempts = 8;
-      const delayMs = 1000;
+      // Exponential backoff retry: 1s,1s,2s,4s,... up to a max attempts cap
+      const maxAttempts = 12;
       let attempt = 0;
       let lastResult = null;
       while (attempt < maxAttempts) {
         try {
           const res = await scrapeAll();
           lastResult = res;
+          // Send attempt log to background for centralized tracing
+          try { chrome.runtime.sendMessage({ type: 'SCRAPE_ATTEMPT', url: location.href, attempt, hasTranscript: !!res.transcript }); } catch (e) {}
+
+          // Send detailed attempt log to background for centralized tracing
+          try {
+            chrome.runtime.sendMessage({
+              type: 'SCRAPE_ATTEMPT',
+              url: location.href,
+              attempt: attempt + 1,
+              maxAttempts,
+              success: !!(res.transcript || res.genre || res.channel),
+              hasTranscript: !!res.transcript,
+              transcriptLength: res.transcript ? res.transcript.length : 0,
+              reason: 'success',
+              timestamp: Date.now(),
+            });
+          } catch (e) {}
+
           // If we have any useful data (especially transcript), stop early
           if (res.transcript || res.genre || res.channel) break;
         } catch (err) {
+          // Send failure with reason
+          try {
+            chrome.runtime.sendMessage({
+              type: 'SCRAPE_ATTEMPT',
+              url: location.href,
+              attempt: attempt + 1,
+              maxAttempts,
+              success: false,
+              reason: String(err.message || err),
+              timestamp: Date.now(),
+            });
+          } catch (e) {}
           console.warn('DopaQueue: scrape attempt failed', err);
         }
         attempt++;
-        // small delay before retrying
+        // exponential backoff delay
+        const delayMs = Math.min(8000, 500 * (2 ** Math.max(0, attempt - 1)));
         await new Promise(r => setTimeout(r, delayMs));
       }
 

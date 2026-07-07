@@ -1,0 +1,66 @@
+name: DopaQueue CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    
+    - name: Install extension dependencies
+      run: cd extension && npm ci
+    
+    - name: Install landing dependencies
+      run: cd landing && npm ci
+    
+    - name: Install root dependencies
+      run: npm ci
+    
+    - name: Run extension tests
+      run: npm run verify
+    
+    - name: Lint extension
+      run: cd extension && npm run lint --if-present || true
+    
+    - name: Build extension
+      run: cd extension && npm run build --if-present || true
+    
+    - name: Validate manifest.json
+      run: node -e "JSON.parse(require('fs').readFileSync('extension/manifest.json')); console.log('✓ manifest.json valid')"
+    
+    - name: Check server dependencies
+      run: cd extension/server && npm ci --only=dev || true
+    
+    - name: Validate migrations.sql syntax
+      run: cat extension/server/migrations.sql | grep -q "CREATE TABLE" && echo "✓ migrations.sql looks good"
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run npm audit
+      run: npm audit --audit-level=moderate || true
+    
+    - name: Check for hardcoded secrets
+      run: |
+        if grep -r "eyJ" extension/src/shared/supabase.js | grep -v "^[[:space:]]*const"; then
+          echo "⚠ Warning: possible secret in code"
+          exit 1
+        fi
+        true

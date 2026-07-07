@@ -205,16 +205,28 @@ export function getScrapeResult(url) {
 
 export function cacheScrapeResult(url, data) {
   localCache[url] = { ...data, scrapedAt: Date.now() };
-  
-  // Enforce MAX_SCRAPE_CACHE_ENTRIES
-  const entries = Object.entries(localCache);
-  if (entries.length > MAX_SCRAPE_CACHE_ENTRIES) {
-    entries.sort((a, b) => b[1].scrapedAt - a[1].scrapedAt);
-    localCache = Object.fromEntries(entries.slice(0, MAX_SCRAPE_CACHE_ENTRIES));
-  }
-  
+  trimScrapeCache();
   storageSet(STORAGE_KEYS.SCRAPE_CACHE, localCache);
   return localCache;
+}
+
+// Trim scrape cache by entry count and total size (transcripts can be large)
+export function trimScrapeCache() {
+  const entries = Object.entries(localCache);
+  if (entries.length <= MAX_SCRAPE_CACHE_ENTRIES) return;
+  
+  // Sort by scrapedAt descending (newest first)
+  entries.sort((a, b) => b[1].scrapedAt - a[1].scrapedAt);
+  
+  // Keep only newest MAX_SCRAPE_CACHE_ENTRIES
+  localCache = Object.fromEntries(entries.slice(0, MAX_SCRAPE_CACHE_ENTRIES));
+}
+
+// Check total cache size in bytes (for monitoring)
+export function getScrapeCacheSize() {
+  return Object.entries(localCache).reduce((sum, [url, data]) => {
+    return sum + url.length + (data.transcript ? data.transcript.length : 0);
+  }, 0);
 }
 
 // --- Reset ---

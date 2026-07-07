@@ -1,0 +1,27 @@
+{
+  "name": "dopaqueue-transcript-worker",
+  "version": "1.0.0",
+  "description": "Server-side transcript fetcher for DopaQueue extension using youtube-transcript-api",
+  "type": "module",
+  "main": "transcript-worker.js",
+  "scripts": {
+    "start": "node transcript-worker.js",
+    "dev": "NODE_ENV=development node transcript-worker.js",
+    "test:db": "node -e \"import('./transcript-worker.js').then(() => console.log('✓ DB connection ok')).catch(e => console.error('✗', e.message))\"",
+    "test": "echo 'Run npm run test:db to verify Supabase connection'"
+  },
+  "keywords": [
+    "youtube",
+    "transcript",
+    "dopamine",
+    "wellbeing",
+    "supabase"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.38.0",
+    "youtube-transcript-api": "^0.0.7"
+  },
+  "devDependencies": {}
+}
