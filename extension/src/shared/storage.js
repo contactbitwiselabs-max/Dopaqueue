@@ -116,8 +116,8 @@ function storageSet(key, value) {
 
 // --- Queue ---
 export function getQueue() { return localQueue; }
-export function getSavedVideos() { return localQueue.filter(item => item.type !== 'channel'); }
-export function getSavedChannels() { return localQueue.filter(item => item.type === 'channel'); }
+export function getSavedVideos() { return localQueue.filter(item => item.type !== 'channel' && !item.deleted); }
+export function getSavedChannels() { return localQueue.filter(item => item.type === 'channel' && !item.deleted); }
 
 export function setQueue(queue) {
   localQueue = queue;
