@@ -28,3 +28,13 @@ cd landing
 npm run dev
 # The landing page will run on http://localhost:3000
 ```
+
+### Shortcut: run either from the repo root
+Root-level convenience scripts wrap the two commands above (via `--prefix`) so you don't have to `cd` manually:
+```bash
+npm run install:all      # installs root + extension/ + landing/ deps in one go
+npm run dev:extension
+npm run dev:landing
+npm run build:extension
+npm run build:landing
+```

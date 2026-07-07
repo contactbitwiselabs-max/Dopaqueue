@@ -4,7 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "verify": "node verify.js"
+    "verify": "node verify.js",
+    "dev:extension": "npm run dev --prefix extension",
+    "build:extension": "npm run build --prefix extension",
+    "dev:landing": "npm run dev --prefix landing",
+    "build:landing": "npm run build --prefix landing",
+    "install:all": "npm install && npm install --prefix extension && npm install --prefix landing"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0"

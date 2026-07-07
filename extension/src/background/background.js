@@ -119,7 +119,9 @@ async function budgetTick() {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === BUDGET_TICK_ALARM) {
-    budgetTick();
+    budgetTick().catch((err) => {
+      console.error('DopaQueue: budgetTick failed', err);
+    });
   }
 });
 

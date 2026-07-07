@@ -32,6 +32,50 @@ function mergeObjects(localObj, remoteObj) {
   return localTime > remoteTime ? localObj : remoteObj;
 }
 
+// Pulls, merges, and pushes a single array-shaped table (queue/notes).
+// Local state is saved as soon as the merge is computed, *before* the
+// push to Supabase — so a push failure still leaves the merged local
+// data intact instead of losing it.
+async function syncArrayTable(table, userId, getLocal, setLocal) {
+  const { data: remote, error: pullError } = await supabaseClient
+    .from(table)
+    .select('*')
+    .eq('user_id', userId);
+  if (pullError) throw pullError;
+
+  const merged = mergeArrays(getLocal(), remote || []);
+  setLocal(merged);
+
+  const toUpsert = merged.map((i) => ({ ...i, user_id: userId }));
+  if (toUpsert.length > 0) {
+    const { error: pushError } = await supabaseClient.from(table).upsert(toUpsert);
+    if (pushError) throw pushError;
+  }
+
+  return merged;
+}
+
+// Same as syncArrayTable but for the single-row object tables
+// (game_state/settings).
+async function syncObjectTable(table, userId, getLocal, setLocal) {
+  const { data: remote, error: pullError } = await supabaseClient
+    .from(table)
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (pullError) throw pullError;
+
+  const merged = mergeObjects(getLocal(), remote);
+  setLocal(merged);
+
+  const { error: pushError } = await supabaseClient
+    .from(table)
+    .upsert({ ...merged, user_id: userId });
+  if (pushError) throw pushError;
+
+  return merged;
+}
+
 export async function syncWithCloud() {
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (!session) {
@@ -40,60 +84,37 @@ export async function syncWithCloud() {
 
   const userId = session.user.id;
 
-  // 1. Pull remote data
-  const [remoteQueueReq, remoteNotesReq, remoteGameReq, remoteSettingsReq] = await Promise.all([
-    supabaseClient.from('queue').select('*').eq('user_id', userId),
-    supabaseClient.from('notes').select('*').eq('user_id', userId),
-    supabaseClient.from('game_state').select('*').eq('user_id', userId).maybeSingle(),
-    supabaseClient.from('settings').select('*').eq('user_id', userId).maybeSingle(),
-  ]);
+  // Each table syncs independently so one failure (e.g. a single bad
+  // row, an RLS hiccup on one table) doesn't block the others — local
+  // state for every successful table is still saved even if some fail.
+  const jobs = [
+    { key: 'queue', run: () => syncArrayTable('queue', userId, getQueue, setQueue) },
+    { key: 'notes', run: () => syncArrayTable('notes', userId, getNotes, setNotes) },
+    { key: 'game', run: () => syncObjectTable('game_state', userId, getGameState, setGameState) },
+    { key: 'settings', run: () => syncObjectTable('settings', userId, getSettings, setSettings) },
+  ];
 
-  if (remoteQueueReq.error) throw remoteQueueReq.error;
-  if (remoteNotesReq.error) throw remoteNotesReq.error;
-  if (remoteGameReq.error) throw remoteGameReq.error;
-  if (remoteSettingsReq.error) throw remoteSettingsReq.error;
+  const settled = await Promise.allSettled(jobs.map((job) => job.run()));
 
-  const remoteQueue = remoteQueueReq.data || [];
-  const remoteNotes = remoteNotesReq.data || [];
-  const remoteGame = remoteGameReq.data;
-  const remoteSettings = remoteSettingsReq.data;
+  const result = {};
+  const failures = {};
+  settled.forEach((outcome, i) => {
+    const { key } = jobs[i];
+    if (outcome.status === 'fulfilled') {
+      result[key] = outcome.value;
+    } else {
+      failures[key] = outcome.reason;
+      console.error(`DopaQueue: sync failed for "${key}"`, outcome.reason);
+    }
+  });
 
-  // 2. Get local data
-  const localQueue = getQueue();
-  const localNotes = getNotes();
-  const localGame = getGameState();
-  const localSettings = getSettings();
+  const failedKeys = Object.keys(failures);
+  if (failedKeys.length > 0) {
+    const err = new Error(`Sync failed for: ${failedKeys.join(', ')}`);
+    err.partial = result;
+    err.failures = failures;
+    throw err;
+  }
 
-  // 3. Merge
-  const mergedQueue = mergeArrays(localQueue, remoteQueue);
-  const mergedNotes = mergeArrays(localNotes, remoteNotes);
-  const mergedGame = mergeObjects(localGame, remoteGame);
-  const mergedSettings = mergeObjects(localSettings, remoteSettings);
-
-  // 4. Save merged state locally
-  setQueue(mergedQueue);
-  setNotes(mergedNotes);
-  setGameState(mergedGame);
-  setSettings(mergedSettings);
-
-  // To push to Supabase, we upsert the merged data (ensuring user_id is set)
-  const toUpsertQueue = mergedQueue.map(i => ({ ...i, user_id: userId }));
-  const toUpsertNotes = mergedNotes.map(i => ({ ...i, user_id: userId }));
-  const toUpsertGame = { ...mergedGame, user_id: userId };
-  const toUpsertSettings = { ...mergedSettings, user_id: userId };
-
-  const pushPromises = [];
-  if (toUpsertQueue.length > 0) pushPromises.push(supabaseClient.from('queue').upsert(toUpsertQueue));
-  if (toUpsertNotes.length > 0) pushPromises.push(supabaseClient.from('notes').upsert(toUpsertNotes));
-  pushPromises.push(supabaseClient.from('game_state').upsert(toUpsertGame));
-  pushPromises.push(supabaseClient.from('settings').upsert(toUpsertSettings));
-
-  await Promise.all(pushPromises);
-
-  return {
-    queue: mergedQueue,
-    notes: mergedNotes,
-    game: mergedGame,
-    settings: mergedSettings
-  };
+  return result;
 }

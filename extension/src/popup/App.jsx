@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { PlayCircle, LayoutDashboard, Save, Check, Leaf } from 'lucide-react';
+import { PlayCircle, LayoutDashboard, Save, Check, Hash, AlertCircle } from 'lucide-react';
 import { ShimmerButton } from '../components/ui/shimmer-button';
 import { Meteors } from '../components/ui/meteors';
 import {
@@ -9,6 +9,7 @@ import {
   addToQueue,
   subscribe,
 } from '../shared/storage.js';
+import { isChannelUrl, extractChannelId } from '../shared/constants.js';
 
 const PLANT_EMOJI = {
   thriving: '🌿',
@@ -29,6 +30,7 @@ function usePopupData() {
   const [pageInfo, setPageInfo] = useState(null);
   const [game, setGame] = useState({ plant: 'thriving', budgetMinutesTotal: 60, budgetMinutesUsed: 0 });
   const [alreadySaved, setAlreadySaved] = useState(false);
+  const [tabError, setTabError] = useState(null);
 
   useEffect(() => {
     initStorage().then(() => {
@@ -39,9 +41,12 @@ function usePopupData() {
       // Get the active tab URL/title
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-          if (!tab) return;
+          if (chrome.runtime.lastError || !tab || !tab.url) {
+            setTabError("Couldn't read the current tab. Try reopening the popup.");
+            return;
+          }
           const info = {
-            url: tab.url || '',
+            url: tab.url,
             title: tab.title || 'Unknown Page',
             favIconUrl: tab.favIconUrl || '',
           };
@@ -51,6 +56,8 @@ function usePopupData() {
           const queue = getQueue();
           setAlreadySaved(queue.some((i) => i.url === tab.url));
         });
+      } else {
+        setTabError('Extension APIs unavailable in this context.');
       }
     });
 
@@ -59,25 +66,44 @@ function usePopupData() {
     return unsub;
   }, []);
 
-  return { ready, pageInfo, game, alreadySaved, setAlreadySaved };
+  return { ready, pageInfo, game, alreadySaved, setAlreadySaved, tabError };
 }
 
 export default function PopupApp() {
-  const { ready, pageInfo, game, alreadySaved, setAlreadySaved } = usePopupData();
+  const { ready, pageInfo, game, alreadySaved, setAlreadySaved, tabError } = usePopupData();
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+
+  const isChannel = pageInfo ? isChannelUrl(pageInfo.url) : false;
 
   const handleSave = () => {
     if (!pageInfo || saved || alreadySaved) return;
-    addToQueue({
-      id: crypto.randomUUID(),
-      url: pageInfo.url,
-      title: pageInfo.title,
-      type: 'video',
-      savedAt: Date.now(),
-      watched: false,
-    });
-    setSaved(true);
-    setAlreadySaved(true);
+    setSaveError(null);
+    try {
+      if (isChannel) {
+        addToQueue({
+          id: crypto.randomUUID(),
+          url: pageInfo.url,
+          title: extractChannelId(pageInfo.url) || pageInfo.title,
+          type: 'channel',
+          savedAt: Date.now(),
+        });
+      } else {
+        addToQueue({
+          id: crypto.randomUUID(),
+          url: pageInfo.url,
+          title: pageInfo.title,
+          type: 'video',
+          savedAt: Date.now(),
+          watched: false,
+        });
+      }
+      setSaved(true);
+      setAlreadySaved(true);
+    } catch (err) {
+      console.error('DopaQueue: failed to save item', err);
+      setSaveError('Failed to save. Please try again.');
+    }
   };
 
   const openDashboard = () => {
