@@ -10,6 +10,9 @@ import {
 } from '../shared/storage.js';
 import { syncWithCloud } from '../shared/sync.js';
 import { supabaseClient } from '../shared/supabase.js';
+import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFile, buildExportFilename } from '../shared/export.js';
+import { getChannelGroups, getItemsByGroup, getGroupStats } from '../shared/groups.js';
+import Settings from './pages/Settings.jsx';
 
 // ─── Helpers ───────────────────────────────────────────────────────
 function csvField(value) {
@@ -307,22 +310,96 @@ export default function App() {
       return;
     }
 
-    if (format === 'markdown') {
-      const md = `# ${video.title}\n\n| Field | Value |\n|---|---|\n| URL | ${video.url} |\n| Type | ${detectContentType(video.url)} |\n| Genre | ${scrape.genre || 'Unknown'} |\n| Channel | ${scrape.channel || 'Unknown'} |\n| Saved | ${formatDateTime(video.savedAt)} |\n\n## Transcript\n\n${scrape.transcript}\n`;
-      const blob = new Blob([md], { type: 'text/markdown' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${video.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.md`;
-      a.click();
-    } else if (format === 'csv') {
-      const header = ['Title', 'URL', 'Type', 'Genre', 'Channel', 'Saved At', 'Transcript'].map(csvField).join(',');
-      const row = [video.title, video.url, detectContentType(video.url), scrape.genre || '', scrape.channel || '', formatDateTime(video.savedAt), scrape.transcript].map(csvField).join(',');
-      const blob = new Blob([`${header}\n${row}`], { type: 'text/csv' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${video.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.csv`;
-      a.click();
+    // Build a single-item array so we can reuse the shared export helpers
+    // (which expect an iterable of items with transcript/channel metadata).
+    const item = {
+      title: video.title,
+      url: video.url,
+      type: detectContentType(video.url),
+      genre: scrape.genre || 'Unknown',
+      channel: scrape.channel || 'Unknown',
+      savedAt: video.savedAt,
+      transcript: scrape.transcript,
+    };
+
+    let content;
+    let filename;
+    let mimeType;
+    switch (format) {
+      case 'markdown':
+        content = exportToMarkdown([item], video.title);
+        filename = buildExportFilename('markdown', video.title);
+        mimeType = 'text/markdown';
+        break;
+      case 'csv':
+        content = exportToCSV([item]);
+        filename = buildExportFilename('csv', video.title);
+        mimeType = 'text/csv';
+        break;
+      case 'json':
+        content = exportToJSON([item]);
+        filename = buildExportFilename('json', video.title);
+        mimeType = 'application/json';
+        break;
+      case 'notion':
+        content = exportToNotion([item]);
+        filename = buildExportFilename('markdown', `${video.title}-notion`);
+        mimeType = 'text/markdown';
+        break;
+      default:
+        return;
     }
+
+    downloadFile(content, filename, mimeType);
+  };
+
+  // Bulk export — exports the entire queue (videos + channels) in one file.
+  // Falls back to whatever scrape data we have cached; items without
+  // transcripts are still included so users don't lose their queue.
+  const handleBulkExport = (format) => {
+    const items = videos.map((v) => {
+      const scrape = getScrapeResult(v.url) || {};
+      return {
+        title: v.title,
+        url: v.url,
+        type: detectContentType(v.url),
+        genre: scrape.genre || 'Unknown',
+        channel: scrape.channel || 'Unknown',
+        savedAt: v.savedAt,
+        transcript: scrape.transcript || '',
+      };
+    });
+
+    let content;
+    let filename;
+    let mimeType;
+    switch (format) {
+      case 'markdown':
+        content = exportToMarkdown(items, 'My Saved Videos');
+        filename = buildExportFilename('markdown', 'queue');
+        mimeType = 'text/markdown';
+        break;
+      case 'csv':
+        content = exportToCSV(items);
+        filename = buildExportFilename('csv', 'queue');
+        mimeType = 'text/csv';
+        break;
+      case 'json':
+        content = exportToJSON(items);
+        filename = buildExportFilename('json', 'queue');
+        mimeType = 'application/json';
+        break;
+      case 'notion':
+        content = exportToNotion(items);
+        filename = buildExportFilename('markdown', 'queue-notion');
+        mimeType = 'text/markdown';
+        break;
+      default:
+        return;
+    }
+
+    downloadFile(content, filename, mimeType);
+    setStatus({ type: 'success', message: `Exported ${items.length} items as ${format.toUpperCase()}` });
   };
 
   if (!authChecked) {
@@ -414,7 +491,23 @@ export default function App() {
             <div>
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-3xl font-bold">Your Video Queue</h2>
-                <span className="text-sm text-zinc-500">{filteredVideos.length} items</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-zinc-500">{filteredVideos.length} items</span>
+                  <div className="relative">
+                    <select
+                      onChange={(e) => { if (e.target.value) { handleBulkExport(e.target.value); e.target.value = ''; } }}
+                      className="appearance-none bg-zinc-900 border border-zinc-800 text-zinc-300 text-sm rounded-lg pl-3 pr-8 py-1.5 hover:border-zinc-700 focus:outline-none focus:border-purple-500 cursor-pointer"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Export all…</option>
+                      <option value="markdown">Markdown</option>
+                      <option value="csv">CSV</option>
+                      <option value="json">JSON</option>
+                      <option value="notion">Notion</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500" />
+                  </div>
+                </div>
               </div>
 
               {/* Category Filter Chips */}
@@ -459,10 +552,13 @@ export default function App() {
 
           {/* ─── Settings Tab ─── */}
           {activeTab === 'settings' && (
-            <div>
-              <h2 className="text-3xl font-bold mb-6">Settings</h2>
-              <p className="text-zinc-400">Manage your sync preferences and AI options.</p>
-            </div>
+            <Settings
+              user={user}
+              onSignOut={handleSignOut}
+              onSync={handleSync}
+              isSyncing={isSyncing}
+              onStatus={setStatus}
+            />
           )}
         </div>
       </div>

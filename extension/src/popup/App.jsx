@@ -11,7 +11,8 @@ import {
   subscribe,
 } from '../shared/storage.js';
 import { isChannelUrl, extractChannelId } from '../shared/constants.js';
-import { getCurrentUser, signInWithGoogle } from '../shared/auth.js';
+import { getCurrentUser, signInWithGoogle, signOut, isLoggedIn, getUserEmail, getUserName } from '../shared/auth.js';
+import { syncWithCloud } from '../shared/sync.js';
 
 const PLANT_EMOJI = {
   thriving: '🌿',
@@ -81,6 +82,87 @@ export default function PopupApp() {
   const [saveError, setSaveError] = useState(null);
   const [fetchingTranscript, setFetchingTranscript] = useState(false);
   const [transcriptStatus, setTranscriptStatus] = useState(null); // 'fetching' | 'success' | 'failed' | null
+  const [user, setUser] = useState(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(null); // 'success' | 'error' | null
+
+  // Subscribe to auth state changes so the popup reflects sign-in/sign-out
+  // without needing a manual refresh.
+  useEffect(() => {
+    let unsub = () => {};
+    (async () => {
+      try {
+        const current = await getCurrentUser();
+        setUser(current);
+      } catch (err) {
+        console.warn('DopaQueue: getCurrentUser failed in popup', err);
+      }
+    })();
+
+    // onAuthChange returns an unsubscribe function (see shared/auth.js)
+    if (typeof getCurrentUser === 'function') {
+      // Lazy import to avoid breaking non-extension contexts
+      import('../shared/auth.js').then((mod) => {
+        if (typeof mod.onAuthChange === 'function') {
+          unsub = mod.onAuthChange((_event, session) => {
+            setUser(session?.user || null);
+          });
+        }
+      }).catch(() => {});
+    }
+
+    return () => unsub();
+  }, []);
+
+  const handleSignIn = async () => {
+    setAuthBusy(true);
+    setAuthError(null);
+    try {
+      await signInWithGoogle();
+      // The OAuth flow redirects to dashboard.html — the popup may close
+      // before this resolves. Refresh user state opportunistically.
+      const current = await getCurrentUser();
+      setUser(current);
+    } catch (err) {
+      setAuthError(err.message || 'Sign-in failed');
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setAuthBusy(true);
+    try {
+      await signOut();
+      setUser(null);
+    } catch (err) {
+      setAuthError(err.message || 'Sign-out failed');
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleSync = async () => {
+    if (!user) {
+      setSyncStatus('error');
+      setAuthError('Sign in first to sync to cloud.');
+      return;
+    }
+    setSyncing(true);
+    setSyncStatus(null);
+    try {
+      await syncWithCloud();
+      setSyncStatus('success');
+      setTimeout(() => setSyncStatus(null), 3000);
+    } catch (err) {
+      setSyncStatus('error');
+      setAuthError(err.message || 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const isChannel = pageInfo ? isChannelUrl(pageInfo.url) : false;
 
@@ -296,6 +378,64 @@ export default function PopupApp() {
           <LayoutDashboard className="w-4 h-4" />
           Open Dashboard
         </button>
+
+        {/* Auth / Sync row — compact, fits within the 360px popup width */}
+        <div className="mt-2 flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-zinc-900/40 border border-white/5">
+          {isLoggedIn(user) ? (
+            <>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] uppercase tracking-wider text-zinc-500">Signed in</p>
+                <p className="text-xs text-white truncate">{getUserEmail(user) || getUserName(user)}</p>
+              </div>
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                title="Sync to cloud"
+                aria-label="Sync to cloud"
+                className="flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs transition-colors disabled:opacity-50"
+              >
+                {syncing ? (
+                  <div className="w-3 h-3 rounded-full border-2 border-blue-300 border-t-transparent animate-spin" />
+                ) : (
+                  <Cloud className="w-3 h-3" />
+                )}
+                Sync
+              </button>
+              <button
+                onClick={handleSignOut}
+                disabled={authBusy}
+                title="Sign out"
+                aria-label="Sign out"
+                className="px-2 py-1 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs transition-colors disabled:opacity-50"
+              >
+                Out
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-zinc-500 flex-1">Sync to cloud</p>
+              <button
+                onClick={handleSignIn}
+                disabled={authBusy}
+                className="flex items-center gap-1 px-2 py-1 rounded-md bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 text-xs transition-colors disabled:opacity-50"
+              >
+                {authBusy ? (
+                  <div className="w-3 h-3 rounded-full border-2 border-purple-300 border-t-transparent animate-spin" />
+                ) : (
+                  <LogIn className="w-3 h-3" />
+                )}
+                Sign in
+              </button>
+            </>
+          )}
+        </div>
+
+        {syncStatus === 'success' && (
+          <p className="text-[10px] text-green-400 text-center mt-1">Synced ✓</p>
+        )}
+        {authError && (
+          <p role="alert" className="text-[10px] text-red-400 text-center mt-1">{authError}</p>
+        )}
       </div>
     </div>
   );

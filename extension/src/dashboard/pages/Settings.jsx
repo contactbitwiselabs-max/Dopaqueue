@@ -13,8 +13,8 @@ import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFi
 import { getQueue, getSavedVideos, getSavedChannels } from '../shared/storage.js';
 import { getChannelGroups, createChannelGroup, deleteChannelGroup } from '../shared/groups.js';
 
-export default function SettingsPage() {
-  const [user, setUser] = useState(null);
+export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp, onSync: onSyncProp, isSyncing: isSyncingProp, onStatus }) {
+  const [user, setUser] = useState(userProp || null);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null); // 'success' | 'error' | null
   const [syncError, setSyncError] = useState(null);
@@ -26,8 +26,11 @@ export default function SettingsPage() {
 
   useEffect(() => {
     async function loadUserAndSettings() {
-      const currentUser = await getCurrentUser();
-      setUser(currentUser);
+      // If parent passed a user prop, prefer it (avoids duplicate auth lookups)
+      if (!userProp) {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+      }
 
       // Load sync settings from chrome.storage
       if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -44,7 +47,7 @@ export default function SettingsPage() {
     }
 
     loadUserAndSettings();
-  }, []);
+  }, [userProp]);
 
   const handleSignIn = async () => {
     try {
@@ -58,7 +61,12 @@ export default function SettingsPage() {
 
   const handleSignOut = async () => {
     try {
-      await signOut();
+      // Prefer the parent's handler (which also clears dashboard state)
+      if (onSignOutProp) {
+        await onSignOutProp();
+      } else {
+        await signOut();
+      }
       setUser(null);
       setSyncStatus(null);
     } catch (err) {
@@ -77,7 +85,13 @@ export default function SettingsPage() {
     setSyncError(null);
 
     try {
-      await syncWithCloud();
+      // Prefer the parent's sync handler so the dashboard's spinner
+      // and toast stay in sync with the settings page.
+      if (onSyncProp) {
+        await onSyncProp();
+      } else {
+        await syncWithCloud();
+      }
       setSyncStatus('success');
       setLastSyncTime(new Date());
 
