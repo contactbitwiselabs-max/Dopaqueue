@@ -12,7 +12,8 @@ import {
   getSavedVideos,
 } from '../shared/storage.js';
 import { isChannelUrl, extractChannelId, extractYouTubeVideoId, STORAGE_KEYS } from '../shared/constants.js';
-import { getCurrentUser, signInWithGoogle, signOut, isLoggedIn, getUserEmail, getUserName } from '../shared/auth.js';
+import { getCurrentUser, signInWithGoogle, signOut, isLoggedIn, getUserEmail, getUserName, getPersistedAuthState } from '../shared/auth.js';
+import { supabaseClient } from '../shared/supabase.js';
 import { syncWithCloud } from '../shared/sync.js';
 
 const PLANT_EMOJI = {
@@ -103,29 +104,30 @@ export default function PopupApp() {
   // Subscribe to auth state changes so the popup reflects sign-in/sign-out
   // without needing a manual refresh.
   useEffect(() => {
-    let unsub = () => {};
-    (async () => {
-      try {
-        const current = await getCurrentUser();
-        setUser(current);
-      } catch (err) {
-        console.warn('DopaQueue: getCurrentUser failed in popup', err);
+    // 1. Recover persisted session immediately to prevent screen flickers
+    getPersistedAuthState().then(({ user: persistedUser }) => {
+      if (persistedUser) {
+        setUser(persistedUser);
       }
-    })();
+    });
 
-    // onAuthChange returns an unsubscribe function (see shared/auth.js)
-    if (typeof getCurrentUser === 'function') {
-      // Lazy import to avoid breaking non-extension contexts
-      import('../shared/auth.js').then((mod) => {
-        if (typeof mod.onAuthChange === 'function') {
-          unsub = mod.onAuthChange((_event, session) => {
-            setUser(session?.user || null);
-          });
-        }
-      }).catch(() => {});
-    }
+    // 2. Query current session in background
+    getCurrentUser().then((current) => {
+      if (current) {
+        setUser(current);
+      }
+    }).catch((err) => {
+      console.warn('DopaQueue: getCurrentUser failed in popup', err);
+    });
 
-    return () => unsub();
+    // 3. Listen to state changes
+    const { data: authListener } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   const handleSignIn = async () => {

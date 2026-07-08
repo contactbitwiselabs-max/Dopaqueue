@@ -122,8 +122,45 @@ async function scrapeTranscript() {
       } catch (e) { return null; }
     }
 
-    // 1) Try player response
-    const player = extractPlayerResponse();
+    function getPlayerResponseViaPostMessage() {
+      return new Promise((resolve) => {
+        const handleMessage = (event) => {
+          if (event.source !== window) return;
+          if (event.data?.type === 'DOPAQUEUE_PLAYER_RESPONSE') {
+            window.removeEventListener('message', handleMessage);
+            resolve(event.data.playerResponse);
+          }
+        };
+        window.addEventListener('message', handleMessage);
+        
+        const script = document.createElement('script');
+        script.textContent = `
+          try {
+            window.postMessage({
+              type: 'DOPAQUEUE_PLAYER_RESPONSE',
+              playerResponse: window.ytInitialPlayerResponse || null
+            }, '*');
+          } catch (e) {
+            window.postMessage({ type: 'DOPAQUEUE_PLAYER_RESPONSE', playerResponse: null }, '*');
+          }
+        `;
+        (document.head || document.documentElement).appendChild(script);
+        script.remove();
+        
+        setTimeout(() => {
+          window.removeEventListener('message', handleMessage);
+          resolve(null);
+        }, 1200);
+      });
+    }
+
+    // 1) Try main world postMessage player response (most reliable for SPAs & Shorts)
+    let player = await getPlayerResponseViaPostMessage();
+    if (!player) {
+      // 2) Fallback to DOM script parsing
+      player = extractPlayerResponse();
+    }
+
     if (player) {
       const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
       if (tracks && tracks.length > 0) {

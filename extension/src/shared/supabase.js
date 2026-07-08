@@ -16,13 +16,21 @@ const storageAdapter =
                 console.warn('Supabase getItem error:', chrome.runtime.lastError);
                 return resolve(null);
               }
-              resolve(res && res[key] ? res[key] : null);
+              const val = res && res[key] ? res[key] : null;
+              if (val === null) {
+                resolve(null);
+              } else if (typeof val === 'object') {
+                resolve(JSON.stringify(val));
+              } else {
+                resolve(val);
+              }
             });
           }),
         setItem: (key, value) =>
-          new Promise((resolve) =>
-            chrome.storage.local.set({ [key]: value }, resolve)
-          ),
+          new Promise((resolve) => {
+            const valStr = typeof value === 'object' ? JSON.stringify(value) : value;
+            chrome.storage.local.set({ [key]: valStr }, resolve);
+          }),
         removeItem: (key) =>
           new Promise((resolve) =>
             chrome.storage.local.remove([key], resolve)

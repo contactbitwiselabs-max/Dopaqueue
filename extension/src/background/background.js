@@ -225,7 +225,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 async function fetchTranscriptFallback(videoId) {
   try {
     const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    const res = await fetch(watchUrl, { credentials: 'omit' });
+    // Fetch without credentials omit to allow browser cookies and session context,
+    // which prevents YouTube from redirecting to a cookie consent form.
+    const res = await fetch(watchUrl);
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const html = await res.text();
 
@@ -248,16 +250,45 @@ async function fetchTranscriptFallback(videoId) {
       channel = channelMatch[1];
     }
 
-    // 3. Scrape transcript
+    // 3. Scrape transcript using balanced-brace scan (bulletproof compared to regular expressions)
     let transcript = null;
-    const match = html.match(/ytInitialPlayerResponse\s*=\s*({[\s\S]*?});/);
     let player = null;
-    if (match) {
-      player = JSON.parse(match[1]);
-    } else {
-      const altMatch = html.match(/ytInitialPlayerResponse\s*=\s*({[\s\S]*?})(?:\s*;|\s*<|\s*var|\s*window)/);
-      if (altMatch) {
-        player = JSON.parse(altMatch[1]);
+    
+    let searchIdx = 0;
+    while (true) {
+      const idx = html.indexOf('ytInitialPlayerResponse', searchIdx);
+      if (idx === -1) break;
+      
+      searchIdx = idx + 23; // Advance search index
+      
+      const braceStart = html.indexOf('{', idx);
+      if (braceStart === -1) continue;
+      
+      let depth = 0;
+      let i = braceStart;
+      let found = false;
+      for (; i < html.length; i++) {
+        const ch = html[i];
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+          depth--;
+          if (depth === 0) {
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) continue;
+      
+      const jsonText = html.slice(braceStart, i + 1);
+      try {
+        const parsed = JSON.parse(jsonText);
+        if (parsed?.captions?.playerCaptionsTracklistRenderer?.captionTracks) {
+          player = parsed;
+          break; // Found the player response with caption tracks!
+        }
+      } catch (e) {
+        // Try next occurrence
       }
     }
 
@@ -266,7 +297,7 @@ async function fetchTranscriptFallback(videoId) {
       if (tracks && tracks.length > 0) {
         const enTrack = tracks.find(t => t.languageCode === 'en') || tracks[0];
         if (enTrack?.baseUrl) {
-          const captionRes = await fetch(enTrack.baseUrl, { credentials: 'omit' });
+          const captionRes = await fetch(enTrack.baseUrl);
           if (captionRes.ok) {
             const xmlText = await captionRes.text();
             const textMatches = xmlText.match(/<text[^>]*>([\s\S]*?)<\/text>/g);
