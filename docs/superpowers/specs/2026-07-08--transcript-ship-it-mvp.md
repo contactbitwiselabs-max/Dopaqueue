@@ -88,6 +88,8 @@ Already implemented (recent commits `0d102b2`, `5f8cfaa`, `ac23e4e`, `705501a`):
 
 **Why fold into D:** it reuses the existing main-world probe, avoids duplicate DOM inspection, and keeps the 4-strategy race semantics intact for the happy path.
 
+**Risk: 500ms probe budget on slow devices.** On a cold page-load on a low-end device, the main-world postMessage handshake + DOM walk + `querySelector('ytd-watch-flexy')` can plausibly exceed 500ms. **Rule:** if Strategy D times out at 500ms without responding, fall through to the A/B/C race — do NOT synthesize a `'no_caption_tracks'` result from a timeout. The empty-tracks classification only fires when main world explicitly returns `length === 0`. A timeout is treated identically to a non-response: continue racing.
+
 ### Section 2 — Cache schema extensions
 
 **File:** `extension/src/shared/storage.js` — `dq_scrape_cache[url]` schema extended.
@@ -117,6 +119,7 @@ Already implemented (recent commits `0d102b2`, `5f8cfaa`, `ac23e4e`, `705501a`):
 - `getCachedTranscriptState(url)` → returns `transcriptState` or `null`
 - `setTranscriptState(url, state, reason)` → atomic cache write
 - `deriveTranscriptState(transcript, reason)` → pure classifier
+- `isUncacheableTranscript(text)` → returns `true` when `text` is null, empty, or `< 20 chars`. Used as the gate for setting `transcriptState: 'ready'` (vs `'unavailable'`).
 
 ### Section 3 — Early-exit + state derivation in content script
 
@@ -159,8 +162,11 @@ chrome.runtime.sendMessage({ type: 'TRANSCRIPT_PENDING', url, timestamp: Date.no
 **File:** `extension/src/background/background.js`
 
 - In `GENRE_SCRAPED` handler, call `deriveTranscriptState(transcript, reason)` and persist `transcriptState` + `transcriptCheckedAt` + `transcriptReason` to cache.
-- Add `TRANSCRIPT_PENDING` handler that sets `transcriptState: 'pending'`.
+- Add `TRANSCRIPT_PENDING` handler that sets `transcriptState: 'pending'` via the sibling helper `cacheTranscriptState(url, state, reason)` — does NOT touch `transcript`/`genre`/`channel` fields, only updates the state triple atomically.
 - Log: `console.info('DopaQueue: TRANSCRIPT_STATE', { url, state, reason })`.
+
+**Helper added to `storage.js`:**
+- `cacheTranscriptState(url, state, reason)` — sibling to `cacheScrapeResult`. Reads existing row, updates only `transcriptState`/`transcriptCheckedAt`/`transcriptReason`, writes back. Does not overwrite `transcript` text.
 
 ### Section 5 — Popup UX (replaces old `'failed'` with honest states)
 
@@ -173,13 +179,14 @@ chrome.runtime.sendMessage({ type: 'TRANSCRIPT_PENDING', url, timestamp: Date.no
   - `null` / `'pending'` → start fetch and show `⏳ fetching…`
 - Subscribe to `chrome.runtime.onMessage` for live `GENRE_SCRAPED` updates; update pill on receipt.
 - **Reduce popup failsafe from 23s → 21s.** Pipeline global timeout is 20s; 1s margin is enough for the broadcast to land. 23s was arbitrary.
+- **Failsafe must clear on `GENRE_SCRAPED` receipt via live subscription.** Currently `popup/App.jsx:269` only clears on the direct `sendMessage` callback. With Phase A's live `chrome.runtime.onMessage` subscription path, the popup can receive `GENRE_SCRAPED` (from a background scrape that completes after Save) and update the pill but leave the failsafe running. Add `clearTimeout(failsafe)` to the `GENRE_SCRAPED` subscription handler.
 - `enqueueFallback()` only fires when transcript is unavailable AND user is logged in (see Section 8 for the `currentUrl` bug fix).
 
 ### Section 6 — Dashboard reason display
 
 **File:** `extension/src/dashboard/App.jsx`
 
-- **Canonical render site:** `ReadView` / transcript reader component, around line 797 (the `'No transcript available for this video.'` fallback at line 797). Pin this site as the single source of truth for the reason display.
+- **Canonical render site:** `ArticleModal` component, line 797 (the `'No transcript available for this video.'` fallback at line 797). Pin this site as the single source of truth for the reason display.
 - Other scrape reads (lines 417, 473, 547, 955) are for queue list views — they do NOT need reason display in Phase A. Adding it to all sites is scope creep.
 - Replace the existing `'No transcript available for this video.'` fallback with reason-conditional copy:
   - `transcriptReason === 'no_caption_tracks'` → "No captions on YouTube for this video."
