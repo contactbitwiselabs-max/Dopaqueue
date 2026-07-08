@@ -222,107 +222,139 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
+/** Parse YouTube timedtext XML */
+function parseTimedText(xmlText) {
+  try {
+    // Try JSON3 format first (newer YouTube)
+    const json = JSON.parse(xmlText);
+    const events = json?.events || [];
+    const pieces = events
+      .filter(e => e.segs)
+      .flatMap(e => e.segs.map(s => s.utf8 || ''))
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (pieces.length > 30) return pieces;
+  } catch (e) { /* not JSON */ }
+
+  // Fall back to XML
+  try {
+    const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+    const texts = Array.from(doc.getElementsByTagName('text'));
+    const joined = texts
+      .map(t => (t.textContent || '')
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
+        .replace(/\s+/g, ' ').trim()
+      )
+      .filter(Boolean)
+      .join(' ');
+    return joined.length > 30 ? joined : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function fetchTranscriptFallback(videoId) {
   try {
     const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    // Fetch without credentials omit to allow browser cookies and session context,
-    // which prevents YouTube from redirecting to a cookie consent form.
     const res = await fetch(watchUrl);
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const html = await res.text();
 
-    // 1. Scrape category
+    // Scrape category
     let genre = null;
     const genreMatch = html.match(/<meta itemprop="genre" content="([^"]+)">/);
     if (genreMatch) {
       genre = genreMatch[1];
     } else {
       const keywordsMatch = html.match(/<meta name="keywords" content="([^"]+)">/);
-      if (keywordsMatch) {
-        genre = keywordsMatch[1].split(',')[0]?.trim();
-      }
+      if (keywordsMatch) genre = keywordsMatch[1].split(',')[0]?.trim();
     }
 
-    // 2. Scrape channel
+    // Scrape channel
     let channel = null;
     const channelMatch = html.match(/<link itemprop="name" content="([^"]+)">/);
-    if (channelMatch) {
-      channel = channelMatch[1];
-    }
+    if (channelMatch) channel = channelMatch[1];
 
-    // 3. Scrape transcript using balanced-brace scan (bulletproof compared to regular expressions)
-    let transcript = null;
+    // Find ytInitialPlayerResponse with caption tracks (balanced-brace scan)
     let player = null;
-    
     let searchIdx = 0;
     while (true) {
       const idx = html.indexOf('ytInitialPlayerResponse', searchIdx);
       if (idx === -1) break;
-      
-      searchIdx = idx + 23; // Advance search index
-      
+      searchIdx = idx + 23;
       const braceStart = html.indexOf('{', idx);
       if (braceStart === -1) continue;
-      
-      let depth = 0;
-      let i = braceStart;
-      let found = false;
+      let depth = 0, i = braceStart, found = false;
       for (; i < html.length; i++) {
-        const ch = html[i];
-        if (ch === '{') depth++;
-        else if (ch === '}') {
-          depth--;
-          if (depth === 0) {
-            found = true;
-            break;
-          }
-        }
+        if (html[i] === '{') depth++;
+        else if (html[i] === '}') { depth--; if (depth === 0) { found = true; break; } }
       }
       if (!found) continue;
-      
-      const jsonText = html.slice(braceStart, i + 1);
       try {
-        const parsed = JSON.parse(jsonText);
+        const parsed = JSON.parse(html.slice(braceStart, i + 1));
         if (parsed?.captions?.playerCaptionsTracklistRenderer?.captionTracks) {
           player = parsed;
-          break; // Found the player response with caption tracks!
+          break;
         }
-      } catch (e) {
-        // Try next occurrence
-      }
+      } catch (e) { /* keep scanning */ }
     }
+
+    let transcript = null;
+    let captionTrackBaseUrl = null;
 
     if (player) {
-      const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-      if (tracks && tracks.length > 0) {
-        const enTrack = tracks.find(t => t.languageCode === 'en') || tracks[0];
-        if (enTrack?.baseUrl) {
-          const captionRes = await fetch(enTrack.baseUrl);
+      const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+
+      // Order: en → en-XX → original language, prefer auto-generated (asr) over manual
+      const ordered = [
+        tracks.find(t => t.languageCode === 'en' && t.kind === 'asr'),
+        tracks.find(t => t.languageCode === 'en'),
+        tracks.find(t => t.languageCode?.startsWith('en') && t.kind === 'asr'),
+        tracks.find(t => t.languageCode?.startsWith('en')),
+        tracks.find(t => t.kind === 'asr'),
+        tracks[0],
+      ].filter(Boolean);
+
+      for (const track of ordered) {
+        if (!track?.baseUrl) continue;
+        captionTrackBaseUrl = track.baseUrl;
+        try {
+          const captionRes = await fetch(track.baseUrl);
           if (captionRes.ok) {
             const xmlText = await captionRes.text();
-            const textMatches = xmlText.match(/<text[^>]*>([\s\S]*?)<\/text>/g);
-            if (textMatches) {
-              transcript = textMatches.map(t => {
-                return t.replace(/<text[^>]*>/, '').replace(/<\/text>/, '')
-                  .replace(/&amp;/g, '&')
-                  .replace(/&lt;/g, '<')
-                  .replace(/&gt;/g, '>')
-                  .replace(/&quot;/g, '"')
-                  .replace(/&#39;/g, "'")
-                  .replace(/&apos;/g, "'")
-                  .replace(/\s+/g, ' ')
-                  .trim();
-              }).join(' ');
-            }
+            transcript = parseTimedText(xmlText);
+            if (transcript) break;
           }
-        }
+        } catch (e) { /* try next track */ }
       }
     }
 
-    return { genre, channel, transcript };
+    // Last resort: timedtext API without needing player response
+    if (!transcript) {
+      const apiUrls = [
+        `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=json3&lang=en&kind=asr`,
+        `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=json3&lang=en`,
+        `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en`,
+        `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=json3`,
+      ];
+      for (const url of apiUrls) {
+        try {
+          const r = await fetch(url);
+          if (r.ok) {
+            const text = await r.text();
+            transcript = parseTimedText(text);
+            if (transcript) break;
+          }
+        } catch (e) { /* try next */ }
+      }
+    }
+
+    return { success: true, genre, channel, transcript, captionTrackBaseUrl };
   } catch (err) {
     console.error('DopaQueue background: fetchTranscriptFallback error', err);
-    throw err;
+    return { success: false, error: err.message || String(err) };
   }
 }
 

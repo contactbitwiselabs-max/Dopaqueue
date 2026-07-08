@@ -246,16 +246,26 @@ export default function PopupApp() {
         if (typeof chrome !== 'undefined' && chrome.tabs) {
           chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
             if (tab?.id) {
+              let responded = false;
+
+              // Hard 15s failsafe — matches the 12s pipeline timeout + margin
+              const failsafe = setTimeout(() => {
+                if (!responded) {
+                  responded = true;
+                  setTranscriptStatus('failed');
+                  setFetchingTranscript(false);
+                }
+              }, 15000);
+
               chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (result) => {
+                if (responded) return;
+                responded = true;
+                clearTimeout(failsafe);
                 if (result?.transcript) {
                   setTranscriptStatus('success');
                 } else {
                   setTranscriptStatus('failed');
                 }
-                setFetchingTranscript(false);
-              }).catch(() => {
-                // Content script may not be injected (non-YouTube pages) — that's fine
-                setTranscriptStatus('failed');
                 setFetchingTranscript(false);
               });
             }
