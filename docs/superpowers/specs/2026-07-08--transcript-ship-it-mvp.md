@@ -18,10 +18,12 @@ Refactor the save flow so transcripts are an honest, secondary concern rather th
 
 Already implemented (recent commits `0d102b2`, `5f8cfaa`, `ac23e4e`, `705501a`):
 - `extension/src/content/main_world.js` — injected via manifest `"world": "MAIN"` at `document_start`. Captures `ytInitialPlayerResponse` and `ytd-watch-flexy.__data.playerResponse` from main world.
-- `extension/src/content/content.js` Strategy D — postMessage bridge to main world, falls back to A/B/C.
-- `extension/src/content/content.js` — `TRANSCRIPT_TIMEOUT_MS = 20000`.
+- `extension/src/content/content.js` Strategy D (`strategyD_livePlayerAPI`, lines 226–257) — postMessage bridge to main world, 3s internal timeout, **already in the race alongside A/B/C** (`Promise.any` at line 298).
+- `extension/src/content/content.js` — `TRANSCRIPT_TIMEOUT_MS = 20000` (line 21).
 - `extension/src/popup/App.jsx` — `enqueueFallback()` upserts to Supabase `transcript_queue` when fetch fails AND user is logged in. Skips when logged out. **Hybrid of option (a) from brainstorming + server fallback.**
 - `extension/manifest.json` — both `main_world.js` (MAIN world, `document_start`) and `content.js` (isolated, `document_idle`) registered.
+
+**Known bug in master** (will fix in Phase A scope): `popup/App.jsx:252` references undefined `currentUrl` — should be `pageInfo.url`. See Section 8.
 
 ---
 
@@ -62,24 +64,29 @@ Already implemented (recent commits `0d102b2`, `5f8cfaa`, `ac23e4e`, `705501a`):
 
 ## Design
 
-### Section 1 — Strategy D race condition investigation (do this FIRST)
+### Section 1 — Strategy D timing & early-exit investigation (do this FIRST)
 
-**Why first:** Other Phase A work assumes Strategy D might succeed. If it doesn't, the pipeline is still useful (we have B/C fallback) but the framing in popup should shift.
+**Why first:** Strategy D is already wired (`strategyD_livePlayerAPI`, content.js:226–257) with a 3-second internal postMessage timeout. The current pipeline behavior:
+- Hard navigation: `main_world.js` runs at `document_start` but `ytd-watch-flexy` doesn't exist yet → Strategy D's first call returns `null` after 3s.
+- The remaining ~17s of the 20s window races A/B/C. A and C will fail (no inline script, no signature). B may succeed if page isn't behind EU consent.
+- Net: most hard-navigation saves spend the full 20s and return null.
 
 **Investigation steps (no code yet, just diagnostic):**
 
-1. Open a YouTube watch page with extension loaded.
+1. Open a YouTube watch page with extension loaded (hard navigation, not SPA).
 2. Open DevTools console on the page.
 3. Run: `document.querySelector('ytd-watch-flexy')?.__data?.playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks?.length`
 4. Run again after 2–3 seconds (SPA hydration time).
-5. Open the background service worker console. Look for `DOPAQUEUE_RES_MAIN_PLAYER` log messages and `DopaQueue: GENRE_SCRAPED` with `transcriptLength`.
-6. Try a hard navigation (open a video in a new tab) vs. SPA navigation (click a related video). Compare.
+5. Open the background service worker console. Look for `DOPAQUEUE_RES_MAIN_PLAYER` and `DopaQueue: GENRE_SCRAPED` with `transcriptLength`.
+6. Compare hard nav vs SPA nav.
 
 **Expected findings:**
-- Hard navigation: `main_world.js` runs at `document_start`, but `ytd-watch-flexy` doesn't exist yet. Returns null. By the time `content.js` (document_idle) runs and asks for tracks, main world's `extractMainWorldPlayerResponse()` is still returning null on first call.
-- SPA navigation: by the time user clicks Save, DOM is hydrated. Strategy D should succeed.
+- Hard nav: Strategy D times out at 3s returning null; A/B/C continue for 17s; final result null.
+- SPA nav: DOM is hydrated when user clicks Save; Strategy D returns tracks; transcript fetched within 2–5s.
 
-**If the diagnosis is confirmed:** the fix is to make `main_world.js` poll/watch for `ytd-watch-flexy` appearance and postMessage when it becomes available. **Implementation is in scope of Phase A**, but design depends on investigation result.
+**The fix (in Phase A scope):** fold the "no caption tracks" early-exit into Strategy D itself. When main world returns a player response with `captionTracks.length === 0`, Strategy D short-circuits to `'unavailable'` immediately (~500ms after page idle) instead of waiting for the full A/B/C race. This is a small change inside `strategyD_livePlayerAPI`, not a new strategy.
+
+**Why fold into D:** it reuses the existing main-world probe, avoids duplicate DOM inspection, and keeps the 4-strategy race semantics intact for the happy path.
 
 ### Section 2 — Cache schema extensions
 
@@ -93,7 +100,7 @@ Already implemented (recent commits `0d102b2`, `5f8cfaa`, `ac23e4e`, `705501a`):
   transcript: string | null,                  // existing
   transcriptState: 'pending' | 'ready' | 'unavailable' | null,  // NEW
   transcriptCheckedAt: number,                // NEW — Date.now() of last attempt
-  transcriptReason: 'no_caption_tracks' | 'all_strategies_failed' | 'cors' | 'timeout' | 'cached' | null,  // NEW
+  transcriptReason: 'no_caption_tracks' | 'all_strategies_failed' | 'cors' | 'timeout' | null,  // NEW
   lastAttempts: [...]                         // existing — kept
 }
 ```
@@ -115,40 +122,37 @@ Already implemented (recent commits `0d102b2`, `5f8cfaa`, `ac23e4e`, `705501a`):
 
 **File:** `extension/src/content/content.js`
 
-**Change A:** Add early-exit in `scrapeAll()` before racing strategies.
+**Change A: Fold early-exit into `strategyD_livePlayerAPI` (line 226).** Reduce the postMessage probe budget from 3000ms → 500ms. When main-world returns a player response with `captionTracks.length === 0`, throw a sentinel error that `mustFindTranscript` catches and re-classifies as `'unavailable'`. (Implementation detail: return a special `{ state: 'unavailable', reason: 'no_caption_tracks' }` object from D, not throw — easier for the `Promise.any` semantics.)
 
 ```js
-// New: probe main world once with a 500ms budget; if captionTracks is null/empty, short-circuit
-const tracksFromMain = await probeMainWorldTracks(videoId).catch(() => null);
-if (tracksFromMain === null) {
-  // main world unreachable / no player response — continue to full race
-} else if (tracksFromMain.length === 0) {
-  return { url, genre, channel, transcript: null, transcriptState: 'unavailable', transcriptReason: 'no_caption_tracks' };
+// Inside strategyD_livePlayerAPI, after extracting tracks:
+if (tracksFromMain && tracksFromMain.length === 0) {
+  return { __unavailable: true, reason: 'no_caption_tracks' };
 }
 ```
 
-**Change B:** Wrap each strategy in try/catch and capture failure reason.
+**Change B: Update `mustFindTranscript` (line 281) to recognize the sentinel.** Returns `{ transcript, state, reason }` instead of throwing.
 
-```js
-// Strategy wrappers (e.g. strategyA_DOM_Strategy) return either { transcript } or { reason }
-```
+**Change C: Update `scrapeAll` (line 288) to populate `transcriptState` and `transcriptReason`** from the winning strategy's result, defaulting to `'unavailable'` / `'all_strategies_failed'` on timeout.
 
-**Change C:** Extend `GENRE_SCRAPED` payload.
+**Change D: Extend `GENRE_SCRAPED` payload.**
 
 ```js
 {
   type: 'GENRE_SCRAPED',
   url, genre, channel, transcript,
-  transcriptState: 'ready' | 'unavailable',  // NEW
-  transcriptReason: string | null             // NEW
+  transcriptState: 'pending' | 'ready' | 'unavailable',  // NEW (matches cache schema exactly)
+  transcriptReason: string | null                          // NEW
 }
 ```
 
-**Change D:** Add `TRANSCRIPT_PENDING` broadcast at start of `scrapeAll()`.
+**Change E: Add `TRANSCRIPT_PENDING` broadcast at start of `scrapeAll()`.**
 
 ```js
 chrome.runtime.sendMessage({ type: 'TRANSCRIPT_PENDING', url, timestamp: Date.now() });
 ```
+
+**Vocabulary note:** popup state machine uses **identical values** to `transcriptState` cache field: `'pending' | 'ready' | 'unavailable'`. No `'fetching'` alias. The popup's `'fetching'` display string is mapped from `'pending'` at the UI layer only.
 
 ### Section 4 — Background SW state write
 
@@ -162,28 +166,50 @@ chrome.runtime.sendMessage({ type: 'TRANSCRIPT_PENDING', url, timestamp: Date.no
 
 **File:** `extension/src/popup/App.jsx`
 
-- Replace `transcriptStatus` enum: `'fetching' | 'ready' | 'unavailable'` (drop `'success'` and `'failed'`).
+- Replace `transcriptStatus` enum (currently `'fetching' | 'success' | 'failed'`) with `'pending' | 'ready' | 'unavailable'` — **matches cache `transcriptState` field exactly**. No aliases.
 - On mount, read `dq_scrape_cache[pageInfo.url]?.transcriptState`:
   - `'ready'` → show `✓ transcript ready` immediately, don't re-fetch
   - `'unavailable'` → show `⚠ transcript unavailable` immediately, don't re-fetch
   - `null` / `'pending'` → start fetch and show `⏳ fetching…`
 - Subscribe to `chrome.runtime.onMessage` for live `GENRE_SCRAPED` updates; update pill on receipt.
-- Keep the 23s popup-side failsafe (matches the 20s pipeline + margin) but change the displayed message to `⚠ transcript unavailable` instead of "failed".
-- `enqueueFallback()` only fires when transcript is unavailable AND user is logged in (already correct in current code).
+- **Reduce popup failsafe from 23s → 21s.** Pipeline global timeout is 20s; 1s margin is enough for the broadcast to land. 23s was arbitrary.
+- `enqueueFallback()` only fires when transcript is unavailable AND user is logged in (see Section 8 for the `currentUrl` bug fix).
 
 ### Section 6 — Dashboard reason display
 
 **File:** `extension/src/dashboard/App.jsx`
 
-- When rendering a video without transcript, show `transcriptReason` subtly if set:
-  - `'no_caption_tracks'` → "No captions on YouTube for this video"
-  - `'all_strategies_failed'` → "Couldn't fetch captions (try saving again later)"
-  - `'timeout'` → "Network was slow — try saving again"
+- **Canonical render site:** `ReadView` / transcript reader component, around line 797 (the `'No transcript available for this video.'` fallback at line 797). Pin this site as the single source of truth for the reason display.
+- Other scrape reads (lines 417, 473, 547, 955) are for queue list views — they do NOT need reason display in Phase A. Adding it to all sites is scope creep.
+- Replace the existing `'No transcript available for this video.'` fallback with reason-conditional copy:
+  - `transcriptReason === 'no_caption_tracks'` → "No captions on YouTube for this video."
+  - `transcriptReason === 'timeout'` → "Network was slow — try saving again."
+  - `transcriptReason === 'all_strategies_failed'` → "Couldn't fetch captions. Try saving again later."
+  - `transcriptReason === 'cors'` → "Browser blocked the captions request."
+  - `transcriptReason === null` (or unset) → fallback to existing "No transcript available for this video."
 - No other dashboard changes. `autoTagItem` is unchanged — see Section 7.
 
 ### Section 7 — Auto-tagging (confirmed not affected)
 
 `autoTagItem` (`shared/ai.js`) reads `scrapeResult?.transcript || ''` and falls back to title + URL when transcript is null. Phase A does not modify this function, its caller, or its inputs. **No regressions.**
+
+### Section 8 — Fix `enqueueFallback` undefined `currentUrl` bug
+
+**Pre-existing master bug, in scope for Phase A** (small, related to Section 5 UX work).
+
+**File:** `extension/src/popup/App.jsx:252`
+
+```js
+// Current (broken):
+const videoId = extractYouTubeVideoId(currentUrl);  // currentUrl is undefined here
+
+// Fixed:
+const videoId = extractYouTubeVideoId(pageInfo.url);  // pageInfo is the page-info state object
+```
+
+**Why fix in Phase A:** `enqueueFallback` is the server-fallback path that Phase A relies on. If `currentUrl` is `undefined`, `extractYouTubeVideoId` returns `null`, the enqueue early-returns, and the server fallback silently does nothing. The whole `transcript_queue` wiring in master is currently dead code because of this bug.
+
+**Verification:** after fix, manually save a logged-in user with no transcript. Check Supabase `transcript_queue` table for a new pending row.
 
 ---
 
@@ -261,17 +287,21 @@ chrome.runtime.sendMessage({ type: 'TRANSCRIPT_PENDING', url, timestamp: Date.no
 
 **Reserved hook — NOT implemented in Phase A.**
 
-When BYOK + agentic features land in Phase B:
+**Contract for Phase B (pin now so Phase A leaves the right footprint):**
 
-- After save, if `transcriptState === 'unavailable'`, dashboard's tag flow can call new `agenticTagItem(title, url, channel, genre)` (added Phase B).
-- This sends `title + url + channel + genre` to user's configured BYOK LLM (`dq_ai_config` already in `shared/ai.js`) and asks for 3–5 inferred topic tags.
-- Merge returned tags into `autoTagItem` output, dedupe.
-- When transcripts arrive late (Phase B server-worker fallback), re-run `autoTagItem` and merge.
+- Phase B adds a new exported function `agenticTagItem(input)` in `extension/src/shared/ai.js`:
+  ```js
+  agenticTagItem({ title, url, channel, genre }) → Promise<string[]>
+  ```
+- It reads `dq_ai_config` (already exists) and calls the configured BYOK LLM with a prompt requesting 3–5 inferred topic tags from the input fields alone (no transcript).
+- **Phase A does NOT call `agenticTagItem`.** Phase A leaves the hook in place by ensuring `dq_scrape_cache[url].transcriptState` is set correctly so Phase B's caller can detect `'unavailable'` and choose to call `agenticTagItem` instead of relying solely on keyword taxonomy.
+- **Caller (Phase B):** in `dashboard/App.jsx:971`, wrap the existing `autoTagItem(...)` call. If `scrapeResult?.transcriptState === 'unavailable'`, also call `await agenticTagItem({ title, url, channel, genre })` and merge results into the tag set before rendering.
+- Late transcript arrival (Phase B server-worker writes back to `scrape_cache`): also Phase B. Re-run `autoTagItem` with the now-available transcript and merge.
 
-**Phase A leaves these hooks:**
-- `dq_scrape_cache[url].transcriptState` correctly set so Phase B's `unavailable` branch can detect
-- `dq_ai_config` storage key already exists
-- `autoTagItem` taxonomy intentionally conservative — Phase B's LLM is the upgrade path
+**Phase A leaves these in place:**
+- `dq_scrape_cache[url].transcriptState` correctly set (Section 2 schema)
+- `dq_ai_config` storage key in `shared/ai.js`
+- `autoTagItem` signature unchanged (so Phase B can wrap without rewiring)
 
 **Phase A does NOT add:**
 - `agenticTagItem` function (Phase B)
@@ -283,7 +313,7 @@ When BYOK + agentic features land in Phase B:
 ## Risks & Open Questions
 
 1. **Strategy D race condition** — biggest unknown. Section 1 investigation must happen first. If confirmed broken on hard navigation, Phase A expands to include the fix.
-2. **Cache invalidation for "transcript unavailable".** What if a creator adds captions to a previously-empty video? Current cache never expires. Mitigation: cache TTL of 30 days, or trust creators to add captions rarely enough that this is acceptable. Defer to Phase B with telemetry.
+2. **Cache invalidation for "transcript unavailable".** Ship with **no TTL** in Phase A. A creator adding captions to a previously-empty video is rare enough that it's acceptable; users can manually re-trigger by clearing the cache row. Revisit in Phase B with telemetry — measure how often users re-save videos and how often `'unavailable'` cache hits would be wrong.
 3. **Sync of new fields to Supabase.** Existing `dq_scrape_cache` row merge handles additive fields. Should be verified with manual cloud-sync test before shipping.
 4. **Migration of existing users.** Pre-Phase-A cache rows have `transcriptState: null`. Popup fallback handles this (treat as fresh fetch needed).
 5. **20s timeout on slow connections.** EU/Asia users on throttled connections may see frequent `'unavailable'`. Defer to Phase C with telemetry.
@@ -292,13 +322,13 @@ When BYOK + agentic features land in Phase B:
 
 ## Implementation Order
 
-1. **Strategy D investigation** (Section 1, diagnostic only)
+1. **Strategy D investigation** (Section 1, diagnostic only — confirms root cause)
 2. Add new fields + helpers in `extension/src/shared/storage.js`
-3. Update `extension/src/content/content.js` (early-exit + state derivation + extended broadcast)
+3. Update `extension/src/content/content.js` (fold early-exit into Strategy D, 3s→500ms probe, state derivation, extended broadcast)
 4. Update `extension/src/background/background.js` (state write + `TRANSCRIPT_PENDING` handler)
-5. Update `extension/src/popup/App.jsx` (cache-on-mount + pill UX)
-6. Update `extension/src/dashboard/App.jsx` (reason display)
-7. Add unit tests for new helpers
+5. Update `extension/src/popup/App.jsx` (Section 8 bug fix → Section 5 cache-on-mount → pill UX → failsafe 23s→21s)
+6. Update `extension/src/dashboard/App.jsx` (reason display at canonical render site)
+7. Add unit tests for new helpers (`deriveTranscriptState`, `getCachedTranscriptState`, `isUncacheableTranscript`)
 8. Run `npm run verify` + manual smoke test
 9. Update `ARCHITECTURE.md` Debugging section with new log keys
 
