@@ -227,6 +227,21 @@ async function strategyC_timedtextApi(videoId) {
 
 // ─── Main entry point ────────────────────────────────────────────────────────
 
+/**
+ * Wraps a strategy so it REJECTS if the result is null/empty.
+ * This is needed because Promise.any() only resolves with the first
+ * *fulfilled* promise — but if we return null, that's still "fulfilled"
+ * and Promise.any() picks up a null immediately instead of waiting for
+ * a real result. By throwing when null, we force Promise.any() to wait
+ * for the next strategy to try.
+ */
+function mustFindTranscript(strategyPromise) {
+  return strategyPromise.then(result => {
+    if (!result || result.length < 30) throw new Error('no transcript');
+    return result;
+  });
+}
+
 async function scrapeAll() {
   const url = location.href;
   const genre = scrapeCategory();
@@ -235,17 +250,21 @@ async function scrapeAll() {
   const videoId = extractVideoId(url);
   if (!videoId) return { url, genre, channel, transcript: null };
 
-  // Run all three strategies in parallel, take the first to succeed
-  const timeout = new Promise(resolve => setTimeout(() => resolve(null), TRANSCRIPT_TIMEOUT_MS));
+  // Race all three strategies in parallel.
+  // mustFindTranscript converts null/empty results to rejections so
+  // Promise.any() only resolves when a strategy actually finds text.
+  const racePromise = Promise.any([
+    mustFindTranscript(strategyA_DOM(videoId)),
+    mustFindTranscript(strategyB_background(videoId)),
+    mustFindTranscript(strategyC_timedtextApi(videoId)),
+  ]).catch(() => null); // All three failed → return null
 
-  const transcript = await Promise.race([
-    Promise.any([
-      strategyA_DOM(videoId),
-      strategyB_background(videoId),
-      strategyC_timedtextApi(videoId),
-    ]).catch(() => null),
-    timeout,
-  ]);
+  // Hard timeout ensures the popup spinner never hangs
+  const timeoutPromise = new Promise(resolve =>
+    setTimeout(() => resolve(null), TRANSCRIPT_TIMEOUT_MS)
+  );
+
+  const transcript = await Promise.race([racePromise, timeoutPromise]);
 
   return { url, genre, channel, transcript: transcript || null };
 }
