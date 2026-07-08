@@ -11,7 +11,7 @@ import {
   subscribe,
   getSavedVideos,
 } from '../shared/storage.js';
-import { isChannelUrl, extractChannelId, STORAGE_KEYS } from '../shared/constants.js';
+import { isChannelUrl, extractChannelId, extractYouTubeVideoId, STORAGE_KEYS } from '../shared/constants.js';
 import { getCurrentUser, signInWithGoogle, signOut, isLoggedIn, getUserEmail, getUserName } from '../shared/auth.js';
 import { syncWithCloud } from '../shared/sync.js';
 
@@ -61,8 +61,18 @@ function usePopupData() {
           // can propagate the removal) — they must be excluded here,
           // otherwise a video removed from the dashboard would show
           // as "Already Saved" forever in the popup.
+          //
+          // Match by normalized video id when possible so the same video
+          // opened with different tracking params (t=, si=, list=, pp=)
+          // isn't treated as a new, separate save.
           const queue = getQueue();
-          setAlreadySaved(queue.some((i) => i.url === tab.url && !i.deleted));
+          const tabVideoId = extractYouTubeVideoId(tab.url);
+          setAlreadySaved(queue.some((i) => {
+            if (i.deleted) return false;
+            if (i.url === tab.url) return true;
+            if (tabVideoId && extractYouTubeVideoId(i.url) === tabVideoId) return true;
+            return false;
+          }));
         });
       } else {
         setTabError('Extension APIs unavailable in this context.');
@@ -179,7 +189,15 @@ export default function PopupApp() {
       // items stay in the queue so the sync engine can propagate the
       // removal), resurrect that entry instead of adding a duplicate
       // row that would pile up on every delete-then-resave cycle.
-      const existing = getQueue().find((i) => i.url === pageInfo.url && i.deleted);
+      // Match by exact URL or by normalized video id (ignoring volatile
+      // tracking params) so re-saving the same video reuses the row.
+      const pageVideoId = extractYouTubeVideoId(pageInfo.url);
+      const existing = getQueue().find((i) =>
+        i.deleted && (
+          i.url === pageInfo.url ||
+          (pageVideoId && extractYouTubeVideoId(i.url) === pageVideoId)
+        )
+      );
 
       if (isChannel) {
         if (existing) {

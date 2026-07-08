@@ -139,32 +139,9 @@ async function scrapeTranscript() {
       }
     }
 
-    // 2) Fallback: ask YouTube timedtext list endpoint for available tracks
-    const vid = extractVideoIdFromUrl(location.href);
-    if (vid) {
-      try {
-        const listUrl = `/api/timedtext?type=list&v=${vid}`;
-        const lr = await pageFetch(listUrl);
-        if (lr?.ok) {
-          const listDoc = new DOMParser().parseFromString(lr.text, 'text/xml');
-          const track = listDoc.querySelector('track[lang_code]');
-          if (track) {
-            const trackUrl = track.getAttribute('url') || track.getAttribute('src') || null;
-            const full = trackUrl ? (trackUrl.startsWith('http') ? trackUrl : `${location.origin}${trackUrl}`) : null;
-            if (full) {
-              try {
-                const tr = await pageFetch(full);
-                if (tr?.ok) return parseTimedTextXml(tr.text);
-              } catch (e) {
-                // ignore and continue
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
+    // 2) Fallback strategy removed: the /api/timedtext?type=list endpoint
+    // was retired by YouTube and always returns empty, so it only added
+    // latency. Caption tracks come from ytInitialPlayerResponse above.
   } catch (e) {
     console.error('DopaQueue: Error scraping transcript', e);
   }

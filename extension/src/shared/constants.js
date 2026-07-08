@@ -13,7 +13,13 @@ export const STORAGE_KEYS = {
   NOTES: 'dq_notes',
   WHITELIST: 'dq_whitelist',
   POMODORO: 'dq_pomodoro',
+  URL_CHANNELS: 'dq_url_channels',
 };
+
+// Cap on the eviction-proof url->channel map used for the whitelist
+// check. Tiny values (a URL + a channel name), so a higher cap than the
+// scrape cache is fine.
+export const MAX_URL_CHANNEL_ENTRIES = 200;
 
 // Cap on cached scrape results (genre/channel/transcript per URL), kept
 // small since transcripts can be large. Shared between storage.js
