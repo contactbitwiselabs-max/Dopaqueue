@@ -31,10 +31,10 @@ function detectContentType(url) {
 }
 
 const TYPE_CONFIG = {
-  video:  { label: 'Video', icon: PlayCircle, color: 'bg-blue-500/15 text-blue-400 border-blue-500/20' },
-  short:  { label: 'Short', icon: Zap,        color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/20' },
-  reel:   { label: 'Reel',  icon: Film,       color: 'bg-pink-500/15 text-pink-400 border-pink-500/20' },
-  post:   { label: 'Post',  icon: Image,      color: 'bg-green-500/15 text-green-400 border-green-500/20' },
+  video:  { label: 'Video', icon: PlayCircle, color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+  short:  { label: 'Short', icon: Zap,        color: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' },
+  reel:   { label: 'Reel',  icon: Film,       color: 'bg-pink-500/10 text-pink-400 border-pink-500/20' },
+  post:   { label: 'Post',  icon: Image,      color: 'bg-green-500/10 text-green-400 border-green-500/20' },
 };
 
 function formatDateTime(ts) {
@@ -1038,7 +1038,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
   };
 
   return (
-    <div className="group bg-zinc-900/50 border border-white/5 rounded-2xl overflow-hidden hover:border-white/20 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-lime-500/10 flex flex-col">
+    <div className="group group bg-zinc-900/80 border border-zinc-800/80 rounded-2xl overflow-hidden hover:border-zinc-700 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/50 flex flex-col">
       <div className="h-40 bg-zinc-800 relative overflow-hidden shrink-0">
         {thumbUrl ? (
           <img src={thumbUrl} alt="" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
