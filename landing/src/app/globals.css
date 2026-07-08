@@ -17,6 +17,16 @@
   --animate-shimmer: shimmer 2s linear infinite;
   --animate-meteor: meteor 5s linear infinite;
   --animate-marquee: marquee 25s linear infinite;
+  --animate-marquee-slow: marquee-half 36s linear infinite;
+}
+
+@keyframes marquee-half {
+  from {
+    transform: translateX(0%);
+  }
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 @keyframes shimmer {
@@ -52,17 +62,18 @@
 }
 
 :root {
-  /* Enforce Dark Mode for the Premium Look */
-  --background: #09090b;
+  /* Warm near-black + "plant" lime accent — the budget/garden identity,
+     deliberately away from the generic purple-gradient look. */
+  --background: #0a0a08;
   --foreground: #fafafa;
-  --primary: #7c3aed; /* vibrant purple */
-  --primary-foreground: #fafafa;
+  --primary: #a3e635; /* lime — growth / budget in the green */
+  --primary-foreground: #0a0a08;
   --secondary: #27272a;
   --secondary-foreground: #fafafa;
-  --accent: #1e1b4b;
+  --accent: #1a2e05;
   --accent-foreground: #fafafa;
   --border: #27272a;
-  --ring: #7c3aed;
+  --ring: #a3e635;
 }
 
 body {
@@ -76,4 +87,34 @@ body {
 ::selection {
   background-color: var(--primary);
   color: var(--primary-foreground);
+}
+
+/* Subtle film-grain texture — kills the flat "template" look without
+   shipping an image asset. Applied via ::before so it never intercepts
+   pointer events or affects layout. */
+.bg-grain {
+  position: relative;
+  isolation: isolate;
+}
+
+.bg-grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+}
+
+/* Accessibility: honour users who opt out of motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
