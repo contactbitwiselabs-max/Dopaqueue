@@ -132,29 +132,66 @@ Return ONLY a valid JSON object with:
   return extractLocalInsights(video.title, transcript);
 }
 
-// Auto-tagging heuristic engine (instant local keyword topic matching)
-export function autoTagItem(title = '', transcript = '') {
-  const combined = `${title} ${transcript}`.toLowerCase();
-  const taxonomy = [
-    { tag: 'ai', keywords: ['ai', 'artificial intelligence', 'llm', 'gpt', 'gemini', 'neural', 'deep learning'] },
-    { tag: 'react', keywords: ['react', 'next.js', 'jsx', 'hooks', 'frontend', 'tailwind'] },
-    { tag: 'javascript', keywords: ['javascript', 'typescript', 'js', 'node.js', 'npm'] },
-    { tag: 'systems', keywords: ['systems', 'architecture', 'distributed', 'microservices', 'kernel'] },
-    { tag: 'database', keywords: ['sql', 'postgres', 'database', 'supabase', 'redis', 'nosql'] },
-    { tag: 'rust', keywords: ['rust', 'cargo', 'borrow checker', 'concurrency'] },
-    { tag: 'neuroscience', keywords: ['dopamine', 'brain', 'neuroscience', 'focus', 'attention', 'habit'] },
-    { tag: 'productivity', keywords: ['productivity', 'workflow', 'time management', 'second brain', 'pomodoro'] },
-    { tag: 'career', keywords: ['interview', 'career', 'resume', 'engineering manager', 'leadership'] },
-    { tag: 'design', keywords: ['ui/ux', 'design', 'figma', 'typography', 'user experience'] },
-  ];
+// Auto-tagging heuristic engine (instant local keyword topic matching + URL metadata scraping)
+export function autoTagItem(title = '', transcript = '', url = '') {
+  const matched = new Set();
 
-  const matched = [];
-  for (const { tag, keywords } of taxonomy) {
-    if (keywords.some((k) => combined.includes(k))) {
-      matched.push(tag);
+  // 1. Extract explicit hashtags (#coding, #shorts, #tech, etc.) from title/transcript
+  const hashtagRegex = /#([a-zA-Z0-9_-]{2,25})/g;
+  let match;
+  while ((match = hashtagRegex.exec(`${title} ${transcript}`))) {
+    matched.add(match[1].toLowerCase());
+  }
+
+  // 2. Extract keywords from URL slug / path metadata
+  if (url) {
+    try {
+      const u = new URL(url);
+      const slugWords = u.pathname
+        .split(/[\/\-_]/)
+        .filter((w) => w.length > 3 && !/^\d+$/.test(w));
+      slugWords.forEach((w) => {
+        if (['shorts', 'watch', 'video', 'reel', 'reels', 'channel'].includes(w.toLowerCase())) {
+          matched.add(w.toLowerCase());
+        }
+      });
+    } catch (e) {
+      // Ignore URL parse errors
     }
   }
 
-  return matched.length > 0 ? matched : ['learning'];
+  const combined = `${title} ${transcript} ${url}`.toLowerCase();
+
+  // 3. Built-in common tags taxonomy (30+ topics)
+  const taxonomy = [
+    { tag: 'ai', keywords: ['ai', 'artificial intelligence', 'llm', 'gpt', 'gemini', 'neural', 'deep learning', 'machine learning'] },
+    { tag: 'react', keywords: ['react', 'next.js', 'jsx', 'hooks', 'frontend', 'tailwind', 'redux'] },
+    { tag: 'javascript', keywords: ['javascript', 'typescript', 'js', 'node.js', 'npm', 'es6'] },
+    { tag: 'python', keywords: ['python', 'django', 'flask', 'fastapi', 'pytorch', 'pandas'] },
+    { tag: 'systems', keywords: ['systems', 'architecture', 'distributed', 'microservices', 'kernel', 'linux', 'docker', 'kubernetes'] },
+    { tag: 'database', keywords: ['sql', 'postgres', 'database', 'supabase', 'redis', 'nosql', 'mongodb'] },
+    { tag: 'rust', keywords: ['rust', 'cargo', 'borrow checker', 'concurrency'] },
+    { tag: 'neuroscience', keywords: ['dopamine', 'brain', 'neuroscience', 'focus', 'attention', 'habit', 'psychology'] },
+    { tag: 'productivity', keywords: ['productivity', 'workflow', 'time management', 'second brain', 'pomodoro', 'notion', 'obsidian'] },
+    { tag: 'career', keywords: ['interview', 'career', 'resume', 'engineering manager', 'leadership', 'job search'] },
+    { tag: 'design', keywords: ['ui/ux', 'design', 'figma', 'typography', 'user experience', 'css'] },
+    { tag: 'finance', keywords: ['finance', 'investing', 'money', 'stocks', 'crypto', 'wealth', 'budget'] },
+    { tag: 'business', keywords: ['business', 'startup', 'marketing', 'sales', 'entrepreneur', 'saas'] },
+    { tag: 'fitness', keywords: ['fitness', 'workout', 'health', 'nutrition', 'exercise', 'gym'] },
+    { tag: 'tutorial', keywords: ['tutorial', 'how to', 'guide', 'walkthrough', 'course', 'learn'] },
+    { tag: 'podcast', keywords: ['podcast', 'interview', 'talk', 'conversation', 'episode'] },
+    { tag: 'review', keywords: ['review', 'vs', 'comparison', 'unboxing', 'first impressions'] },
+    { tag: 'coding', keywords: ['code', 'coding', 'developer', 'programming', 'software', 'bug', 'algorithm'] },
+    { tag: 'data-science', keywords: ['data science', 'analytics', 'statistics', 'data engineering'] },
+  ];
+
+  for (const { tag, keywords } of taxonomy) {
+    if (keywords.some((k) => combined.includes(k))) {
+      matched.add(tag);
+    }
+  }
+
+  const result = Array.from(matched);
+  return result.length > 0 ? result : ['learning', 'general'];
 }
 

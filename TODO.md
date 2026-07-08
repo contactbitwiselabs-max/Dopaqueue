@@ -81,17 +81,17 @@
 - [x] Convert Next.js app into installable Mobile Companion PWA
 - [x] Prepare for Chrome Web Store launch with $49 Lifetime Deal (LTD) option
 
-### Phase 9: Advanced Second Brain Integrations (Next Up)
-- [ ] Implement Two-Way Sync Webhooks for Notion, Obsidian & Logseq
-- [ ] Build customizable Markdown & YAML Frontmatter Export Templates
-- [ ] Add Auto-Tagging heuristic for saved videos based on transcript keywords
+### Phase 9: Advanced Second Brain Integrations (Completed)
+- [x] Implement Two-Way Sync Webhooks for Notion, Obsidian & Logseq
+- [x] Build customizable Markdown & YAML Frontmatter Export Templates
+- [x] Add Auto-Tagging heuristic for saved videos based on transcript keywords, hashtags, and URL metadata
 
-### Phase 10: Deep Focus & Smart Dopamine Interventions
-- [ ] Implement Channel Whitelisting (educational channels don't drain Dopamine Budget)
-- [ ] Build Pomodoro Focus Mode inside the Speed Bump overlay
-- [ ] Add domain-specific scroll timers for Shorts vs. Reels vs. Feeds
+### Phase 10: Deep Focus & Smart Dopamine Interventions (Completed)
+- [x] Implement Channel Whitelisting (educational channels don't drain Dopamine Budget)
+- [x] Build Pomodoro Focus Mode inside the Speed Bump overlay and Dashboard
+- [x] Add domain-specific scroll timers for Shorts vs. Reels vs. Feeds
 
-### Phase 11: Monetization & License Verification
+### Phase 11: Monetization & License Verification (Next Up)
 - [ ] Integrate Lemon Squeezy / Stripe checkout for Pro ($4.99/mo) and $49 Lifetime Deal (LTD)
 - [ ] Build license key activation flow in Extension Settings
 - [ ] Implement Pro-only feature gates (unlimited managed AI summaries & team sync)
@@ -112,11 +112,12 @@
 
 | Component | Tests | Status |
 |-----------|-------|--------|
-| extractYouTubeVideoId | 5 | ✅ All pass |
-| getPlantStatus | 5 | ✅ All pass |
-| isMindlessScrollUrl | 3 | ✅ All pass |
-| isChannelUrl | 8 | ✅ All pass |
-| **Total** | **21** | **✅ All pass** |
+| extractYouTubeVideoId | 9 | ✅ All pass |
+| getPlantStatus | 9 | ✅ All pass |
+| isMindlessScrollUrl | 9 | ✅ All pass |
+| isChannelUrl | 6 | ✅ All pass |
+| extractChannelId | 5 | ✅ All pass |
+| **Total** | **38** | **✅ All pass** |
 
 Run tests: `npm run verify`
 

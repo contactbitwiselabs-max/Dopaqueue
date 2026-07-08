@@ -118,12 +118,15 @@ export default function PopupApp() {
   }, []);
 
   const handleSignIn = async () => {
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html?auth=true') });
+      window.close();
+      return;
+    }
     setAuthBusy(true);
     setAuthError(null);
     try {
       await signInWithGoogle();
-      // The OAuth flow redirects to dashboard.html — the popup may close
-      // before this resolves. Refresh user state opportunistically.
       const current = await getCurrentUser();
       setUser(current);
     } catch (err) {

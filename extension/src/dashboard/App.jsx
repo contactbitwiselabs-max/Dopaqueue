@@ -314,6 +314,9 @@ export default function App() {
 
     supabaseClient.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user || null);
+      if (typeof window !== 'undefined' && window.location.search.includes('auth=true')) {
+        setShowAuth(true);
+      }
     });
 
     const { data: authListener } = supabaseClient.auth.onAuthStateChange((_event, session) => {
@@ -493,7 +496,15 @@ export default function App() {
   }
 
   if (showAuth) {
-    return <AuthPage onAuthSuccess={() => setShowAuth(false)} />;
+    return (
+      <AuthPage
+        onAuthSuccess={async () => {
+          const { data: { session } } = await supabaseClient.auth.getSession();
+          setUser(session?.user || null);
+          setShowAuth(false);
+        }}
+      />
+    );
   }
 
   // Filter videos by content type, review urgency, and search query
@@ -928,10 +939,22 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
   };
 
   const handleAutoTag = () => {
-    const autoTags = autoTagItem(video.title, scrapeResult?.transcript || '');
+    const autoTags = autoTagItem(video.title, scrapeResult?.transcript || '', video.url);
     const currentTags = new Set(video.tags || []);
     autoTags.forEach(t => currentTags.add(t));
     onUpdateTags(video.id, Array.from(currentTags));
+  };
+
+  const handleShareCard = async () => {
+    try {
+      const payload = generateSharePayload(video.title, 'DopaQueue User', [video]);
+      const link = encodeShareLink(payload, window.location.origin);
+      const textToCopy = `${video.title}\n${video.url}\n\nShareable Review Deck: ${link}`;
+      await navigator.clipboard.writeText(textToCopy);
+      alert('Video & review link copied to clipboard!');
+    } catch (err) {
+      alert('Video link: ' + video.url);
+    }
   };
 
   const handlePushVault = async () => {
@@ -1073,6 +1096,14 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
           >
             Watch
           </a>
+
+          <button
+            onClick={handleShareCard}
+            className="p-2 text-blue-400 hover:text-white bg-blue-500/10 hover:bg-blue-600 rounded-xl transition-colors border border-blue-500/20"
+            title="Copy Shareable Link to Clipboard"
+          >
+            <Share2 className="w-5 h-5" />
+          </button>
 
           <button
             onClick={handlePushVault}

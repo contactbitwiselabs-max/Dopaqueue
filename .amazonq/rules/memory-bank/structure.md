@@ -56,7 +56,7 @@ Dopaqueue/
 - **Message passing**: Content script → background via `chrome.runtime.sendMessage` (types: `GENRE_SCRAPED`, `GET_SCRAPE`). Background keeps message channel open with `return true` for async responses.
 - **Alarm-based budget tick**: A 1-minute repeating alarm (`budgetTick`) drives budget decrement. Only decrements when the active tab is a mindless-scroll URL and NOT a whitelisted educational channel (`isWhitelistedChannel(scrape.channel)`).
 - **Second Brain Export & Two-Way Sync**: `shared/export.js` supports local file downloads (`markdown`, `csv`, `json`) as well as `formatWithTemplate` (YAML frontmatter substitution) and `pushToWebhook` for two-way sync with Notion, Obsidian, and Make/Zapier.
-- **Auto-Tag Heuristic Engine**: `shared/ai.js` provides `autoTagItem(title, transcript)` using local instant keyword matching against a topic taxonomy (`#ai`, `#react`, `#neuroscience`, `#productivity`, etc.).
+- **Auto-Tag Heuristic Engine**: `shared/ai.js` provides `autoTagItem(title, transcript, url)` using hashtag extraction (`#tag`), URL metadata parsing, and instant keyword matching against a 30+ topic taxonomy (`#ai`, `#react`, `#python`, `#neuroscience`, `#productivity`, etc.).
 - **Pomodoro Focus Blocks**: Local timer block managed in `PomodoroBar` within the dashboard header and persisted via `dq_pomodoro`.
 
 ### Two React Entry Points

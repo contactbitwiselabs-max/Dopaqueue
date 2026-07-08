@@ -25,6 +25,7 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
   const [webhookUrl, setWebhookUrl] = useState('');
   const [exportTemplate, setExportTemplate] = useState('');
   const [savedSettingsMsg, setSavedSettingsMsg] = useState(false);
+  const [groups, setGroups] = useState(new Map());
 
   useEffect(() => {
     async function loadUserAndSettings() {
