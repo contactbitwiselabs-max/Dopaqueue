@@ -147,14 +147,9 @@ async function strategyA_DOM(videoId) {
   const tracks = getTrackList(player);
   if (!tracks || tracks.length === 0) return null;
 
-  // Prefer English; if not found try any English variant, then any track
-  const preferred =
-    tracks.find(t => t.languageCode === 'en') ||
-    tracks.find(t => t.languageCode?.startsWith('en')) ||
-    tracks[0];
-
+  const preferred = pickBestTrack(tracks);
   if (!preferred?.baseUrl) return null;
-  return fetchAndParseCaptionUrl(preferred.baseUrl);
+  return fetchAndParseCaptionUrl(ensureJson3(preferred.baseUrl));
 }
 
 // ─── Strategy B: Background page fetch ──────────────────────────────────────
@@ -162,8 +157,8 @@ async function strategyB_background(videoId) {
   const res = await fetchPlayerResponseViaBackground(videoId);
   if (!res) return null;
 
-  // Background may return transcript directly if it already parsed it
-  if (res.transcript && res.transcript.length > 30) return res.transcript;
+  // Background returns transcript directly if it already parsed it
+  if (res.transcript && res.transcript.length > 20) return res.transcript;
 
   // It may also return a captionTrackBaseUrl
   if (res.captionTrackBaseUrl) {
@@ -173,71 +168,123 @@ async function strategyB_background(videoId) {
 }
 
 // ─── Strategy C: YouTube Timedtext API ──────────────────────────────────────
-// YouTube exposes auto-generated captions at a stable REST endpoint.
-// This does NOT require ytInitialPlayerResponse at all.
 async function strategyC_timedtextApi(videoId) {
-  // YouTube's timedtext API supports these lang codes for auto-generated captions
-  // We first request with lang=en, and if that fails we request without a lang
-  // to get whatever the default/auto language is.
-  const baseParams = `v=${videoId}&fmt=json3&xorb=2&xobt=3&xovt=3`;
   const candidates = [
-    `https://www.youtube.com/api/timedtext?${baseParams}&lang=en&name=`,
-    `https://www.youtube.com/api/timedtext?${baseParams}&asr_langs=en&asrvc=1&lang=en`,
-    `https://www.youtube.com/api/timedtext?${baseParams}&lang=en`,
-    `https://www.youtube.com/api/timedtext?${baseParams}&kind=asr&lang=en`,
-    `https://www.youtube.com/api/timedtext?${baseParams}`, // No lang → default
+    `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=json3&lang=en&kind=asr`,
+    `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=json3&lang=en`,
+    `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en`,
+    `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=json3`,
   ];
 
   for (const url of candidates) {
-    const text = await fetchAndParseCaptionUrl(url);
-    if (text && text.length > 30) return text;
-
-    // Also try JSON3 format (newer YouTube endpoint)
     try {
       let rawText = null;
+      // Content script fetch (has page cookies)
       try {
         const r = await fetch(url, { credentials: 'include' });
         if (r.ok) rawText = await r.text();
-      } catch (e) {
+      } catch (e) { /* fall through */ }
+
+      // Background fetch fallback
+      if (!rawText) {
         rawText = await new Promise((resolve) => {
-          chrome.runtime.sendMessage({ type: 'PAGE_FETCH', url }, (res) => {
-            if (chrome.runtime.lastError || !res?.ok) return resolve(null);
-            resolve(res.text);
-          });
+          try {
+            chrome.runtime.sendMessage({ type: 'PAGE_FETCH', url }, (res) => {
+              if (chrome.runtime.lastError || !res?.ok) return resolve(null);
+              resolve(res.text);
+            });
+          } catch (e) { resolve(null); }
         });
       }
-      if (!rawText) continue;
+      if (!rawText || rawText.length < 20) continue;
 
-      // Try JSON3 parse
+      const parsed = parseTimedTextXml(rawText);
+      if (parsed && parsed.length > 20) return parsed;
+
+      // Try JSON3 parse (the fmt=json3 URLs return JSON)
       try {
         const json = JSON.parse(rawText);
         const events = json?.events || [];
         const pieces = events
           .filter(e => e.segs)
           .flatMap(e => e.segs.map(s => s.utf8 || ''))
-          .join(' ')
+          .join('')
+          .replace(/\n/g, ' ')
           .replace(/\s+/g, ' ')
           .trim();
-        if (pieces.length > 30) return pieces;
-      } catch (e) { /* not JSON, was XML — already tried above */ }
+        if (pieces.length > 20) return pieces;
+      } catch (e) { /* not JSON */ }
     } catch (e) { /* continue */ }
   }
   return null;
 }
 
+// ─── Strategy D: YouTube live player API ─────────────────────────────────────
+// On SPA navigations, <script> tags have STALE data from the initial load.
+// But YouTube's custom elements store the CURRENT player response in their
+// internal __data property. This strategy reads it directly.
+async function strategyD_livePlayerAPI(videoId) {
+  try {
+    // Try to get the player response from YouTube's DOM elements
+    const watchFlexy = document.querySelector('ytd-watch-flexy');
+    const playerResponse = watchFlexy?.__data?.playerResponse
+      || watchFlexy?.playerResponse
+      || watchFlexy?.data?.playerResponse;
+
+    if (playerResponse) {
+      const tracks = getTrackList(playerResponse);
+      if (tracks && tracks.length > 0) {
+        const preferred = pickBestTrack(tracks);
+        if (preferred?.baseUrl) {
+          return fetchAndParseCaptionUrl(ensureJson3(preferred.baseUrl));
+        }
+      }
+    }
+
+    // Alternative: try the movie_player API
+    const moviePlayer = document.querySelector('#movie_player');
+    if (moviePlayer && typeof moviePlayer.getPlayerResponse === 'function') {
+      const resp = moviePlayer.getPlayerResponse();
+      const tracks = getTrackList(resp);
+      if (tracks && tracks.length > 0) {
+        const preferred = pickBestTrack(tracks);
+        if (preferred?.baseUrl) {
+          return fetchAndParseCaptionUrl(ensureJson3(preferred.baseUrl));
+        }
+      }
+    }
+  } catch (e) {
+    // These DOM APIs may not be accessible from the content script's
+    // isolated world — that's expected, Strategy B handles it instead.
+  }
+  return null;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function pickBestTrack(tracks) {
+  return (
+    tracks.find(t => t.languageCode === 'en' && t.kind === 'asr') ||
+    tracks.find(t => t.languageCode === 'en') ||
+    tracks.find(t => t.languageCode?.startsWith('en') && t.kind === 'asr') ||
+    tracks.find(t => t.languageCode?.startsWith('en')) ||
+    tracks.find(t => t.kind === 'asr') ||
+    tracks[0]
+  );
+}
+
+function ensureJson3(url) {
+  if (!url) return url;
+  if (url.includes('fmt=')) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return url + sep + 'fmt=json3';
+}
+
 // ─── Main entry point ────────────────────────────────────────────────────────
 
-/**
- * Wraps a strategy so it REJECTS if the result is null/empty.
- * This is needed because Promise.any() only resolves with the first
- * *fulfilled* promise — but if we return null, that's still "fulfilled"
- * and Promise.any() picks up a null immediately instead of waiting for
- * a real result. By throwing when null, we force Promise.any() to wait
- * for the next strategy to try.
- */
 function mustFindTranscript(strategyPromise) {
   return strategyPromise.then(result => {
-    if (!result || result.length < 30) throw new Error('no transcript');
+    if (!result || result.length < 20) throw new Error('no transcript');
     return result;
   });
 }
@@ -250,16 +297,15 @@ async function scrapeAll() {
   const videoId = extractVideoId(url);
   if (!videoId) return { url, genre, channel, transcript: null };
 
-  // Race all three strategies in parallel.
-  // mustFindTranscript converts null/empty results to rejections so
-  // Promise.any() only resolves when a strategy actually finds text.
+  // Race all four strategies. mustFindTranscript rejects on null
+  // so Promise.any only resolves when a strategy actually finds text.
   const racePromise = Promise.any([
+    mustFindTranscript(strategyD_livePlayerAPI(videoId)),
     mustFindTranscript(strategyA_DOM(videoId)),
     mustFindTranscript(strategyB_background(videoId)),
     mustFindTranscript(strategyC_timedtextApi(videoId)),
-  ]).catch(() => null); // All three failed → return null
+  ]).catch(() => null);
 
-  // Hard timeout ensures the popup spinner never hangs
   const timeoutPromise = new Promise(resolve =>
     setTimeout(() => resolve(null), TRANSCRIPT_TIMEOUT_MS)
   );

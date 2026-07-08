@@ -222,43 +222,74 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
-/** Parse YouTube timedtext XML */
-function parseTimedText(xmlText) {
+/**
+ * Parse YouTube timedtext response (JSON3 or XML).
+ * IMPORTANT: Service workers do NOT have DOMParser, so XML is parsed
+ * with regex. This matches the approach used by youtube-transcript-api.
+ */
+function parseTimedText(rawText) {
+  if (!rawText || rawText.length < 10) return null;
+
+  // 1. Try JSON3 format first (preferred — structured, no XML ambiguity)
   try {
-    // Try JSON3 format first (newer YouTube)
-    const json = JSON.parse(xmlText);
+    const json = JSON.parse(rawText);
     const events = json?.events || [];
     const pieces = events
       .filter(e => e.segs)
       .flatMap(e => e.segs.map(s => s.utf8 || ''))
-      .join(' ')
+      .join('')
+      .replace(/\n/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    if (pieces.length > 30) return pieces;
-  } catch (e) { /* not JSON */ }
+    if (pieces.length > 20) return pieces;
+  } catch (e) { /* not JSON — try XML */ }
 
-  // Fall back to XML
+  // 2. Regex-based XML parsing (service workers have no DOMParser)
   try {
-    const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
-    const texts = Array.from(doc.getElementsByTagName('text'));
-    const joined = texts
-      .map(t => (t.textContent || '')
-        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
-        .replace(/\s+/g, ' ').trim()
-      )
-      .filter(Boolean)
-      .join(' ');
-    return joined.length > 30 ? joined : null;
-  } catch (e) {
-    return null;
-  }
+    const textRegex = /<text[^>]*>([\s\S]*?)<\/text>/gi;
+    const segments = [];
+    let match;
+    while ((match = textRegex.exec(rawText)) !== null) {
+      let text = match[1]
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'")
+        .replace(/<[^>]+>/g, '') // strip nested tags like <font>
+        .replace(/\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (text) segments.push(text);
+    }
+    const joined = segments.join(' ').trim();
+    if (joined.length > 20) return joined;
+  } catch (e) { /* parsing failed */ }
+
+  return null;
+}
+
+/**
+ * Appends fmt=json3 to a caption baseUrl if not already present,
+ * so we get the JSON format which is reliably parseable in all contexts.
+ */
+function ensureJson3Fmt(url) {
+  if (!url) return url;
+  if (url.includes('fmt=')) return url; // already has a format
+  const sep = url.includes('?') ? '&' : '?';
+  return url + sep + 'fmt=json3';
 }
 
 async function fetchTranscriptFallback(videoId) {
   try {
     const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    const res = await fetch(watchUrl);
+    const res = await fetch(watchUrl, {
+      headers: {
+        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const html = await res.text();
 
@@ -306,8 +337,10 @@ async function fetchTranscriptFallback(videoId) {
 
     if (player) {
       const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+      console.info('DopaQueue background: found', tracks.length, 'caption tracks for', videoId,
+        tracks.map(t => `${t.languageCode}${t.kind === 'asr' ? '(auto)' : ''}`));
 
-      // Order: en → en-XX → original language, prefer auto-generated (asr) over manual
+      // Order: en → en-XX → any ASR → first available
       const ordered = [
         tracks.find(t => t.languageCode === 'en' && t.kind === 'asr'),
         tracks.find(t => t.languageCode === 'en'),
@@ -317,21 +350,46 @@ async function fetchTranscriptFallback(videoId) {
         tracks[0],
       ].filter(Boolean);
 
-      for (const track of ordered) {
+      // Deduplicate (same track may match multiple filters)
+      const seen = new Set();
+      const unique = ordered.filter(t => {
+        if (seen.has(t.baseUrl)) return false;
+        seen.add(t.baseUrl);
+        return true;
+      });
+
+      for (const track of unique) {
         if (!track?.baseUrl) continue;
-        captionTrackBaseUrl = track.baseUrl;
+        const jsonUrl = ensureJson3Fmt(track.baseUrl);
+        captionTrackBaseUrl = jsonUrl;
+        try {
+          const captionRes = await fetch(jsonUrl);
+          if (captionRes.ok) {
+            const text = await captionRes.text();
+            transcript = parseTimedText(text);
+            if (transcript) {
+              console.info('DopaQueue background: transcript found via', track.languageCode, 'length:', transcript.length);
+              break;
+            }
+          }
+        } catch (e) { /* try next track */ }
+
+        // Also try XML format if JSON didn't work
         try {
           const captionRes = await fetch(track.baseUrl);
           if (captionRes.ok) {
-            const xmlText = await captionRes.text();
-            transcript = parseTimedText(xmlText);
-            if (transcript) break;
+            const text = await captionRes.text();
+            transcript = parseTimedText(text);
+            if (transcript) {
+              console.info('DopaQueue background: transcript found via XML', track.languageCode);
+              break;
+            }
           }
         } catch (e) { /* try next track */ }
       }
     }
 
-    // Last resort: timedtext API without needing player response
+    // Last resort: direct timedtext API
     if (!transcript) {
       const apiUrls = [
         `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=json3&lang=en&kind=asr`,
@@ -350,6 +408,10 @@ async function fetchTranscriptFallback(videoId) {
         } catch (e) { /* try next */ }
       }
     }
+
+    console.info('DopaQueue background: fetchTranscriptFallback result for', videoId,
+      '→ transcript:', transcript ? `${transcript.length} chars` : 'null',
+      '→ genre:', genre, '→ channel:', channel);
 
     return { success: true, genre, channel, transcript, captionTrackBaseUrl };
   } catch (err) {
