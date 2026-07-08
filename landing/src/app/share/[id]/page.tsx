@@ -116,14 +116,20 @@ export default async function SharedPlaylistPage({ params }: PageProps) {
               </div>
 
               <div className="flex items-center gap-3 shrink-0">
-                <a
-                  href={item.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                >
-                  Watch <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                {item.url ? (
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  >
+                    Watch <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                ) : (
+                  <span className="px-4 py-2.5 rounded-xl bg-zinc-800/50 text-zinc-500 text-xs font-semibold">
+                    Link unavailable
+                  </span>
+                )}
               </div>
             </div>
           ))}
