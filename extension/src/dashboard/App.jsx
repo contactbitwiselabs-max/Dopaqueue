@@ -17,6 +17,7 @@ import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFi
 import { generateActionChecklist, autoTagItem } from '../shared/ai.js';
 import { generateSharePayload, encodeShareLink } from '../shared/share.js';
 import { getMyCircle, createCircle, joinCircleByCode, getWeeklyMirrorReport } from '../shared/circles.js';
+import { SHARE_BASE_URL } from '../shared/constants.js';
 import Settings from './pages/Settings.jsx';
 
 // ─── Helpers ───────────────────────────────────────────────────────
@@ -103,13 +104,13 @@ function AuthPage({ onAuthSuccess }) {
   };
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-white font-sans">
+    <div className="flex h-screen bg-[#0a0a08] text-white font-sans">
       {/* Left — branding panel */}
-      <div className="hidden lg:flex flex-col justify-center items-center w-1/2 bg-gradient-to-br from-purple-950/60 via-zinc-950 to-blue-950/60 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--color-purple-500)_0%,_transparent_60%)] opacity-20" />
+      <div className="hidden lg:flex flex-col justify-center items-center w-1/2 bg-gradient-to-br from-lime-950/40 via-zinc-950 to-emerald-950/30 relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--color-lime-500)_0%,_transparent_60%)] opacity-15" />
         <div className="relative z-10 text-center px-12">
-          <h1 className="text-5xl font-black bg-gradient-to-r from-purple-400 via-blue-400 to-cyan-400 bg-clip-text text-transparent mb-4">
-            DopaQueue
+          <h1 className="text-5xl font-black text-white mb-4">
+            <span aria-hidden>{"\ud83c\udf3f"}</span> DopaQueue
           </h1>
           <p className="text-zinc-400 text-lg max-w-md leading-relaxed">
             Save videos intentionally. Watch them distraction-free. Reclaim your focus.
@@ -117,7 +118,7 @@ function AuthPage({ onAuthSuccess }) {
           <div className="mt-12 flex gap-6 justify-center text-zinc-600">
             <div className="flex flex-col items-center gap-2">
               <div className="w-12 h-12 rounded-xl bg-zinc-900 flex items-center justify-center border border-zinc-800">
-                <PlayCircle className="w-6 h-6 text-purple-400" />
+                <PlayCircle className="w-6 h-6 text-lime-400" />
               </div>
               <span className="text-xs">Videos</span>
             </div>
@@ -141,8 +142,8 @@ function AuthPage({ onAuthSuccess }) {
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="lg:hidden mb-8">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-blue-500 bg-clip-text text-transparent">
-              DopaQueue
+            <h1 className="text-3xl font-bold text-white">
+              <span aria-hidden>{"\ud83c\udf3f"}</span> DopaQueue
             </h1>
           </div>
 
@@ -182,7 +183,7 @@ function AuthPage({ onAuthSuccess }) {
               <input
                 id="auth-email" type="email" required autoFocus
                 value={email} onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-zinc-900 border border-zinc-800 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 transition-all placeholder-zinc-600"
+                className="w-full px-4 py-3 rounded-xl bg-zinc-900 border border-zinc-800 text-sm focus:outline-none focus:border-lime-500 focus:ring-1 focus:ring-lime-500/30 transition-all placeholder-zinc-600"
                 placeholder="you@example.com"
               />
             </div>
@@ -191,7 +192,7 @@ function AuthPage({ onAuthSuccess }) {
               <input
                 id="auth-password" type="password" required minLength={6}
                 value={password} onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-zinc-900 border border-zinc-800 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 transition-all placeholder-zinc-600"
+                className="w-full px-4 py-3 rounded-xl bg-zinc-900 border border-zinc-800 text-sm focus:outline-none focus:border-lime-500 focus:ring-1 focus:ring-lime-500/30 transition-all placeholder-zinc-600"
                 placeholder="••••••••"
               />
             </div>
@@ -209,7 +210,7 @@ function AuthPage({ onAuthSuccess }) {
 
             <button
               type="submit" disabled={loading}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-400 hover:to-blue-400 text-white font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-lg shadow-purple-500/20"
+              className="w-full py-3 rounded-xl bg-lime-400 hover:bg-lime-300 text-zinc-950 font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-lg shadow-lime-500/20"
             >
               {loading ? 'Please wait…' : mode === 'signin' ? 'Sign In' : 'Create Account'}
             </button>
@@ -217,7 +218,7 @@ function AuthPage({ onAuthSuccess }) {
 
           <p className="text-center text-sm text-zinc-500 mt-6">
             {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
-            <button onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(null); setMessage(null); }} className="text-purple-400 hover:text-purple-300 font-medium">
+            <button onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(null); setMessage(null); }} className="text-lime-400 hover:text-lime-300 font-medium">
               {mode === 'signin' ? 'Sign Up' : 'Sign In'}
             </button>
           </p>
@@ -252,21 +253,21 @@ function PomodoroBar() {
   const timeStr = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 
   return (
-    <div className="mb-6 p-3.5 bg-gradient-to-r from-purple-950/40 via-zinc-900/60 to-purple-950/40 border border-purple-500/30 rounded-2xl flex items-center justify-between shadow-lg backdrop-blur-md">
+    <div className="mb-6 p-3.5 bg-gradient-to-r from-lime-950/40 via-zinc-900/60 to-lime-950/40 border border-lime-500/30 rounded-2xl flex items-center justify-between shadow-lg backdrop-blur-md">
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
+        <div className="w-9 h-9 rounded-xl bg-lime-500/20 border border-lime-500/30 flex items-center justify-center text-lime-400">
           <Timer className="w-5 h-5" />
         </div>
         <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-purple-400">Deep Focus Mode</div>
-          <div className="text-sm font-bold text-white">Pomodoro Focus Block · <span className="font-mono text-purple-300">{timeStr}</span></div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-lime-400">Deep Focus Mode</div>
+          <div className="text-sm font-bold text-white">Pomodoro Focus Block · <span className="font-mono text-lime-300">{timeStr}</span></div>
         </div>
       </div>
       <div className="flex items-center gap-2">
         <button
           onClick={() => setActive(!active)}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 ${
-            active ? 'bg-amber-500 text-black hover:bg-amber-400' : 'bg-purple-500 text-black hover:bg-purple-400'
+            active ? 'bg-amber-500 text-black hover:bg-amber-400' : 'bg-lime-400 text-black hover:bg-lime-300'
           }`}
         >
           {active ? <><Pause className="w-3.5 h-3.5" /> Pause</> : <><Play className="w-3.5 h-3.5" /> Start Focus</>}
@@ -489,8 +490,8 @@ export default function App() {
 
   if (!authChecked) {
     return (
-      <div className="flex h-screen bg-zinc-950 items-center justify-center">
-        <div className="w-6 h-6 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+      <div className="flex h-screen bg-[#0a0a08] items-center justify-center">
+        <div className="w-6 h-6 rounded-full border-2 border-lime-400 border-t-transparent animate-spin" />
       </div>
     );
   }
@@ -536,12 +537,12 @@ export default function App() {
   }, {});
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-white font-sans overflow-hidden">
+    <div className="flex h-screen bg-[#0a0a08] text-white font-sans overflow-hidden">
 
       {/* ─── Sidebar ─── */}
       <div className="w-64 bg-zinc-900/50 border-r border-white/5 p-4 flex flex-col backdrop-blur-xl shrink-0">
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-blue-500 bg-clip-text text-transparent mb-8 px-2">
-          DopaQueue
+        <h1 className="text-2xl font-bold text-white mb-8 px-2 flex items-center gap-2">
+          <span aria-hidden>{"\ud83c\udf3f"}</span>DopaQueue
         </h1>
 
         <nav className="flex-1 space-y-2">
@@ -559,14 +560,14 @@ export default function App() {
           ) : (
             <>
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-500 truncate">
-                <div className="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-bold text-[10px] shrink-0">
+                <div className="w-6 h-6 rounded-full bg-lime-500/20 flex items-center justify-center text-lime-400 font-bold text-[10px] shrink-0">
                   {user.email?.[0]?.toUpperCase() || '?'}
                 </div>
                 <span className="truncate">{user.email}</span>
               </div>
               <button
                 onClick={handleSync} disabled={isSyncing}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 transition-all font-medium disabled:opacity-60"
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-lime-500/10 text-lime-400 hover:bg-lime-500/20 border border-lime-500/20 transition-all font-medium disabled:opacity-60"
               >
                 <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
                 {isSyncing ? 'Syncing...' : 'Sync to Cloud'}
@@ -581,7 +582,7 @@ export default function App() {
 
       {/* ─── Main ─── */}
       <div className="flex-1 overflow-y-auto p-8 relative">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[300px] bg-purple-500/10 blur-[100px] pointer-events-none rounded-full" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[300px] bg-lime-500/10 blur-[100px] pointer-events-none rounded-full" />
 
         {/* Toast */}
         {status && (
@@ -614,7 +615,7 @@ export default function App() {
                     placeholder="Search titles, #tags, or spoken transcript (Cmd+K)..."
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-sm rounded-xl pl-9 pr-8 py-2 text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 transition-colors shadow-inner"
+                    className="w-full bg-zinc-900 border border-zinc-800 text-sm rounded-xl pl-9 pr-8 py-2 text-white placeholder-zinc-500 focus:outline-none focus:border-lime-500 transition-colors shadow-inner"
                   />
                   {searchQuery && (
                     <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
@@ -623,7 +624,7 @@ export default function App() {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => setShowShareModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-semibold hover:bg-purple-500/30 transition-colors shrink-0"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-lime-500/20 text-lime-300 border border-lime-500/30 text-xs font-semibold hover:bg-lime-500/30 transition-colors shrink-0"
                   >
                     <Share2 className="w-3.5 h-3.5" /> Share Playlist
                   </button>
@@ -631,7 +632,7 @@ export default function App() {
                   <div className="relative">
                     <select
                       onChange={(e) => { if (e.target.value) { handleBulkExport(e.target.value); e.target.value = ''; } }}
-                      className="appearance-none bg-zinc-900 border border-zinc-800 text-zinc-300 text-sm rounded-lg pl-3 pr-8 py-1.5 hover:border-zinc-700 focus:outline-none focus:border-purple-500 cursor-pointer"
+                      className="appearance-none bg-zinc-900 border border-zinc-800 text-zinc-300 text-sm rounded-lg pl-3 pr-8 py-1.5 hover:border-zinc-700 focus:outline-none focus:border-lime-500 cursor-pointer"
                       defaultValue=""
                     >
                       <option value="" disabled>Export all…</option>
@@ -730,13 +731,13 @@ function FilterChip({ active, onClick, label, count }) {
       onClick={onClick}
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
         active
-          ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+          ? 'bg-lime-500/15 text-lime-300 border-lime-500/30'
           : 'bg-zinc-900/50 text-zinc-500 border-zinc-800 hover:text-zinc-300 hover:border-zinc-700'
       }`}
     >
       {label}
       {count != null && (
-        <span className={`text-xs ${active ? 'text-purple-400' : 'text-zinc-600'}`}>{count}</span>
+        <span className={`text-xs ${active ? 'text-lime-400' : 'text-zinc-600'}`}>{count}</span>
       )}
     </button>
   );
@@ -755,7 +756,7 @@ function NavItem({ active, onClick, icon, label, count }) {
         <span className="font-medium">{label}</span>
       </div>
       {count !== undefined && (
-        <span className={`text-xs py-0.5 px-2 rounded-full ${active ? 'bg-purple-500/20 text-purple-300' : 'bg-zinc-800 text-zinc-500'}`}>
+        <span className={`text-xs py-0.5 px-2 rounded-full ${active ? 'bg-lime-500/20 text-lime-300' : 'bg-zinc-800 text-zinc-500'}`}>
           {count}
         </span>
       )}
@@ -807,7 +808,7 @@ function ArticleModal({ video, onClose }) {
             <div className="flex items-center gap-2 mb-2">
               <button
                 onClick={() => setActiveModalTab('read')}
-                className={`text-xs font-semibold px-3 py-1 rounded-full transition-all border ${activeModalTab === 'read' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' : 'bg-zinc-800 text-zinc-400 border-transparent hover:text-white'}`}
+                className={`text-xs font-semibold px-3 py-1 rounded-full transition-all border ${activeModalTab === 'read' ? 'bg-lime-500/20 text-lime-300 border-lime-500/30' : 'bg-zinc-800 text-zinc-400 border-transparent hover:text-white'}`}
               >
                 📖 Article View
               </button>
@@ -829,7 +830,7 @@ function ArticleModal({ video, onClose }) {
         {/* Body */}
         <div className="p-8 overflow-y-auto flex-1">
           {activeModalTab === 'read' ? (
-            <div className="space-y-6 text-zinc-300 leading-relaxed font-serif text-lg selection:bg-purple-500/30">
+            <div className="space-y-6 text-zinc-300 leading-relaxed font-serif text-lg selection:bg-lime-500/30">
               {paragraphs.length > 0 && paragraphs[0].trim() ? (
                 paragraphs.map((para, idx) => (
                   <p key={idx} className="mb-4">{para.trim()}</p>
@@ -863,8 +864,8 @@ function ArticleModal({ video, onClose }) {
                   </div>
 
                   {/* Action Checklist */}
-                  <div className="bg-zinc-950/60 border border-purple-500/20 rounded-2xl p-6">
-                    <h3 className="text-sm font-semibold text-purple-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <div className="bg-zinc-950/60 border border-lime-500/20 rounded-2xl p-6">
+                    <h3 className="text-sm font-semibold text-lime-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                       <CheckSquare className="w-4 h-4" /> Actionable Checklist
                     </h3>
                     <div className="space-y-2.5">
@@ -872,9 +873,9 @@ function ArticleModal({ video, onClose }) {
                         <button
                           key={item.id || idx}
                           onClick={() => toggleChecklist(idx)}
-                          className={`w-full text-left p-3 rounded-xl border flex items-center gap-3 transition-all ${item.done ? 'bg-purple-500/10 border-purple-500/30 text-zinc-400 line-through' : 'bg-zinc-900/80 border-white/5 text-white hover:border-white/20'}`}
+                          className={`w-full text-left p-3 rounded-xl border flex items-center gap-3 transition-all ${item.done ? 'bg-lime-500/10 border-lime-500/30 text-zinc-400 line-through' : 'bg-zinc-900/80 border-white/5 text-white hover:border-white/20'}`}
                         >
-                          <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${item.done ? 'bg-purple-500 border-purple-400 text-white' : 'border-zinc-600'}`}>
+                          <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${item.done ? 'bg-lime-400 border-lime-300 text-zinc-950' : 'border-zinc-600'}`}>
                             {item.done && <CheckCircle className="w-3.5 h-3.5" />}
                           </div>
                           <span className="text-sm">{item.text}</span>
@@ -896,7 +897,7 @@ function ArticleModal({ video, onClose }) {
 
         {/* Footer */}
         <div className="p-6 border-t border-white/10 bg-zinc-950 flex items-center justify-between">
-          <a href={video.url} target="_blank" rel="noreferrer" className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-medium text-sm rounded-xl transition-all shadow-lg shadow-purple-600/20">
+          <a href={video.url} target="_blank" rel="noreferrer" className="px-5 py-2.5 bg-lime-400 hover:bg-lime-300 text-zinc-950 font-medium text-sm rounded-xl transition-all shadow-lg shadow-lime-500/20">
             Open Video on YouTube
           </a>
           <button onClick={onClose} className="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium text-sm rounded-xl transition-all">
@@ -948,7 +949,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
   const handleShareCard = async () => {
     try {
       const payload = generateSharePayload(video.title, 'DopaQueue User', [video]);
-      const link = encodeShareLink(payload, window.location.origin);
+      const link = encodeShareLink(payload, SHARE_BASE_URL);
       const textToCopy = `${video.title}\n${video.url}\n\nShareable Review Deck: ${link}`;
       await navigator.clipboard.writeText(textToCopy);
       alert('Video & review link copied to clipboard!');
@@ -1009,7 +1010,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
   };
 
   return (
-    <div className="group bg-zinc-900/50 border border-white/5 rounded-2xl overflow-hidden hover:border-white/20 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/10 flex flex-col">
+    <div className="group bg-zinc-900/50 border border-white/5 rounded-2xl overflow-hidden hover:border-white/20 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-lime-500/10 flex flex-col">
       <div className="h-40 bg-zinc-800 relative overflow-hidden shrink-0">
         {thumbUrl ? (
           <img src={thumbUrl} alt="" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
@@ -1052,7 +1053,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
           {/* Custom Tags Section */}
           <div className="flex flex-wrap items-center gap-1.5 mb-3">
             {(video.tags || []).map(tag => (
-              <span key={tag} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">
+              <span key={tag} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-lime-500/10 text-lime-300 border border-lime-500/20">
                 #{tag}
                 <button onClick={() => handleRemoveTag(tag)} className="hover:text-white font-bold ml-0.5">×</button>
               </span>
@@ -1066,7 +1067,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
                   placeholder="tag..."
                   autoFocus
                   onBlur={() => setShowTagInput(false)}
-                  className="bg-zinc-950 border border-purple-500 text-xs text-white rounded-full px-2 py-0.5 w-20 focus:outline-none"
+                  className="bg-zinc-950 border border-lime-400 text-xs text-white rounded-full px-2 py-0.5 w-20 focus:outline-none"
                 />
               </form>
             ) : (
@@ -1076,7 +1077,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
             )}
             <button
               onClick={handleAutoTag}
-              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border border-purple-500/30 transition-colors"
+              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-lime-500/10 text-lime-400 hover:bg-lime-500/20 border border-lime-500/30 transition-colors"
               title="Automatically tag based on AI keywords"
             >
               <Sparkles className="w-3 h-3" /> Auto-Tag
@@ -1118,7 +1119,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
             <>
               <button
                 onClick={() => onReadArticle(video)}
-                className="p-2 text-purple-400 hover:text-white bg-purple-500/10 hover:bg-purple-600 rounded-xl transition-colors flex items-center gap-1.5 px-3 text-xs font-medium border border-purple-500/20"
+                className="p-2 text-lime-400 hover:text-zinc-950 bg-lime-400/10 hover:bg-lime-400 rounded-xl transition-colors flex items-center gap-1.5 px-3 text-xs font-medium border border-lime-400/20"
                 title="Read Article & AI Action Plan"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Insights
@@ -1182,10 +1183,10 @@ function ChannelList({ channels, onDelete }) {
 
   return (
     <div className="space-y-8">
-      <div className="bg-purple-500/10 border border-purple-500/30 rounded-2xl p-5 flex items-center justify-between">
+      <div className="bg-lime-500/10 border border-lime-500/30 rounded-2xl p-5 flex items-center justify-between">
         <div>
-          <h4 className="text-sm font-bold text-purple-300 flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-purple-400" /> Deep Focus Whitelisted Channels ({whitelist.length})
+          <h4 className="text-sm font-bold text-lime-300 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-lime-400" /> Deep Focus Whitelisted Channels ({whitelist.length})
           </h4>
           <p className="text-xs text-zinc-400 mt-1">
             Watching videos from whitelisted educational channels will not decay your daily Dopamine Budget.
@@ -1196,7 +1197,7 @@ function ChannelList({ channels, onDelete }) {
       {Object.entries(grouped).map(([groupName, items]) => (
         <div key={groupName} className="bg-zinc-900/30 border border-white/5 rounded-2xl p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-zinc-800 rounded-lg"><Folder className="w-5 h-5 text-purple-400" /></div>
+            <div className="p-2 bg-zinc-800 rounded-lg"><Folder className="w-5 h-5 text-lime-400" /></div>
             <h3 className="text-xl font-bold">{groupName}</h3>
             <span className="text-zinc-500 text-sm ml-auto">{items.length} channels</span>
           </div>
@@ -1215,7 +1216,7 @@ function ChannelList({ channels, onDelete }) {
                         </span>
                       )}
                     </div>
-                    <a href={channel.url} target="_blank" rel="noreferrer" className="text-xs text-purple-400 hover:underline mt-1 block">Visit Channel</a>
+                    <a href={channel.url} target="_blank" rel="noreferrer" className="text-xs text-lime-400 hover:underline mt-1 block">Visit Channel</a>
                     <span className="text-xs text-zinc-600 mt-1 block">{formatDateTime(channel.savedAt)}</span>
                   </div>
 
@@ -1234,7 +1235,7 @@ function ChannelList({ channels, onDelete }) {
                     </button>
 
                     <select
-                      className="bg-zinc-950 border border-zinc-800 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-purple-500"
+                      className="bg-zinc-950 border border-zinc-800 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-lime-500"
                       value={channel.group || ''}
                       onChange={(e) => updateChannelGroup(channel.id, e.target.value)}
                     >
@@ -1267,7 +1268,7 @@ function ShareModal({ videos, onClose, onStatus }) {
 
   const handleGenerate = () => {
     const payload = generateSharePayload(title, curator, videos);
-    const link = encodeShareLink(payload, 'http://localhost:3000');
+    const link = encodeShareLink(payload, SHARE_BASE_URL);
     setShareUrl(link);
   };
 
@@ -1281,10 +1282,10 @@ function ShareModal({ videos, onClose, onStatus }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-      <div className="w-full max-w-lg bg-zinc-900 border border-purple-500/30 rounded-3xl overflow-hidden shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200">
+      <div className="w-full max-w-lg bg-zinc-900 border border-lime-500/30 rounded-3xl overflow-hidden shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200">
         <div className="p-6 border-b border-white/10 flex items-center justify-between bg-zinc-900/90">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
+            <div className="w-9 h-9 rounded-xl bg-lime-500/20 border border-lime-500/30 flex items-center justify-center text-lime-400">
               <Share2 className="w-5 h-5" />
             </div>
             <div>
@@ -1304,7 +1305,7 @@ function ShareModal({ videos, onClose, onStatus }) {
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-lime-500"
               placeholder="e.g. AI & Distributed Systems Watchlist"
             />
           </div>
@@ -1315,7 +1316,7 @@ function ShareModal({ videos, onClose, onStatus }) {
               type="text"
               value={curator}
               onChange={e => setCurator(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-lime-500"
               placeholder="Your Name or Handle"
             />
           </div>
@@ -1323,7 +1324,7 @@ function ShareModal({ videos, onClose, onStatus }) {
           <div className="p-4 rounded-2xl bg-zinc-950/60 border border-white/5 space-y-2">
             <div className="flex items-center justify-between text-xs text-zinc-400">
               <span>Included Items:</span>
-              <span className="font-semibold text-purple-400">{videos.length} videos</span>
+              <span className="font-semibold text-lime-400">{videos.length} videos</span>
             </div>
             <p className="text-[11px] text-zinc-500">
               All selected videos, tags, and AI summaries will be packaged into a standalone public link.
@@ -1332,17 +1333,17 @@ function ShareModal({ videos, onClose, onStatus }) {
 
           {shareUrl ? (
             <div className="space-y-2 pt-2">
-              <label className="text-xs font-semibold text-purple-400 uppercase tracking-wider">Generated Share URL</label>
+              <label className="text-xs font-semibold text-lime-400 uppercase tracking-wider">Generated Share URL</label>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
                   readOnly
                   value={shareUrl}
-                  className="flex-1 bg-zinc-950 border border-purple-500/40 rounded-xl px-3.5 py-2.5 text-xs font-mono text-purple-300 focus:outline-none truncate"
+                  className="flex-1 bg-zinc-950 border border-lime-500/40 rounded-xl px-3.5 py-2.5 text-xs font-mono text-lime-300 focus:outline-none truncate"
                 />
                 <button
                   onClick={handleCopy}
-                  className="px-4 py-2.5 rounded-xl bg-purple-500 text-black font-semibold text-xs hover:bg-purple-400 transition-colors shrink-0 flex items-center gap-1.5"
+                  className="px-4 py-2.5 rounded-xl bg-lime-400 text-black font-semibold text-xs hover:bg-lime-300 transition-colors shrink-0 flex items-center gap-1.5"
                 >
                   {copied ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   {copied ? 'Copied' : 'Copy'}
@@ -1352,7 +1353,7 @@ function ShareModal({ videos, onClose, onStatus }) {
           ) : (
             <button
               onClick={handleGenerate}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-blue-500 text-black font-bold text-sm hover:opacity-90 transition-opacity"
+              className="w-full py-3 rounded-xl bg-lime-400 hover:bg-lime-300 text-zinc-950 font-bold text-sm transition-colors"
             >
               Generate Shareable Playlist Link
             </button>
@@ -1411,7 +1412,7 @@ function AccountabilityCirclesView({ videos }) {
           </button>
           <button
             onClick={() => setShowCreate(!showCreate)}
-            className="px-4 py-2 rounded-xl bg-purple-500 text-black font-semibold text-sm hover:bg-purple-400 transition-colors flex items-center gap-1.5"
+            className="px-4 py-2 rounded-xl bg-lime-400 text-black font-semibold text-sm hover:bg-lime-300 transition-colors flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" /> New Circle
           </button>
@@ -1419,28 +1420,28 @@ function AccountabilityCirclesView({ videos }) {
       </div>
 
       {showCreate && (
-        <form onSubmit={handleCreateCircle} className="p-5 bg-zinc-900 border border-purple-500/30 rounded-2xl flex items-center gap-3 max-w-lg">
+        <form onSubmit={handleCreateCircle} className="p-5 bg-zinc-900 border border-lime-500/30 rounded-2xl flex items-center gap-3 max-w-lg">
           <input
             type="text"
             placeholder="Circle Name (e.g. Deep Work Founders)"
             value={newCircleName}
             onChange={e => setNewCircleName(e.target.value)}
-            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
+            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-lime-500"
           />
-          <button type="submit" className="px-4 py-2 rounded-xl bg-purple-500 text-black font-semibold text-xs">Create</button>
+          <button type="submit" className="px-4 py-2 rounded-xl bg-lime-400 text-black font-semibold text-xs">Create</button>
         </form>
       )}
 
       {showJoin && (
-        <form onSubmit={handleJoinCircle} className="p-5 bg-zinc-900 border border-purple-500/30 rounded-2xl flex items-center gap-3 max-w-lg">
+        <form onSubmit={handleJoinCircle} className="p-5 bg-zinc-900 border border-lime-500/30 rounded-2xl flex items-center gap-3 max-w-lg">
           <input
             type="text"
             placeholder="Invite Code (e.g. DQ-8A9F-204)"
             value={joinCode}
             onChange={e => setJoinCode(e.target.value)}
-            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm font-mono text-white focus:outline-none focus:border-purple-500"
+            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm font-mono text-white focus:outline-none focus:border-lime-500"
           />
-          <button type="submit" className="px-4 py-2 rounded-xl bg-purple-500 text-black font-semibold text-xs">Join</button>
+          <button type="submit" className="px-4 py-2 rounded-xl bg-lime-400 text-black font-semibold text-xs">Join</button>
         </form>
       )}
 
@@ -1449,7 +1450,7 @@ function AccountabilityCirclesView({ videos }) {
         <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-6 relative overflow-hidden">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Mindless Scroll Time</span>
-            <ShieldCheck className="w-5 h-5 text-purple-400" />
+            <ShieldCheck className="w-5 h-5 text-lime-400" />
           </div>
           <div className="text-3xl font-extrabold text-white">{report.mindlessMinutesAvg}m <span className="text-sm font-normal text-zinc-400">/ day</span></div>
           <p className="text-xs text-green-400 mt-2 flex items-center gap-1">
@@ -1487,7 +1488,7 @@ function AccountabilityCirclesView({ videos }) {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-xl font-bold text-white">{circle.name}</h3>
-                <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-lime-500/20 text-lime-300 border border-lime-500/30">
                   {circle.code}
                 </span>
               </div>
@@ -1499,12 +1500,12 @@ function AccountabilityCirclesView({ videos }) {
             {circle.members.map((m, idx) => (
               <div key={m.id} className="p-4 rounded-2xl bg-zinc-950/60 border border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${idx === 0 ? 'bg-purple-500 text-black' : 'bg-zinc-800 text-zinc-400'}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${idx === 0 ? 'bg-lime-400 text-black' : 'bg-zinc-800 text-zinc-400'}`}>
                     #{idx + 1}
                   </div>
                   <div>
                     <span className="font-semibold text-white text-sm">{m.name}</span>
-                    {m.id === 'me' && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full">You</span>}
+                    {m.id === 'me' && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider text-lime-400 bg-lime-500/10 px-2 py-0.5 rounded-full">You</span>}
                   </div>
                 </div>
 
@@ -1515,7 +1516,7 @@ function AccountabilityCirclesView({ videos }) {
                   </div>
                   <div>
                     <div className="text-xs text-zinc-500">Revisit Rate</div>
-                    <div className="text-sm font-semibold text-purple-400">{m.revisitRate}%</div>
+                    <div className="text-sm font-semibold text-lime-400">{m.revisitRate}%</div>
                   </div>
                 </div>
               </div>
@@ -1531,7 +1532,7 @@ function AccountabilityCirclesView({ videos }) {
           </p>
           <button
             onClick={() => setShowCreate(true)}
-            className="mt-2 px-5 py-2.5 rounded-xl bg-purple-500 text-black font-semibold text-xs hover:bg-purple-400 transition-colors"
+            className="mt-2 px-5 py-2.5 rounded-xl bg-lime-400 text-black font-semibold text-xs hover:bg-lime-300 transition-colors"
           >
             Create Your First Circle
           </button>
