@@ -238,65 +238,22 @@ export default function PopupApp() {
           });
         }
 
-        // Trigger on-demand transcript scraping on the active tab.
-        // This fires the content script's SCRAPE_NOW handler so the
-        // transcript is fetched and cached immediately at save time.
-        setFetchingTranscript(true);
-        setTranscriptStatus('fetching');
+        // Instant enterprise-grade save: update UI immediately
+        setSaved(true);
+        setAlreadySaved(true);
+        setFetchingTranscript(false);
 
-        const enqueueFallback = async () => {
-          try {
-            if (!supabaseClient) return;
-            const user = await getCurrentUser();
-            if (!user?.id) return;
-            const videoId = extractYouTubeVideoId(currentUrl);
-            if (!videoId) return;
-            await supabaseClient.from('transcript_queue').upsert({
-              user_id: user.id,
-              url: currentUrl,
-              video_id: videoId,
-              status: 'pending'
-            }, { onConflict: 'user_id,url' });
-          } catch (e) {}
-        };
-
+        // Opportunistically trigger background metadata/tag scrape
         if (typeof chrome !== 'undefined' && chrome.tabs) {
           chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
             if (tab?.id) {
-              let responded = false;
-
-              // Hard 23s failsafe — matches the 20s pipeline timeout + margin
-              const failsafe = setTimeout(() => {
-                if (!responded) {
-                  responded = true;
-                  setTranscriptStatus('failed');
-                  setFetchingTranscript(false);
-                  enqueueFallback();
-                }
-              }, 23000);
-
-              chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (result) => {
-                if (responded) return;
-                responded = true;
-                clearTimeout(failsafe);
-                if (result?.transcript) {
-                  setTranscriptStatus('success');
-                } else {
-                  setTranscriptStatus('failed');
-                  enqueueFallback();
-                }
-                setFetchingTranscript(false);
+              chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, () => {
+                // Ignore errors; metadata is updated opportunistically
               });
             }
           });
-        } else {
-          setFetchingTranscript(false);
-          setTranscriptStatus('failed');
-          enqueueFallback();
         }
       }
-      setSaved(true);
-      setAlreadySaved(true);
     } catch (err) {
       console.error('DopaQueue: failed to save item', err);
       setSaveError('Failed to save. Please try again.');
@@ -438,15 +395,6 @@ export default function PopupApp() {
           )}
         </ShimmerButton>
 
-        {transcriptStatus === 'failed' && !alreadySaved && (
-          <div className="flex items-start gap-2 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20 mb-2 text-yellow-600 text-xs">
-            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
-            <div>
-              <p className="font-medium">Transcript not available</p>
-              <p className="text-yellow-500/70 mt-0.5">Video may not have captions. You can still watch it later.</p>
-            </div>
-          </div>
-        )}
 
         {saveError && (
           <p role="alert" className="flex items-center gap-1.5 text-xs text-red-400 mb-2">
