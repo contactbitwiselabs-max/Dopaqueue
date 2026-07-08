@@ -7,10 +7,12 @@ import { supabaseClient } from '../shared/supabase.js';
 import { isMindlessScrollUrl } from '../shared/constants.js';
 import {
   initStorage,
+  checkDailyReset,
   getGameState,
   updateGameState,
   cacheScrapeResult,
   getScrapeResult,
+  getUrlChannel,
   isWhitelistedChannel,
 } from '../shared/storage.js';
 
@@ -92,11 +94,19 @@ async function notifyGardenWilted() {
 
 async function budgetTick() {
   await initStorage();
+  // A long-lived service worker can cross midnight without re-hydrating
+  // storage, so re-check the daily reset on every tick rather than only
+  // at initStorage() time.
+  checkDailyReset();
   const tab = await getActiveFocusedTab();
   const inMindlessScroll = isMindlessScrollUrl(tab && tab.url);
 
   const scrape = tab && tab.url ? getScrapeResult(tab.url) : null;
-  const isWhitelisted = scrape && isWhitelistedChannel(scrape.channel);
+  // Prefer the eviction-proof url->channel map; fall back to the scrape
+  // cache. This keeps the whitelist honoured even after the transcript
+  // cache has trimmed this URL out.
+  const channel = (tab && tab.url ? getUrlChannel(tab.url) : null) || (scrape && scrape.channel) || null;
+  const isWhitelisted = isWhitelistedChannel(channel);
 
   const game = getGameState();
   if (!inMindlessScroll || isWhitelisted) {

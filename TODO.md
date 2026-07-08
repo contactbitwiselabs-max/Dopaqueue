@@ -130,10 +130,10 @@ Run tests: `npm run verify`
 | Core extension (save/budget/transcripts) | ✅ Done | Complete |
 | Cloud sync (Supabase) | ✅ Done | Complete |
 | Server fallback worker | ✅ Done | Scaffolded |
-| Auth + user accounts | 📅 Week 2 | Not started |
-| Export (MD/CSV/Notion) | 📅 Week 3 | Partially done |
-| Channel groups | 📅 Week 4 | Not started |
-| Mobile app (Android/iOS) | 📅 Month 2 | Not started |
+| Auth + user accounts | ✅ Done | Complete (email + OAuth) |
+| Export (MD/CSV/JSON/Notion/Obsidian) | ✅ Done | Complete |
+| Channel groups | ✅ Done | Complete |
+| Mobile app (PWA companion) | ✅ Done | Landing PWA |
 | Public release (Chrome Web Store) | 📅 Month 2-3 | Not started |
 
 ---

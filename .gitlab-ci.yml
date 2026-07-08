@@ -1,0 +1,69 @@
+# DopaQueue CI (migrated from .github/workflows/ci.yml)
+# Runs unit tests, linting, builds, manifest validation and a basic
+# security pass on every push and merge request.
+
+stages:
+  - test
+  - build
+  - security
+
+default:
+  image: node:20
+  cache:
+    key:
+      files:
+        - extension/package-lock.json
+        - landing/package-lock.json
+    paths:
+      - extension/node_modules/
+      - landing/node_modules/
+      - node_modules/
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+
+unit-tests:
+  stage: test
+  script:
+    - npm ci
+    - npm run verify
+
+lint-extension:
+  stage: test
+  script:
+    - cd extension && npm ci
+    - npm run lint
+  allow_failure: true
+
+validate-manifest:
+  stage: test
+  script:
+    - node -e "JSON.parse(require('fs').readFileSync('extension/manifest.json')); console.log('manifest.json valid')"
+    - grep -q "CREATE TABLE" extension/server/migrations.sql && echo "migrations.sql looks good"
+
+build-extension:
+  stage: build
+  script:
+    - cd extension && npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - extension/dist/
+    expire_in: 1 week
+
+build-landing:
+  stage: build
+  script:
+    - cd landing && npm ci
+    - npm run build
+  allow_failure: true
+
+security-audit:
+  stage: security
+  script:
+    - npm audit --audit-level=moderate || true
+    - cd extension && npm audit --audit-level=moderate || true
+  allow_failure: true

@@ -32,7 +32,7 @@
   "web_accessible_resources": [
     {
       "resources": ["dashboard.html"],
-      "matches": ["<all_urls>"]
+      "matches": ["*://www.youtube.com/*", "*://www.instagram.com/*"]
     }
   ],
   "icons": {
