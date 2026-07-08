@@ -322,7 +322,12 @@ export default function App() {
 
     const { data: authListener } = supabaseClient.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user || null);
-      setShowAuth(false);
+      if (session?.user) {
+        setShowAuth(false);
+        if (typeof window !== 'undefined' && window.location.hash.includes('access_token=')) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      }
     });
 
     return () => {
