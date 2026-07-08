@@ -76,83 +76,39 @@ async function scrapeTranscript() {
       return null;
     }
 
-    // Page-injected fetch helper to avoid CORS issues when necessary.
-    const pendingFetches = new Map();
-    function ensureInjectedFetcher() {
-      if (window.__DOPAQUEUE_FETCHER_INJECTED__) return;
-      window.__DOPAQUEUE_FETCHER_INJECTED__ = true;
-      const script = document.createElement('script');
-      script.textContent = `(() => {
-        const pending = {};
-        window.addEventListener('message', async (ev) => {
-          if (ev.source !== window) return;
-          const d = ev.data || {};
-          if (d && d.__DOPAQUEUE_FETCH_REQUEST__) {
-            const { id, url } = d;
-            try {
-              const res = await fetch(url, { credentials: 'same-origin' });
-              const text = await res.text();
-              window.postMessage({ __DOPAQUEUE_FETCH_RESPONSE__: true, id, ok: true, text }, '*');
-            } catch (err) {
-              window.postMessage({ __DOPAQUEUE_FETCH_RESPONSE__: true, id, ok: false, error: String(err) }, '*');
-            }
-          }
-        }, false);
-      })();`;
-      (document.head || document.documentElement).appendChild(script);
-      script.remove();
-    }
-
+    // Fetch helper with a hard timeout. If the in-page fetch fails (CORS),
+    // fall back to asking the background service worker to fetch — it is
+    // not subject to the page's CORS/CSP for hosts in host_permissions,
+    // and unlike inline <script> injection it isn't blocked by YouTube's CSP.
     function pageFetch(url) {
       return new Promise((resolve, reject) => {
-        // Try normal fetch first with a short timeout
-        const tryFetch = () => fetch(url, { credentials: 'same-origin' });
-        let timedOut = false;
         const timeoutMs = 8000;
+        let settled = false;
+        const settle = (fn, value) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          fn(value);
+        };
         const timeout = setTimeout(() => {
-          timedOut = true;
+          settle(reject, new Error('fetch timed out'));
         }, timeoutMs);
 
-        tryFetch()
+        fetch(url, { credentials: 'same-origin' })
           .then((res) => res.text())
-          .then((text) => {
-            if (!timedOut) {
-              clearTimeout(timeout);
-              resolve({ ok: true, text });
-            }
-          })
+          .then((text) => settle(resolve, { ok: true, text }))
           .catch(() => {
-            // Fallback to injected page fetcher
             try {
-              ensureInjectedFetcher();
-              const id = crypto.randomUUID();
-              let settled = false;
-              function onMsg(e) {
-                if (e.source !== window) return;
-                const d = e.data || {};
-                if (d.__DOPAQUEUE_FETCH_RESPONSE__ && d.id === id) {
-                  if (settled) return;
-                  settled = true;
-                  window.removeEventListener('message', onMsg);
-                  clearTimeout(timeout);
-                  if (d.ok) resolve({ ok: true, text: d.text });
-                  else reject(new Error(d.error || 'fetch failed'));
+              chrome.runtime.sendMessage({ type: 'PAGE_FETCH', url }, (res) => {
+                if (chrome.runtime.lastError) {
+                  settle(reject, new Error(chrome.runtime.lastError.message));
+                  return;
                 }
-              }
-              window.addEventListener('message', onMsg);
-              window.postMessage({ __DOPAQUEUE_FETCH_REQUEST__: true, id, url }, '*');
-
-              // Safety timeout for injected fetcher
-              setTimeout(() => {
-                if (!settled) {
-                  settled = true;
-                  window.removeEventListener('message', onMsg);
-                  reject(new Error('injected fetch timed out'));
-                }
-              }, timeoutMs);
+                if (res && res.ok) settle(resolve, { ok: true, text: res.text });
+                else settle(reject, new Error((res && res.error) || 'fetch failed'));
+              });
             } catch (ex) {
-              clearTimeout(timeout);
-              reject(ex);
+              settle(reject, ex);
             }
           });
       });
@@ -255,9 +211,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         try {
           const res = await scrapeAll();
           lastResult = res;
-          // Send attempt log to background for centralized tracing
-          try { chrome.runtime.sendMessage({ type: 'SCRAPE_ATTEMPT', url: location.href, attempt, hasTranscript: !!res.transcript }); } catch (e) {}
-
           // Send detailed attempt log to background for centralized tracing
           try {
             chrome.runtime.sendMessage({
@@ -273,8 +226,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             });
           } catch (e) {}
 
-          // If we have any useful data (especially transcript), stop early
-          if (res.transcript || res.genre || res.channel) break;
+          // Only stop early once we actually have a transcript — genre and
+          // channel are available immediately, but the transcript is the
+          // whole reason for this retry/backoff loop.
+          if (res.transcript) break;
         } catch (err) {
           // Send failure with reason
           try {

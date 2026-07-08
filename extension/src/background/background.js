@@ -83,7 +83,7 @@ async function getActiveFocusedTab() {
 async function notifyGardenWilted() {
   await chrome.notifications.create({
     type: 'basic',
-    iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+    iconUrl: chrome.runtime.getURL('src/icons/icon128.png'),
     title: 'DopaQueue',
     message: 'Your garden is wilting 🥀 Watch a saved video to restore it.',
     priority: 1,
@@ -184,6 +184,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     initStorage().then(() => {
       sendResponse(getScrapeResult(message.url));
     });
+    return true;
+  }
+
+  if (message?.type === 'PAGE_FETCH') {
+    // CORS-safe fetch on behalf of the content script (e.g. caption
+    // tracks). The service worker isn't subject to the page's CORS/CSP
+    // for hosts declared in host_permissions.
+    fetch(message.url, { credentials: 'omit' })
+      .then((res) => res.text())
+      .then((text) => sendResponse({ ok: true, text }))
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;
   }
 

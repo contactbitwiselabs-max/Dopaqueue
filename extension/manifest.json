@@ -6,6 +6,8 @@
   "permissions": ["activeTab", "storage", "tabs", "alarms", "notifications"],
   "host_permissions": [
     "*://www.youtube.com/*",
+    "*://youtube.com/*",
+    "*://m.youtube.com/*",
     "*://www.instagram.com/*"
   ],
   "background": {
@@ -22,7 +24,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://www.youtube.com/watch*", "*://www.youtube.com/shorts/*", "*://www.instagram.com/*"],
+      "matches": ["*://www.youtube.com/*", "*://youtube.com/*", "*://m.youtube.com/*", "*://www.instagram.com/*"],
       "js": ["src/content/content.js"],
       "run_at": "document_idle"
     }

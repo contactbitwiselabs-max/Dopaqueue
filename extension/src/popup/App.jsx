@@ -11,7 +11,7 @@ import {
   subscribe,
   getSavedVideos,
 } from '../shared/storage.js';
-import { isChannelUrl, extractChannelId } from '../shared/constants.js';
+import { isChannelUrl, extractChannelId, STORAGE_KEYS } from '../shared/constants.js';
 import { getCurrentUser, signInWithGoogle, signOut, isLoggedIn, getUserEmail, getUserName } from '../shared/auth.js';
 import { syncWithCloud } from '../shared/sync.js';
 
@@ -69,8 +69,9 @@ function usePopupData() {
       }
     });
 
-    // Subscribe to game state changes
-    const unsub = subscribe('game_state', (g) => setGame(g));
+    // Subscribe to game state changes (key must match STORAGE_KEYS.GAME,
+    // which is what storage.js uses when it notifies subscribers)
+    const unsub = subscribe(STORAGE_KEYS.GAME, (g) => setGame(g));
     return unsub;
   }, []);
 
