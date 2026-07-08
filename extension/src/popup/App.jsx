@@ -243,19 +243,37 @@ export default function PopupApp() {
         // transcript is fetched and cached immediately at save time.
         setFetchingTranscript(true);
         setTranscriptStatus('fetching');
+
+        const enqueueFallback = async () => {
+          try {
+            if (!supabaseClient) return;
+            const user = await getCurrentUser();
+            if (!user?.id) return;
+            const videoId = extractYouTubeVideoId(currentUrl);
+            if (!videoId) return;
+            await supabaseClient.from('transcript_queue').upsert({
+              user_id: user.id,
+              url: currentUrl,
+              video_id: videoId,
+              status: 'pending'
+            }, { onConflict: 'user_id,url' });
+          } catch (e) {}
+        };
+
         if (typeof chrome !== 'undefined' && chrome.tabs) {
           chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
             if (tab?.id) {
               let responded = false;
 
-              // Hard 15s failsafe — matches the 12s pipeline timeout + margin
+              // Hard 23s failsafe — matches the 20s pipeline timeout + margin
               const failsafe = setTimeout(() => {
                 if (!responded) {
                   responded = true;
                   setTranscriptStatus('failed');
                   setFetchingTranscript(false);
+                  enqueueFallback();
                 }
-              }, 15000);
+              }, 23000);
 
               chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (result) => {
                 if (responded) return;
@@ -265,6 +283,7 @@ export default function PopupApp() {
                   setTranscriptStatus('success');
                 } else {
                   setTranscriptStatus('failed');
+                  enqueueFallback();
                 }
                 setFetchingTranscript(false);
               });
@@ -273,6 +292,7 @@ export default function PopupApp() {
         } else {
           setFetchingTranscript(false);
           setTranscriptStatus('failed');
+          enqueueFallback();
         }
       }
       setSaved(true);

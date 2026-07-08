@@ -18,7 +18,7 @@
 // genre and channel are scraped from the DOM immediately (synchronous) before
 // any async transcript work starts, with a background fetch fallback for those too.
 
-const TRANSCRIPT_TIMEOUT_MS = 12000; // Hard cap — popup spinner stops after this
+const TRANSCRIPT_TIMEOUT_MS = 20000; // Hard cap — popup spinner stops after this
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -219,43 +219,39 @@ async function strategyC_timedtextApi(videoId) {
   return null;
 }
 
-// ─── Strategy D: YouTube live player API ─────────────────────────────────────
-// On SPA navigations, <script> tags have STALE data from the initial load.
-// But YouTube's custom elements store the CURRENT player response in their
-// internal __data property. This strategy reads it directly.
+// ─── Strategy D: YouTube live player API via MAIN WORLD bridge ────────────────
+// Uses main_world.js (injected into MAIN world) to get live captionTracks from
+// ytInitialPlayerResponse or ytd-watch-flexy.__data.playerResponse, bypassing
+// isolated world restrictions.
 async function strategyD_livePlayerAPI(videoId) {
   try {
-    // Try to get the player response from YouTube's DOM elements
-    const watchFlexy = document.querySelector('ytd-watch-flexy');
-    const playerResponse = watchFlexy?.__data?.playerResponse
-      || watchFlexy?.playerResponse
-      || watchFlexy?.data?.playerResponse;
+    const tracksFromMain = await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        window.removeEventListener('message', handler);
+        resolve(null);
+      }, 3000);
 
-    if (playerResponse) {
-      const tracks = getTrackList(playerResponse);
-      if (tracks && tracks.length > 0) {
-        const preferred = pickBestTrack(tracks);
-        if (preferred?.baseUrl) {
-          return fetchAndParseCaptionUrl(ensureJson3(preferred.baseUrl));
+      function handler(event) {
+        if (event.source !== window || !event.data) return;
+        if (event.data.type === 'DOPAQUEUE_RES_MAIN_PLAYER' && event.data.videoId === videoId) {
+          clearTimeout(timer);
+          window.removeEventListener('message', handler);
+          resolve(event.data.tracks || null);
         }
       }
-    }
+      window.addEventListener('message', handler);
+      window.postMessage({ type: 'DOPAQUEUE_REQ_MAIN_PLAYER', videoId }, '*');
+    });
 
-    // Alternative: try the movie_player API
-    const moviePlayer = document.querySelector('#movie_player');
-    if (moviePlayer && typeof moviePlayer.getPlayerResponse === 'function') {
-      const resp = moviePlayer.getPlayerResponse();
-      const tracks = getTrackList(resp);
-      if (tracks && tracks.length > 0) {
-        const preferred = pickBestTrack(tracks);
-        if (preferred?.baseUrl) {
-          return fetchAndParseCaptionUrl(ensureJson3(preferred.baseUrl));
-        }
+    if (tracksFromMain && tracksFromMain.length > 0) {
+      const preferred = pickBestTrack(tracksFromMain);
+      if (preferred?.baseUrl) {
+        const text = await fetchAndParseCaptionUrl(ensureJson3(preferred.baseUrl));
+        if (text && text.length > 20) return text;
       }
     }
   } catch (e) {
-    // These DOM APIs may not be accessible from the content script's
-    // isolated world — that's expected, Strategy B handles it instead.
+    // fall through
   }
   return null;
 }
