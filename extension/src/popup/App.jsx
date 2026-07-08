@@ -284,20 +284,20 @@ export default function PopupApp() {
 
   if (!ready) {
     return (
-      <div className="w-[360px] h-[400px] flex items-center justify-center bg-zinc-950">
-        <div className="w-6 h-6 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+      <div className="w-[360px] h-[400px] flex items-center justify-center bg-[#0a0a08]">
+        <div className="w-6 h-6 rounded-full border-2 border-lime-400 border-t-transparent animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="relative w-[360px] bg-zinc-950 flex flex-col overflow-hidden select-none" style={{ fontFamily: 'system-ui, sans-serif' }}>
+    <div className="relative w-[360px] bg-[#0a0a08] flex flex-col overflow-hidden select-none" style={{ fontFamily: 'system-ui, sans-serif' }}>
       <Meteors number={10} />
 
       {/* Header */}
       <div className="z-10 px-4 py-3 border-b border-white/5 flex items-center justify-between bg-zinc-900/60 backdrop-blur-md">
-        <h1 className="text-lg font-bold bg-gradient-to-r from-purple-400 to-blue-500 bg-clip-text text-transparent tracking-tight">
-          DopaQueue
+        <h1 className="text-lg font-bold text-white tracking-tight flex items-center gap-1.5">
+          <span aria-hidden>{"\ud83c\udf3f"}</span>DopaQueue
         </h1>
         <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${PLANT_COLOR[plantStatus]}`}>
           <span>{PLANT_EMOJI[plantStatus]}</span>
@@ -313,7 +313,7 @@ export default function PopupApp() {
         </div>
         <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full transition-all duration-500"
+            className="h-full bg-lime-400 rounded-full transition-all duration-500"
             style={{ width: `${budgetPct}%` }}
           />
         </div>
@@ -322,7 +322,7 @@ export default function PopupApp() {
       {/* Speed Bump Suggestion Banner */}
       {remaining === 0 && savedVideos.length > 0 && (
         <div className="z-10 px-4 pt-3">
-          <div className="p-3 bg-gradient-to-br from-red-500/10 to-purple-500/10 border border-red-500/20 rounded-xl space-y-2">
+          <div className="p-3 bg-gradient-to-br from-red-500/10 to-lime-500/10 border border-red-500/20 rounded-xl space-y-2">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-red-400">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Budget Exhausted!
             </div>
@@ -336,7 +336,7 @@ export default function PopupApp() {
                   href={v.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="block p-2 bg-zinc-900/80 hover:bg-zinc-800 border border-white/5 rounded-lg text-xs text-purple-300 truncate transition-colors font-medium"
+                  className="block p-2 bg-zinc-900/80 hover:bg-zinc-800 border border-white/5 rounded-lg text-xs text-lime-300 truncate transition-colors font-medium"
                 >
                   ▶ {v.title}
                 </a>
@@ -384,7 +384,7 @@ export default function PopupApp() {
         >
           {fetchingTranscript ? (
             <span className="flex items-center justify-center gap-2">
-              <div className="w-4 h-4 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+              <div className="w-4 h-4 rounded-full border-2 border-lime-400 border-t-transparent animate-spin" />
               Fetching Transcript...
             </span>
           ) : alreadySaved ? (
@@ -468,10 +468,10 @@ export default function PopupApp() {
               <button
                 onClick={handleSignIn}
                 disabled={authBusy}
-                className="flex items-center gap-1 px-2 py-1 rounded-md bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 text-xs transition-colors disabled:opacity-50"
+                className="flex items-center gap-1 px-2 py-1 rounded-md bg-lime-400/20 hover:bg-lime-400/30 text-lime-300 text-xs transition-colors disabled:opacity-50"
               >
                 {authBusy ? (
-                  <div className="w-3 h-3 rounded-full border-2 border-purple-300 border-t-transparent animate-spin" />
+                  <div className="w-3 h-3 rounded-full border-2 border-lime-300 border-t-transparent animate-spin" />
                 ) : (
                   <LogIn className="w-3 h-3" />
                 )}

@@ -21,6 +21,12 @@ export const STORAGE_KEYS = {
 // scrape cache is fine.
 export const MAX_URL_CHANNEL_ENTRIES = 200;
 
+// Base URL of the public landing site used for shareable playlist links.
+// Point this at the deployed landing app (e.g. https://dopaqueue.com)
+// before release. Never use window.location.origin inside the extension:
+// that yields an unusable chrome-extension:// link.
+export const SHARE_BASE_URL = 'http://localhost:3000';
+
 // Cap on cached scrape results (genre/channel/transcript per URL), kept
 // small since transcripts can be large. Shared between storage.js
 // (local writes) and sync.js (post-merge trim) so both enforce the
