@@ -150,9 +150,44 @@ async function scrapeTranscript() {
 
 async function scrapeAll() {
   const url = location.href;
-  const genre = scrapeCategory();
-  const channel = scrapeChannel();
-  const transcript = await scrapeTranscript();
+  let genre = scrapeCategory();
+  let channel = scrapeChannel();
+  let transcript = await scrapeTranscript();
+
+  // If transcript, genre, or channel are missing (common on fast client-side navigations),
+  // fallback to requesting the background page parser to fetch and parse the video page directly.
+  if (!transcript || !genre || !channel) {
+    const videoId = (function() {
+      const m1 = url.match(/[?&]v=([A-Za-z0-9_-]{11})/);
+      if (m1) return m1[1];
+      const m2 = url.match(/youtu\.be\/([A-Za-z0-9_-]{11})/);
+      if (m2) return m2[1];
+      const m3 = url.match(/\/shorts\/([A-Za-z0-9_-]{11})/);
+      if (m3) return m3[1];
+      return null;
+    })();
+
+    if (videoId) {
+      try {
+        const res = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ type: 'FETCH_TRANSCRIPT_FALLBACK', videoId }, (response) => {
+            if (chrome.runtime.lastError) {
+              resolve(null);
+            } else {
+              resolve(response);
+            }
+          });
+        });
+        if (res && res.success) {
+          if (!transcript && res.transcript) transcript = res.transcript;
+          if (!genre && res.genre) genre = res.genre;
+          if (!channel && res.channel) channel = res.channel;
+        }
+      } catch (err) {
+        console.warn('DopaQueue: Fallback background metadata fetch failed', err);
+      }
+    }
+  }
 
   return { url, genre, channel, transcript };
 }

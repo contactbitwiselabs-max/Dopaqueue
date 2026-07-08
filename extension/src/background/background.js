@@ -190,6 +190,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
 
+  if (message?.type === 'FETCH_TRANSCRIPT_FALLBACK') {
+    fetchTranscriptFallback(message.videoId)
+      .then((data) => {
+        sendResponse({ success: true, ...data });
+      })
+      .catch((err) => {
+        sendResponse({ success: false, error: err.message || String(err) });
+      });
+    return true; // keep channel open for async response
+  }
+
   if (message?.type === 'GET_SCRAPE') {
     initStorage().then(() => {
       sendResponse(getScrapeResult(message.url));
@@ -210,6 +221,79 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   return false;
 });
+
+async function fetchTranscriptFallback(videoId) {
+  try {
+    const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const res = await fetch(watchUrl, { credentials: 'omit' });
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const html = await res.text();
+
+    // 1. Scrape category
+    let genre = null;
+    const genreMatch = html.match(/<meta itemprop="genre" content="([^"]+)">/);
+    if (genreMatch) {
+      genre = genreMatch[1];
+    } else {
+      const keywordsMatch = html.match(/<meta name="keywords" content="([^"]+)">/);
+      if (keywordsMatch) {
+        genre = keywordsMatch[1].split(',')[0]?.trim();
+      }
+    }
+
+    // 2. Scrape channel
+    let channel = null;
+    const channelMatch = html.match(/<link itemprop="name" content="([^"]+)">/);
+    if (channelMatch) {
+      channel = channelMatch[1];
+    }
+
+    // 3. Scrape transcript
+    let transcript = null;
+    const match = html.match(/ytInitialPlayerResponse\s*=\s*({[\s\S]*?});/);
+    let player = null;
+    if (match) {
+      player = JSON.parse(match[1]);
+    } else {
+      const altMatch = html.match(/ytInitialPlayerResponse\s*=\s*({[\s\S]*?})(?:\s*;|\s*<|\s*var|\s*window)/);
+      if (altMatch) {
+        player = JSON.parse(altMatch[1]);
+      }
+    }
+
+    if (player) {
+      const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+      if (tracks && tracks.length > 0) {
+        const enTrack = tracks.find(t => t.languageCode === 'en') || tracks[0];
+        if (enTrack?.baseUrl) {
+          const captionRes = await fetch(enTrack.baseUrl, { credentials: 'omit' });
+          if (captionRes.ok) {
+            const xmlText = await captionRes.text();
+            const textMatches = xmlText.match(/<text[^>]*>([\s\S]*?)<\/text>/g);
+            if (textMatches) {
+              transcript = textMatches.map(t => {
+                return t.replace(/<text[^>]*>/, '').replace(/<\/text>/, '')
+                  .replace(/&amp;/g, '&')
+                  .replace(/&lt;/g, '<')
+                  .replace(/&gt;/g, '>')
+                  .replace(/&quot;/g, '"')
+                  .replace(/&#39;/g, "'")
+                  .replace(/&apos;/g, "'")
+                  .replace(/\s+/g, ' ')
+                  .trim();
+              }).join(' ');
+            }
+          }
+        }
+      }
+    }
+
+    return { genre, channel, transcript };
+  } catch (err) {
+    console.error('DopaQueue background: fetchTranscriptFallback error', err);
+    throw err;
+  }
+}
 
 // Cover the edge case where the service worker was asleep and this
 // module just spun back up in response to an event.
