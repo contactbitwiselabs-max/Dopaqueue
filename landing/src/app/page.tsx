@@ -11,7 +11,7 @@ export default function Home() {
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-background/60 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <span aria-hidden>\ud83c\udf3f</span>
+            <span aria-hidden>{"\ud83c\udf3f"}</span>
             <span className="text-lg font-bold text-white tracking-tight">DopaQueue</span>
             <span className="font-mono text-[10px] px-2 py-0.5 rounded-full border border-lime-400/20 bg-lime-400/10 text-lime-400">
               beta
@@ -53,7 +53,7 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-6 py-12 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div>
             <p className="flex items-center gap-2 text-white font-bold">
-              <span aria-hidden>\ud83c\udf3f</span> DopaQueue
+              <span aria-hidden>{"\ud83c\udf3f"}</span> DopaQueue
             </p>
             <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.2em] text-zinc-600">
               built for deep focus · © 2026
