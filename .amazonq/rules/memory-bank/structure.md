@@ -19,7 +19,12 @@ Dopaqueue/
 │   │   │   ├── constants.js # Pure constants + pure utility functions (no side effects)
 │   │   │   ├── storage.js   # chrome.storage.local abstraction (in-memory cache)
 │   │   │   ├── supabase.js  # Supabase client singleton
-│   │   │   └── sync.js      # Supabase sync logic
+│   │   │   ├── sync.js      # Supabase sync logic
+│   │   │   ├── export.js    # Markdown, CSV, JSON, Notion & Obsidian export
+│   │   │   ├── ai.js        # AI summary & action checklist engine
+│   │   │   ├── groups.js    # Channel group taxonomy
+│   │   │   ├── share.js     # Zero-backend shareable playlist encoder
+│   │   │   └── circles.js   # Accountability circles & weekly attention mirror
 │   │   ├── components/ui/   # Shared React UI components
 │   │   ├── icons/           # Extension icons (16, 48, 128 px)
 │   │   ├── lib/utils.ts     # cn() utility (clsx + tailwind-merge)
@@ -31,11 +36,12 @@ Dopaqueue/
 │   ├── index.html           # Popup entry point
 │   ├── dashboard.html       # Dashboard entry point
 │   └── package.json
-├── landing/                 # Next.js marketing site
+├── landing/                 # Next.js marketing site & mobile PWA companion
+│   ├── public/manifest.json # PWA web manifest
 │   └── src/
-│       ├── app/             # Next.js App Router (layout.tsx, page.tsx, globals.css)
+│       ├── app/             # Next.js App Router (layout.tsx, page.tsx, share/[id]/page.tsx)
 │       ├── components/      # Hero.tsx, Features.tsx, ui/
-│       └── lib/utils.ts     # cn() utility
+│       └── lib/             # utils.ts, share.ts payload decoder
 ├── package.json             # Root workspace scripts (dev/build shortcuts)
 ├── verify.js                # Standalone verification script
 └── README.md
@@ -48,7 +54,10 @@ Dopaqueue/
 - **In-memory storage cache**: `storage.js` maintains a module-level in-memory object; `initStorage()` must be called before any read/write to hydrate from `chrome.storage.local`.
 - **Content script constraint**: `content.js` is a classic (non-module) script. It cannot import from `shared/`. Any constants it needs are duplicated inline.
 - **Message passing**: Content script → background via `chrome.runtime.sendMessage` (types: `GENRE_SCRAPED`, `GET_SCRAPE`). Background keeps message channel open with `return true` for async responses.
-- **Alarm-based budget tick**: A 1-minute repeating alarm (`budgetTick`) drives budget decrement. Only decrements when the active tab is a mindless-scroll URL.
+- **Alarm-based budget tick**: A 1-minute repeating alarm (`budgetTick`) drives budget decrement. Only decrements when the active tab is a mindless-scroll URL and NOT a whitelisted educational channel (`isWhitelistedChannel(scrape.channel)`).
+- **Second Brain Export & Two-Way Sync**: `shared/export.js` supports local file downloads (`markdown`, `csv`, `json`) as well as `formatWithTemplate` (YAML frontmatter substitution) and `pushToWebhook` for two-way sync with Notion, Obsidian, and Make/Zapier.
+- **Auto-Tag Heuristic Engine**: `shared/ai.js` provides `autoTagItem(title, transcript)` using local instant keyword matching against a topic taxonomy (`#ai`, `#react`, `#neuroscience`, `#productivity`, etc.).
+- **Pomodoro Focus Blocks**: Local timer block managed in `PomodoroBar` within the dashboard header and persisted via `dq_pomodoro`.
 
 ### Two React Entry Points
 - `index.html` → `popup/main.jsx` → `popup/App.jsx` (compact popup)

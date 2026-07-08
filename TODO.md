@@ -51,57 +51,50 @@
 
 ---
 
-## 🔲 Remaining Work (Recommended Next Steps)
+## ✅ Completed (Phases 1-5 & Architecture Upgrade)
+- [x] Migrated Extension to React + Vite with Aceternity/Magic UI styling
+- [x] Integrated local-first Supabase sync with Last-Write-Wins merging
+- [x] Created Next.js Landing Page (`/landing`)
+- [x] Built Auth page (Google/GitHub/Email + offline skip option)
+- [x] Implemented CSV and Markdown export options
 
-### Phase 6: Auth & User Onboarding
-- [ ] Implement Supabase auth (Google + Email sign-up)
-- [ ] Add sign-in button to popup
-- [ ] Add auth flow to dashboard
-- [ ] Save auth token to chrome.storage
-- [ ] Show "Not logged in" state vs. "Logged in as {email}"
-- [ ] Add logout button
-- [ ] Implement auth refresh handling
+---
 
-### Phase 7: Cloud Sync & Settings
-- [ ] Add "Settings" page to dashboard
-- [ ] Checkbox: "Enable cloud sync"
-- [ ] Button: "Sync now" (manual trigger)
-- [ ] Show sync status (pending/success/failed)
-- [ ] Show last sync time
-- [ ] Handle offline mode (queue changes locally, sync when online)
-- [ ] Add error handling for failed syncs with retry
+## 🔲 Current Execution Roadmap (Master Strategy)
 
-### Phase 8: Export Features
-- [ ] Implement export to Markdown (table format)
-- [ ] Implement export to CSV
-- [ ] Implement export to Notion (API integration)
-- [ ] Add bulk export options (all/filtered by date/channel)
-- [ ] Include metadata in exports (title, channel, saved date, transcript snippet)
-- [ ] Add custom notes/descriptions to each video
+### Phase 6: Immediate Differentiators (Completed)
+- [x] Implement Transcript "Read Mode" (clean article formatting in dashboard)
+- [x] Add Custom User Tags on saved videos for fast filtering
+- [x] Build Full-Text Cmd-K Spotlight Search (search across titles, tags, and transcript text)
+- [x] Enhance Speed Bump: Suggest 1-2 previously saved videos when budget hits 0
+- [x] Implement Notion & Obsidian markdown/webhook export compatibility
 
-### Phase 9: Channel Management
-- [ ] Implement "Channel Groups" feature
-- [ ] UI to create/edit groups
-- [ ] Ability to save channels (by URL)
-- [ ] Bulk add videos from a channel
-- [ ] Tag videos with group
-- [ ] Filter queue by channel/group
-- [ ] Export channels with group metadata
+### Phase 7: AI Action Engine & Spaced Repetition (Completed)
+- [x] Implement AI Summary & Action Checklist extractor (BYOK + managed option)
+- [x] Build Anki-style Revisit Queue (urgency tags: Tomorrow, Weekend, Reference)
+- [x] Create Daily Review Deck view in dashboard
+- [x] Build Weekly Attention Mirror report (Hours Saved vs. Wasted, Revisit rate)
 
-### Phase 10: Mobile & Web App
-- [ ] Design web app dashboard (full queue view)
-- [ ] Implement video player integration (embed or link)
-- [ ] Create React Native Android/iOS app
-- [ ] Share same Supabase backend (all devices sync)
-- [ ] Optional: web version hosted at https://dopaqueue.com
+### Phase 8: Virality, Team Collaboration & Mobile PWA (Completed)
+- [x] Build shareable public playlist routes (`/share/[id]`)
+- [x] Implement Accountability Circles (anonymous weekly scroll comparisons)
+- [x] Convert Next.js app into installable Mobile Companion PWA
+- [x] Prepare for Chrome Web Store launch with $49 Lifetime Deal (LTD) option
 
-### Phase 11: Analytics & Insights
-- [ ] Track saved videos over time (charts)
-- [ ] Show channel breakdown (pie chart)
-- [ ] Watched vs. unwatched stats
-- [ ] Budget burn-down chart
-- [ ] Time spent on mindless scroll (history)
-- [ ] Export stats as PDF report
+### Phase 9: Advanced Second Brain Integrations (Next Up)
+- [ ] Implement Two-Way Sync Webhooks for Notion, Obsidian & Logseq
+- [ ] Build customizable Markdown & YAML Frontmatter Export Templates
+- [ ] Add Auto-Tagging heuristic for saved videos based on transcript keywords
+
+### Phase 10: Deep Focus & Smart Dopamine Interventions
+- [ ] Implement Channel Whitelisting (educational channels don't drain Dopamine Budget)
+- [ ] Build Pomodoro Focus Mode inside the Speed Bump overlay
+- [ ] Add domain-specific scroll timers for Shorts vs. Reels vs. Feeds
+
+### Phase 11: Monetization & License Verification
+- [ ] Integrate Lemon Squeezy / Stripe checkout for Pro ($4.99/mo) and $49 Lifetime Deal (LTD)
+- [ ] Build license key activation flow in Extension Settings
+- [ ] Implement Pro-only feature gates (unlimited managed AI summaries & team sync)
 
 ### Phase 12: Polish & Release
 - [ ] Design professional branding (logo, colors)

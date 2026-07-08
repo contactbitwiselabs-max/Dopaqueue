@@ -1,22 +1,20 @@
 # DopaQueue — Product Overview
 
 ## Purpose & Value Proposition
-DopaQueue is a privacy-first, local-first Chrome extension that gamifies productivity by helping users manage their "dopamine budget" — the time they spend on mindless video scrolling (YouTube Shorts, Instagram Reels). Users save videos intentionally, watch them distraction-free, and stay within a configurable daily scroll budget.
+DopaQueue is a privacy-first, local-first Chrome extension and mobile-accessible Second Brain platform that turns algorithmic doom-scrolling into intentional learning. Users save videos intentionally, watch them distraction-free with AI action checklists and spaced repetition, and manage their dopamine budget with gamified accountability.
 
 ## Key Features
-- **Save Queue**: Save YouTube/Instagram videos for intentional later viewing instead of impulsive watching.
-- **Dopamine Budget**: A daily time budget (default 60 min) that ticks down in real-time when the user is on mindless-scroll surfaces (Shorts, Reels). Resets daily.
-- **Plant/Garden Gamification**: A virtual plant whose health (thriving → okay → wilting → dead) reflects how much budget remains. Wilting triggers a browser notification.
-- **Badge Counter**: Extension badge shows remaining budget minutes at a glance, color-coded by plant status.
-- **Mindless Scroll Detection**: Content script detects YouTube Shorts and Instagram Reels and notifies the background worker to start ticking the budget.
-- **Scrape Cache**: Caches video metadata (genre, channel, transcript) per URL (capped at 20 entries) to avoid redundant scraping.
-- **AI Integration**: Optional AI provider (Gemini) with user-supplied API key for enriching video metadata.
-- **Supabase Sync**: Optional cloud sync of queue and game state via Supabase.
-- **Dashboard**: Full-page React dashboard (`dashboard.html`) for managing the queue and reviewing stats.
-- **Popup**: Compact React popup (`index.html`) for quick actions and budget status.
+- **Save Queue & Spaced Repetition**: Save YouTube/Instagram videos with urgency tags (`Tomorrow`, `Weekend`, `Reference`) for Anki-style review decks.
+- **Dopamine Budget & Gamification**: A daily time budget that ticks down when scrolling Shorts/Reels, reflected in a virtual plant (thriving → dead).
+- **Speed Bump & Intentionality Gateway**: Overlays when budget hits 0, suggesting saved videos from the user's queue or launching Pomodoro focus blocks.
+- **Transcript Read Mode & AI Action Engine**: Scrape transcripts cleanly and extract 3-bullet summaries and actionable checklists via BYOK or managed AI.
+- **Full-Text Cmd-K Spotlight Search**: Search instantly across titles, custom tags (`#tag`), and spoken transcript contents.
+- **Shareable Public Playlists (`/share/[id]`)**: Zero-backend URL-encoded or cloud-hosted public review decks.
+- **Accountability Circles & Weekly Mirror**: Anonymous weekly scroll comparisons and attention scorecard reports.
+- **Advanced Second Brain Integrations**: Two-way sync webhooks, custom Markdown/YAML frontmatter templates, and auto-tagging for Notion, Obsidian, and Logseq.
 
 ## Target Users
-Productivity-focused individuals who want to reclaim focus from algorithmic short-form video feeds while still being able to save content they genuinely want to watch.
+Productivity-focused individuals, engineers, researchers, and lifelong learners who want to reclaim focus from algorithmic short-form video feeds while building an active Second Brain.
 
-## Companion Landing Page
-A Next.js marketing site (`/landing`) with Hero and Features sections, promoting the extension.
+## Companion Landing Page & PWA
+A Next.js app (`/landing`) featuring dynamic share routes (`/share/[id]`) and installable Mobile Companion PWA support.

@@ -9,6 +9,7 @@ import {
   addToQueue,
   updateQueueItem,
   subscribe,
+  getSavedVideos,
 } from '../shared/storage.js';
 import { isChannelUrl, extractChannelId } from '../shared/constants.js';
 import { getCurrentUser, signInWithGoogle, signOut, isLoggedIn, getUserEmail, getUserName } from '../shared/auth.js';
@@ -257,6 +258,7 @@ export default function PopupApp() {
   const plantStatus = game.plant || 'thriving';
   const remaining = Math.max(0, game.budgetMinutesTotal - game.budgetMinutesUsed);
   const budgetPct = Math.max(0, 100 - (game.budgetMinutesUsed / (game.budgetMinutesTotal || 60)) * 100);
+  const savedVideos = getSavedVideos().slice(0, 2);
 
   if (!ready) {
     return (
@@ -294,6 +296,33 @@ export default function PopupApp() {
           />
         </div>
       </div>
+
+      {/* Speed Bump Suggestion Banner */}
+      {remaining === 0 && savedVideos.length > 0 && (
+        <div className="z-10 px-4 pt-3">
+          <div className="p-3 bg-gradient-to-br from-red-500/10 to-purple-500/10 border border-red-500/20 rounded-xl space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-red-400">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Budget Exhausted!
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-snug">
+              Why not clear 1-2 items from your saved queue instead of browsing new content?
+            </p>
+            <div className="space-y-1.5 pt-1">
+              {savedVideos.map(v => (
+                <a
+                  key={v.id}
+                  href={v.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block p-2 bg-zinc-900/80 hover:bg-zinc-800 border border-white/5 rounded-lg text-xs text-purple-300 truncate transition-colors font-medium"
+                >
+                  ▶ {v.title}
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <div className="z-10 flex-1 p-4 flex flex-col">

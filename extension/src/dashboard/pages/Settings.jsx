@@ -7,11 +7,11 @@ import {
   isLoggedIn,
   getUserEmail,
   getUserName,
-} from '../shared/auth.js';
-import { syncWithCloud } from '../shared/sync.js';
-import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFile, buildExportFilename } from '../shared/export.js';
-import { getQueue, getSavedVideos, getSavedChannels } from '../shared/storage.js';
-import { getChannelGroups, createChannelGroup, deleteChannelGroup } from '../shared/groups.js';
+} from '../../shared/auth.js';
+import { syncWithCloud } from '../../shared/sync.js';
+import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFile, buildExportFilename } from '../../shared/export.js';
+import { getQueue, getSavedVideos, getSavedChannels } from '../../shared/storage.js';
+import { getChannelGroups, createChannelGroup, deleteChannelGroup } from '../../shared/groups.js';
 
 export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp, onSync: onSyncProp, isSyncing: isSyncingProp, onStatus }) {
   const [user, setUser] = useState(userProp || null);
@@ -21,8 +21,10 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
   const [lastSyncTime, setLastSyncTime] = useState(null);
   const [cloudEnabled, setCloudEnabled] = useState(true);
   const [newGroupName, setNewGroupName] = useState('');
-  const [groups, setGroups] = useState(new Map());
   const [exporting, setExporting] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [exportTemplate, setExportTemplate] = useState('');
+  const [savedSettingsMsg, setSavedSettingsMsg] = useState(false);
 
   useEffect(() => {
     async function loadUserAndSettings() {
@@ -34,11 +36,13 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
 
       // Load sync settings from chrome.storage
       if (typeof chrome !== 'undefined' && chrome.storage) {
-        chrome.storage.local.get(['dq_sync_enabled', 'dq_last_sync'], (res) => {
+        chrome.storage.local.get(['dq_sync_enabled', 'dq_last_sync', 'dq_webhook_url', 'dq_export_template'], (res) => {
           setCloudEnabled(res.dq_sync_enabled !== false);
           if (res.dq_last_sync) {
             setLastSyncTime(new Date(res.dq_last_sync));
           }
+          if (res.dq_webhook_url) setWebhookUrl(res.dq_webhook_url);
+          if (res.dq_export_template) setExportTemplate(res.dq_export_template);
         });
       }
 
@@ -312,6 +316,60 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
             💼 Notion
           </button>
         </div>
+      </section>
+
+      {/* Vault Webhook & Template Customizer Section */}
+      <section className="bg-zinc-900/50 rounded-xl p-6 border border-white/5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+            🔗 Vault Two-Way Sync Webhook & Export Templates
+          </h2>
+          {savedSettingsMsg && (
+            <span className="text-xs text-green-400 font-medium">✓ Vault settings saved</span>
+          )}
+        </div>
+        <p className="text-sm text-zinc-400">
+          Configure a custom Webhook URL (Notion API / Obsidian Local REST API / Zapier) and YAML Frontmatter template to push notes directly to your vault.
+        </p>
+
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Webhook URL</label>
+          <input
+            type="url"
+            placeholder="https://hook.eu1.make.com/..."
+            value={webhookUrl}
+            onChange={(e) => setWebhookUrl(e.target.value)}
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Custom Markdown / YAML Frontmatter Template</label>
+            <span className="text-[11px] text-zinc-500">Placeholders: &#123;&#123;title&#125;&#125;, &#123;&#123;url&#125;&#125;, &#123;&#123;tags&#125;&#125;, &#123;&#123;summary&#125;&#125;, &#123;&#123;actions&#125;&#125;</span>
+          </div>
+          <textarea
+            rows={5}
+            placeholder={`---\ntitle: "{{title}}"\nurl: "{{url}}"\ntags: [{{tags}}]\n---\n# {{title}}\n\n## Summary\n{{summary}}\n\n## Action Checklist\n{{actions}}`}
+            value={exportTemplate}
+            onChange={(e) => setExportTemplate(e.target.value)}
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-xs font-mono text-zinc-200 focus:outline-none focus:border-purple-500"
+          />
+        </div>
+
+        <button
+          onClick={() => {
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+              chrome.storage.local.set({ dq_webhook_url: webhookUrl, dq_export_template: exportTemplate }, () => {
+                setSavedSettingsMsg(true);
+                setTimeout(() => setSavedSettingsMsg(false), 2500);
+              });
+            }
+          }}
+          className="px-4 py-2 rounded-xl bg-purple-500 hover:bg-purple-400 text-black font-semibold text-xs transition-colors"
+        >
+          Save Vault Settings
+        </button>
       </section>
 
       {/* Channel Groups Section */}

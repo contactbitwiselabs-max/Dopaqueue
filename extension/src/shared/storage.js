@@ -28,6 +28,8 @@ export let localNotes = [];
 export let localGameState = { ...DEFAULT_GAME_STATE };
 export let localSettings = { ...DEFAULT_SETTINGS };
 export let localCache = {};
+export let localWhitelist = [];
+export let localPomodoro = { active: false, remainingSeconds: 1500, label: 'Focus Block' };
 
 let initialized = false;
 
@@ -44,7 +46,9 @@ export async function initStorage() {
       STORAGE_KEYS.NOTES,
       STORAGE_KEYS.GAME,
       STORAGE_KEYS.SETTINGS,
-      STORAGE_KEYS.SCRAPE_CACHE
+      STORAGE_KEYS.SCRAPE_CACHE,
+      STORAGE_KEYS.WHITELIST,
+      STORAGE_KEYS.POMODORO
       ], (res) => {
       // Check for errors or undefined responses to prevent crashes
       if (chrome.runtime.lastError) {
@@ -57,6 +61,8 @@ export async function initStorage() {
       localGameState = { ...DEFAULT_GAME_STATE, ...(res[STORAGE_KEYS.GAME] || {}) };
       localSettings = { ...DEFAULT_SETTINGS, ...(res[STORAGE_KEYS.SETTINGS] || {}) };
       localCache = res[STORAGE_KEYS.SCRAPE_CACHE] || {};
+      localWhitelist = Array.isArray(res[STORAGE_KEYS.WHITELIST]) ? res[STORAGE_KEYS.WHITELIST] : [];
+      localPomodoro = { active: false, remainingSeconds: 1500, label: 'Focus Block', ...(res[STORAGE_KEYS.POMODORO] || {}) };
       
       // Perform daily reset check for game state
       const today = todayLocalDateString();
@@ -235,9 +241,40 @@ export function resetAllData() {
   localNotes = [];
   localGameState = { ...DEFAULT_GAME_STATE, updatedAt: Date.now() };
   localSettings = { ...DEFAULT_SETTINGS, updatedAt: Date.now() };
+  localWhitelist = [];
+  localPomodoro = { active: false, remainingSeconds: 1500, label: 'Focus Block' };
   
   storageSet(STORAGE_KEYS.QUEUE, localQueue);
   storageSet(STORAGE_KEYS.NOTES, localNotes);
   storageSet(STORAGE_KEYS.GAME, localGameState);
   storageSet(STORAGE_KEYS.SETTINGS, localSettings);
+  storageSet(STORAGE_KEYS.WHITELIST, localWhitelist);
+  storageSet(STORAGE_KEYS.POMODORO, localPomodoro);
 }
+
+// --- Whitelist Helpers ---
+export function getWhitelist() {
+  return [...localWhitelist];
+}
+
+export function saveWhitelist(list) {
+  localWhitelist = Array.isArray(list) ? list : [];
+  storageSet(STORAGE_KEYS.WHITELIST, localWhitelist);
+}
+
+export function isWhitelistedChannel(channelName) {
+  if (!channelName) return false;
+  const norm = channelName.toLowerCase().trim();
+  return localWhitelist.some(c => c && c.toLowerCase().trim() === norm);
+}
+
+// --- Pomodoro State Helpers ---
+export function getPomodoroState() {
+  return { ...localPomodoro };
+}
+
+export function savePomodoroState(state) {
+  localPomodoro = { ...localPomodoro, ...state };
+  storageSet(STORAGE_KEYS.POMODORO, localPomodoro);
+}
+

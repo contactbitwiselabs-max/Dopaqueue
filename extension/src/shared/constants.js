@@ -11,6 +11,8 @@ export const STORAGE_KEYS = {
   SETTINGS: 'dq_settings',
   SCRAPE_CACHE: 'dq_scrape_cache',
   NOTES: 'dq_notes',
+  WHITELIST: 'dq_whitelist',
+  POMODORO: 'dq_pomodoro',
 };
 
 // Cap on cached scrape results (genre/channel/transcript per URL), kept
@@ -34,6 +36,8 @@ export const DEFAULT_SETTINGS = {
   aiProvider: 'gemini',
   aiApiKey: '',
   notificationsEnabled: true,
+  webhookUrl: '',
+  exportTemplate: '',
 };
 
 // Plant status thresholds, based on % of daily budget remaining.

@@ -11,6 +11,7 @@ import {
   updateGameState,
   cacheScrapeResult,
   getScrapeResult,
+  isWhitelistedChannel,
 } from '../shared/storage.js';
 
 const BUDGET_TICK_ALARM = 'budgetTick';
@@ -94,8 +95,11 @@ async function budgetTick() {
   const tab = await getActiveFocusedTab();
   const inMindlessScroll = isMindlessScrollUrl(tab && tab.url);
 
+  const scrape = tab && tab.url ? getScrapeResult(tab.url) : null;
+  const isWhitelisted = scrape && isWhitelistedChannel(scrape.channel);
+
   const game = getGameState();
-  if (!inMindlessScroll) {
+  if (!inMindlessScroll || isWhitelisted) {
     await refreshBadge();
     return;
   }

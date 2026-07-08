@@ -1,0 +1,17 @@
+{
+  "name": "DopaQueue Mobile Companion",
+  "short_name": "DopaQueue",
+  "description": "Video Second Brain & Intentionality Platform — Review Queue & AI Action Checklists",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

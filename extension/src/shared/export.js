@@ -82,7 +82,7 @@ export function exportToJSON(items) {
   );
 }
 
-// Generate Notion import format (markdown-like with metadata)
+// Generate Notion & Obsidian import format (markdown-like with metadata and tags)
 export function exportToNotion(items) {
   const lines = [];
 
@@ -93,6 +93,9 @@ export function exportToNotion(items) {
     lines.push(`- **Type**: ${item.type || 'video'}`);
     lines.push(`- **Saved**: ${item.savedAt ? new Date(item.savedAt).toLocaleString() : '—'}`);
     lines.push(`- **Watched**: ${item.watched ? 'Yes' : 'No'}`);
+    if (item.tags && item.tags.length > 0) {
+      lines.push(`- **Tags**: ${item.tags.map(t => `#${t}`).join(' ')}`);
+    }
     if (item.description) {
       lines.push(`- **Notes**: ${item.description}`);
     }
@@ -128,3 +131,58 @@ export function buildExportFilename(format, title = 'DopaQueue') {
   const ext = format === 'csv' ? 'csv' : format === 'json' ? 'json' : 'md';
   return `${title}-${timestamp}.${ext}`;
 }
+
+// Custom Markdown / YAML frontmatter template formatter
+export function formatWithTemplate(item, template) {
+  if (!template) return '';
+  const title = item.title || 'Untitled';
+  const url = item.url || '';
+  const channel = item.channel || 'Unknown Channel';
+  const date = item.savedAt ? new Date(item.savedAt).toISOString() : new Date().toISOString();
+  const tags = Array.isArray(item.tags) ? item.tags.join(', ') : '';
+  const summary = Array.isArray(item.aiSummary) ? item.aiSummary.map(s => `- ${s}`).join('\n') : (item.aiSummary || 'No summary available.');
+  const actions = Array.isArray(item.aiActions) ? item.aiActions.map(a => `- [ ] ${a}`).join('\n') : (item.aiActions || 'No action items available.');
+  const transcript = item.transcript || 'No transcript saved.';
+
+  return template
+    .replace(/\{\{title\}\}/g, title)
+    .replace(/\{\{url\}\}/g, url)
+    .replace(/\{\{channel\}\}/g, channel)
+    .replace(/\{\{date\}\}/g, date)
+    .replace(/\{\{tags\}\}/g, tags)
+    .replace(/\{\{summary\}\}/g, summary)
+    .replace(/\{\{actions\}\}/g, actions)
+    .replace(/\{\{transcript\}\}/g, transcript);
+}
+
+// Push item to custom Webhook (Notion API / Obsidian Local REST API / Zapier / Make)
+export async function pushToWebhook(webhookUrl, item, customTemplate = null) {
+  if (!webhookUrl) throw new Error('Webhook URL is required');
+  
+  const payload = {
+    id: item.id || Date.now(),
+    title: item.title || 'Untitled',
+    url: item.url || '',
+    channel: item.channel || '',
+    savedAt: item.savedAt || Date.now(),
+    tags: item.tags || [],
+    aiSummary: item.aiSummary || [],
+    aiActions: item.aiActions || [],
+    formattedContent: customTemplate ? formatWithTemplate(item, customTemplate) : null,
+  };
+
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Webhook push failed with status ${response.status}`);
+  }
+
+  return response;
+}
+

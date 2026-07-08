@@ -58,6 +58,6 @@ cd landing && npm run build
 - `landing/tsconfig.json` — TypeScript config
 
 ## Storage
-- Primary: `chrome.storage.local` (keys prefixed `dq_`: `dq_queue`, `dq_game`, `dq_settings`, `dq_scrape_cache`, `dq_notes`)
+- Primary: `chrome.storage.local` (keys prefixed `dq_`: `dq_queue`, `dq_game`, `dq_settings`, `dq_scrape_cache`, `dq_notes`, `dq_whitelist`, `dq_pomodoro`)
 - Optional cloud: Supabase (configured via `shared/supabase.js` + `shared/sync.js`)
 - Scrape cache capped at `MAX_SCRAPE_CACHE_ENTRIES = 20` entries
