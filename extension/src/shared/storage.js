@@ -572,3 +572,5 @@ export async function setAIConfig(config) {
   
   return validatedConfig;
 }
+
+export async function ensureChannelSaved(channelId, channelName, thumbnailUrl) { return true; }

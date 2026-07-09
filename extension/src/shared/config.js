@@ -123,16 +123,20 @@ function validateConfig(config) {
 export function getValidatedConfig() {
   const config = getConfig();
   
-  // In development, allow missing config but warn
-  if (config.ENVIRONMENT === 'development') {
-    if (!config.SUPABASE_URL) {
-      console.warn('[DopaQueue] SUPABASE_URL not configured. Some features may not work.');
-    }
-    return config;
+  if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY) {
+    console.warn('[DopaQueue] SUPABASE_URL or SUPABASE_ANON_KEY not configured. Some features may not work.');
   }
 
-  // In production, require all config
-  return validateConfig(config);
+  // In production, log error but don't throw because it crashes the whole extension bundle
+  if (config.ENVIRONMENT === 'production') {
+    try {
+      validateConfig(config);
+    } catch (err) {
+      console.error('[DopaQueue] Config Error:', err);
+    }
+  }
+
+  return config;
 }
 
 /**

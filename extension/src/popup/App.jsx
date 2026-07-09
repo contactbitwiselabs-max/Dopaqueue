@@ -26,7 +26,7 @@ import {
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Spinner, Skeleton } from '../components/ui/Loading';
-import { useTheme, ThemeToggle } from '../shared/theme.js';
+import { useTheme, ThemeToggle } from '../shared/theme.jsx';
 import {
   initStorage,
   getGameState,
