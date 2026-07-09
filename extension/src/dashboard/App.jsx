@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
 import {
   PlayCircle, Hash, Settings as SettingsIcon, Trash2, CheckCircle,
   Clock, Download, Folder, FileText, FileSpreadsheet, LogIn, X, AlertCircle,
@@ -1767,24 +1768,76 @@ function AccountabilityCirclesView({ videos }) {
   const [newCircleName, setNewCircleName] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
+  
+  const [report, setReport] = useState({ mindlessMinutesAvg: 0, revisitRate: 0, hoursSavedEst: 0, totalVideosScrolled: 0 });
+  const [historyData, setHistoryData] = useState([]);
+  
+  // Chart Filters
+  const [timeRange, setTimeRange] = useState(7); // 7 or 30 days
+  const [platformFilter, setPlatformFilter] = useState('All'); // 'All', 'shorts', 'reels'
 
   useEffect(() => {
-    getMyCircle().then(res => setCircle(res));
-  }, []);
+    getMyCircle(videos).then(res => setCircle(res));
+    getWeeklyMirrorReport(videos).then(res => setReport(res));
+    
+    // Fetch raw history for charts
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.get(['dq_timer_history'], (res) => {
+        setHistoryData(res['dq_timer_history'] || []);
+      });
+    }
+  }, [videos]);
 
-  const report = getWeeklyMirrorReport(videos);
+  const chartData = useMemo(() => {
+    const now = new Date();
+    now.setHours(0,0,0,0);
+    const startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - timeRange + 1);
 
-  const handleCreateCircle = (e) => {
+    // Filter raw data
+    const filtered = historyData.filter(session => {
+      const d = new Date(session.startTime || Date.now());
+      if (d < startDate) return false;
+      if (platformFilter !== 'All' && session.pageType !== platformFilter) return false;
+      return true;
+    });
+
+    // Group by date string (YYYY-MM-DD)
+    const grouped = {};
+    for (let i = 0; i < timeRange; i++) {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + i);
+      const ds = d.toISOString().split('T')[0];
+      const shortDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      grouped[ds] = { dateStr: ds, displayDate: shortDate, duration: 0 };
+    }
+
+    filtered.forEach(session => {
+      const d = new Date(session.startTime || Date.now());
+      const ds = d.toISOString().split('T')[0];
+      if (grouped[ds]) {
+        grouped[ds].duration += (session.duration || 0);
+      }
+    });
+
+    // Convert duration to minutes
+    return Object.values(grouped).map(day => ({
+      ...day,
+      minutes: Math.round(day.duration / 60000)
+    }));
+  }, [historyData, timeRange, platformFilter]);
+
+  const handleCreateCircle = async (e) => {
     e.preventDefault();
-    const c = createCircle(newCircleName || 'Focus Squad');
+    const c = await createCircle(newCircleName || 'Focus Squad', 'You', videos);
     setCircle(c);
     setShowCreate(false);
   };
 
-  const handleJoinCircle = (e) => {
+  const handleJoinCircle = async (e) => {
     e.preventDefault();
     if (!joinCode) return;
-    const c = joinCircleByCode(joinCode);
+    const c = await joinCircleByCode(joinCode, 'You', videos);
     setCircle(c);
     setShowJoin(false);
   };
@@ -1872,8 +1925,61 @@ function AccountabilityCirclesView({ videos }) {
           </div>
           <div className="text-3xl font-extrabold text-white">{report.hoursSavedEst} hrs</div>
           <p className="text-xs text-blue-400 mt-2">
-            Speed Bump intervened {report.speedBumpInterventions} times this week
+            Based on {videos.length} videos intentionally saved
           </p>
+        </div>
+      </div>
+
+      {/* ─── Scroll Analytics Chart ─── */}
+      <div className="bg-zinc-900/80 border border-white/10 rounded-3xl p-7 space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-5">
+          <div>
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <LayoutList className="w-5 h-5 text-lime-400" /> Daily Scroll Trends
+            </h3>
+            <p className="text-xs text-zinc-400 mt-1">Visualize your mindless scrolling habits over time</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <select
+              value={timeRange}
+              onChange={(e) => setTimeRange(Number(e.target.value))}
+              className="bg-zinc-950 border border-zinc-800 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-lime-500 text-zinc-300"
+            >
+              <option value={7}>Last 7 Days</option>
+              <option value={30}>Last 30 Days</option>
+            </select>
+            <select
+              value={platformFilter}
+              onChange={(e) => setPlatformFilter(e.target.value)}
+              className="bg-zinc-950 border border-zinc-800 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-lime-500 text-zinc-300"
+            >
+              <option value="All">All Platforms</option>
+              <option value="shorts">YouTube Shorts</option>
+              <option value="reels">Instagram Reels</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="h-72 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+              <XAxis dataKey="displayDate" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} dy={10} />
+              <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}m`} />
+              <Tooltip 
+                cursor={{ fill: '#27272a', opacity: 0.4 }}
+                contentStyle={{ backgroundColor: '#18181b', borderColor: '#3f3f46', borderRadius: '12px', fontSize: '12px' }}
+                itemStyle={{ color: '#a3e635', fontWeight: 'bold' }}
+                labelStyle={{ color: '#a1a1aa', marginBottom: '4px' }}
+                formatter={(value) => [`${value} minutes`, 'Scroll Time']}
+              />
+              <Bar dataKey="minutes" radius={[4, 4, 0, 0]}>
+                {chartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.minutes > 30 ? '#f87171' : entry.minutes > 15 ? '#fbbf24' : '#a3e635'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 

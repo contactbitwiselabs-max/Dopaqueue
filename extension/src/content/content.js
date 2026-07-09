@@ -331,13 +331,19 @@ function getActiveContainer() {
     const rect = v.getBoundingClientRect();
     if (rect.top <= h / 2 && rect.bottom >= h / 2) {
       // Start from the video and go up until we find something that holds the caption
+      // We must STOP if the element contains multiple videos, otherwise we hit the feed wrapper
       let el = v.parentElement;
+      let singlePostContainer = null;
       while (el && el !== document.body) {
-        if (el.querySelector('h1, span[dir="auto"]')) return el;
+        if (el.querySelectorAll('video').length > 1) {
+          break; // Gone too far (hit the feed/scroll wrapper)
+        }
+        if (el.querySelector('h1, span[dir="auto"]')) {
+          singlePostContainer = el;
+        }
         el = el.parentElement;
       }
-      // Absolute last resort: use the video's immediate parent
-      return v.parentElement || v;
+      return singlePostContainer || v.parentElement || v;
     }
   }
   
@@ -368,7 +374,12 @@ async function universalScrapeAll(targetUrl, containerEl = null) {
   const isReel = /\/(reel|reels|shorts|video)\//i.test(url);
   const contentType = isReel ? 'reel' : 'post';
 
-  const container = containerEl || getActiveContainer() || document;
+  const activeCont = containerEl || getActiveContainer();
+  if (isReel && !activeCont) {
+    console.warn('DopaQueue: Cannot find active reel container in DOM. Aborting scrape to avoid stale data.');
+    return null;
+  }
+  const container = activeCont || document;
 
   let rawImgUrl = null;
   const localVideo = container.querySelector('video');
@@ -523,7 +534,12 @@ function scrapeMetadataOnly() {
     const isReel = /\/(reel|reels|shorts|video)\//i.test(url);
     const contentType = isReel ? 'reel' : 'post';
 
-    const container = getActiveContainer() || document;
+    const activeCont = getActiveContainer();
+    if (isReel && !activeCont) {
+      console.warn('DopaQueue: Cannot find active reel container for background scrape. Aborting.');
+      return null;
+    }
+    const container = activeCont || document;
 
     let rawImgUrl = null;
     const localVideo = container.querySelector('video');
@@ -759,57 +775,96 @@ function initInstagramButtons() {
 
       // Lock onto specific post container for context-aware URL & metadata
       const postContainer = actionItem.closest('article, [data-testid="post-container"]') || parentContainer;
+      const isReelActionRow = postContainer === parentContainer;
 
-      // Extract specific post permalink (Instagram uses /p/ or /reel/ paths inside article anchors)
-      let postUrl = location.href;
-      const permalinkEl = postContainer.querySelector('a[href^="/p/"], a[href^="/reel/"], a[href^="/reels/"]');
-      if (permalinkEl) {
-        const href = permalinkEl.getAttribute('href');
-        postUrl = new URL(href, location.origin).href;
-      }
+      const getDynamicUrl = () => {
+        const permalinkEl = postContainer.querySelector('a[href^="/p/"], a[href^="/reel/"], a[href^="/reels/"]');
+        if (permalinkEl) return new URL(permalinkEl.getAttribute('href'), location.origin).href;
+        return location.href;
+      };
+
+      const setSavedUI = () => {
+        isSaved = true;
+        iconBox.style.background = 'rgba(34, 197, 94, 0.28)';
+        iconBox.style.borderColor = '#4ade80';
+        iconBox.innerHTML = `
+          <svg class="dq-svg-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M9 16.17L4.83 12L3.41 13.41L9 19L21 7L19.59 5.59L9 16.17Z" fill="#4ade80"/>
+          </svg>
+        `;
+        label.textContent = 'Saved';
+        label.style.color = '#4ade80';
+      };
+
+      const setUnsavedUI = () => {
+        isSaved = false;
+        iconBox.style.background = 'rgba(132, 204, 22, 0.15)';
+        iconBox.style.borderColor = 'rgba(132, 204, 22, 0.45)';
+        iconBox.innerHTML = `
+          <svg class="dq-svg-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M17 3H7C5.9 3 5 3.9 5 5V21L12 18L19 21V5C19 3.9 18.1 3 17 3ZM17 18L12 15.82L7 18V5H17V18Z" fill="#84cc16"/>
+          </svg>
+        `;
+        label.textContent = 'Save';
+        label.style.color = '#a3e635';
+      };
 
       let isSaved = false;
-      chrome.runtime.sendMessage({ type: 'CHECK_SAVED_URL', url: postUrl }, (res) => {
-        if (!chrome.runtime.lastError && res?.saved) {
-          isSaved = true;
-          iconBox.style.background = 'rgba(34, 197, 94, 0.28)';
-          iconBox.style.borderColor = '#4ade80';
-          iconBox.innerHTML = `
-            <svg class="dq-svg-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M9 16.17L4.83 12L3.41 13.41L9 19L21 7L19.59 5.59L9 16.17Z" fill="#4ade80"/>
-            </svg>
-          `;
-          label.textContent = 'Saved';
-          label.style.color = '#4ade80';
+      let lastCheckedUrl = null;
+
+      const checkSavedStatus = () => {
+        const currentUrl = getDynamicUrl();
+        if (currentUrl === lastCheckedUrl) return;
+        lastCheckedUrl = currentUrl;
+        chrome.runtime.sendMessage({ type: 'CHECK_SAVED_URL', url: currentUrl }, (res) => {
+          if (!chrome.runtime.lastError && res?.saved) {
+            setSavedUI();
+          } else {
+            setUnsavedUI();
+          }
+        });
+      };
+
+      const isReel = /\/(reel|reels|shorts|video)\//i.test(location.href) && !postContainer.querySelector('a[href^="/p/"], a[href^="/reel/"], a[href^="/reels/"]');
+
+      // Use IntersectionObserver to elegantly handle React DOM node recycling
+      const io = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting) {
+          // Give Instagram's SPA routing a tiny window to update location.href
+          if (isReel) setTimeout(checkSavedStatus, 300);
+          else checkSavedStatus();
+        } else {
+          // CRITICAL: When the button is scrolled out of view, Instagram recycles this DOM node.
+          // We MUST wipe the state back to "Save" so it doesn't flash "Saved" on the next reel.
+          setUnsavedUI();
+          lastCheckedUrl = null;
         }
-      });
+      }, { threshold: 0.05 });
+      io.observe(wrapper);
+
+      // Dynamic check on hover to catch SPA URL updates
+      wrapper.addEventListener('mouseenter', checkSavedStatus);
 
       wrapper.addEventListener('click', async (e) => {
         e.stopPropagation();
         e.preventDefault();
 
-        // Play bounce micro-animation
         iconBox.classList.remove('dq-animate-bounce');
         void iconBox.offsetWidth;
         iconBox.classList.add('dq-animate-bounce');
 
+        const currentUrl = getDynamicUrl();
+
         if (!isSaved) {
           label.textContent = 'Saving...';
-          const scraped = await universalScrapeAll(postUrl, postContainer);
+          const scraped = await universalScrapeAll(currentUrl, isReelActionRow ? null : postContainer);
           chrome.runtime.sendMessage({
             type: 'SAVE_INSTAGRAM_ITEM',
             ...scraped,
+            url: scraped?.url || currentUrl
           }, () => {
-            isSaved = true;
-            iconBox.style.background = 'rgba(34, 197, 94, 0.28)';
-            iconBox.style.borderColor = '#4ade80';
-            iconBox.innerHTML = `
-              <svg class="dq-svg-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M9 16.17L4.83 12L3.41 13.41L9 19L21 7L19.59 5.59L9 16.17Z" fill="#4ade80"/>
-              </svg>
-            `;
-            label.textContent = 'Saved';
-            label.style.color = '#4ade80';
+            setSavedUI();
+            lastCheckedUrl = currentUrl;
           });
         }
       });
