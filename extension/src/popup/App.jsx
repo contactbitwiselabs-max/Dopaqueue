@@ -1,7 +1,32 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { PlayCircle, LayoutDashboard, Save, Check, Hash, AlertCircle, Cloud, LogIn, Tag, Plus, ExternalLink, Sparkles, Clock, Film, Timer } from 'lucide-react';
-import { ShimmerButton } from '../components/ui/shimmer-button';
-import { Meteors } from '../components/ui/meteors';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { 
+  PlayCircle, 
+  LayoutDashboard, 
+  Save, 
+  Check, 
+  Hash, 
+  AlertCircle, 
+  Cloud, 
+  LogIn, 
+  Tag, 
+  Plus, 
+  ExternalLink, 
+  Sparkles, 
+  Clock, 
+  Film, 
+  Timer,
+  Sun,
+  Moon,
+  Monitor,
+  TrendingUp,
+  ShieldCheck,
+  Zap,
+  Leaf
+} from 'lucide-react';
+import { Button } from '../components/ui/Button';
+import { Badge } from '../components/ui/Badge';
+import { Spinner, Skeleton } from '../components/ui/Loading';
+import { useTheme, ThemeToggle } from '../shared/theme.js';
 import {
   initStorage,
   getGameState,
@@ -12,10 +37,21 @@ import {
   getSavedVideos,
   ensureChannelSaved,
 } from '../shared/storage.js';
-import { isChannelUrl, extractChannelId, extractYouTubeVideoId, STORAGE_KEYS } from '../shared/constants.js';
+import { 
+  isChannelUrl, 
+  extractChannelId, 
+  extractYouTubeVideoId, 
+  STORAGE_KEYS,
+  getPlantStatus,
+  PLANT_THRESHOLDS
+} from '../shared/constants.js';
+import { validateUrl, validateQueueItem } from '../shared/validation.js';
+import { getCurrentUser, signInWithGoogle, signOut, isLoggedIn, getUserEmail, getUserName, getPersistedAuthState } from '../shared/auth.js';
+import { supabaseClient } from '../shared/supabase.js';
+import { syncWithCloud } from '../shared/sync.js';
+import { useToast } from '../components/ui/Toast';
 
 // Pages where saving makes sense as a proper video/reel item.
-// On other pages we fall back to "Save Link" mode.
 function isVideoPage(url) {
   if (!url) return false;
   return (
@@ -26,778 +62,515 @@ function isVideoPage(url) {
     /x\.com\/.*\/status\//i.test(url)
   );
 }
-import { getCurrentUser, signInWithGoogle, signOut, isLoggedIn, getUserEmail, getUserName, getPersistedAuthState } from '../shared/auth.js';
-import { supabaseClient } from '../shared/supabase.js';
-import { syncWithCloud } from '../shared/sync.js';
 
-const PLANT_EMOJI = {
-  thriving: '🌿',
-  okay: '🌱',
-  wilting: '🥀',
-  dead: '💀',
+// Premium plant status styling
+const PLANT_STATUS = {
+  thriving: {
+    emoji: '🌿',
+    label: 'Thriving',
+    color: 'text-emerald-500',
+    bg: 'bg-emerald-500/10',
+    border: 'border-emerald-500/20',
+    glow: 'drop-shadow(0 0 12px rgba(16, 185, 129, 0.4))',
+    progress: 100,
+  },
+  okay: {
+    emoji: '🌱',
+    label: 'Okay',
+    color: 'text-amber-500',
+    bg: 'bg-amber-500/10',
+    border: 'border-amber-500/20',
+    glow: 'drop-shadow(0 0 12px rgba(245, 158, 11, 0.4))',
+    progress: 60,
+  },
+  wilting: {
+    emoji: '🌵',
+    label: 'Wilting',
+    color: 'text-orange-500',
+    bg: 'bg-orange-500/10',
+    border: 'border-orange-500/20',
+    glow: 'drop-shadow(0 0 12px rgba(239, 68, 68, 0.4))',
+    progress: 30,
+  },
+  dead: {
+    emoji: '🪴',
+    label: 'Dead',
+    color: 'text-gray-400',
+    bg: 'bg-gray-800/10',
+    border: 'border-gray-700/20',
+    glow: 'grayscale(100%)',
+    progress: 0,
+  },
 };
 
-const PLANT_COLOR = {
-  thriving: 'text-green-400 bg-green-400/10 border-green-400/20',
-  okay: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
-  wilting: 'text-red-400 bg-red-400/10 border-red-400/20',
-  dead: 'text-zinc-500 bg-zinc-800 border-zinc-700',
-};
+// Calculate plant status from budget
+function calculatePlantStatus(budgetUsed, budgetTotal) {
+  if (budgetTotal <= 0) return 'dead';
+  const remaining = budgetTotal - budgetUsed;
+  const pct = remaining / budgetTotal;
+  
+  if (pct >= PLANT_THRESHOLDS.THRIVING) return 'thriving';
+  if (pct >= PLANT_THRESHOLDS.OKAY) return 'okay';
+  if (pct > 0) return 'wilting';
+  return 'dead';
+}
 
-function usePopupData() {
+// Format time display
+function formatTime(minutes) {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  
+  if (hours > 0) {
+    return `${hours}h ${mins}m`;
+  }
+  return `${mins}m`;
+}
+
+// Main Popup Component
+function PopupApp() {
+  const { isDark } = useTheme();
+  const { success, error: showError, warning } = useToast();
   const [ready, setReady] = useState(false);
   const [pageInfo, setPageInfo] = useState(null);
-  const [game, setGame] = useState({ plant: 'thriving', budgetMinutesTotal: 60, budgetMinutesUsed: 0 });
+  const [game, setGame] = useState({ 
+    plant: 'thriving', 
+    budgetMinutesTotal: 60, 
+    budgetMinutesUsed: 0 
+  });
   const [alreadySaved, setAlreadySaved] = useState(false);
   const [tabError, setTabError] = useState(null);
-
-  // ── Stable callback ref ──────────────────────────────────────────────────
-  // We store the latest setters in a ref so the setInterval (created once)
-  // can always call the most-recent version without being recreated.
-  const settersRef = React.useRef({ setPageInfo, setAlreadySaved });
-  useEffect(() => {
-    settersRef.current = { setPageInfo, setAlreadySaved };
-  });
-
-  // ── Helpers ──────────────────────────────────────────────────────────────
-
-  function checkAlreadySaved(url, setter) {
-    const queue = getQueue();
-    const vid = extractYouTubeVideoId(url);
-    setter(queue.some((i) => {
-      if (i.deleted) return false;
-      if (i.url === url) return true;
-      if (vid && extractYouTubeVideoId(i.url) === vid) return true;
-      return false;
-    }));
-  }
-
-  // Apply a scrape result to the popup state
-  function applyResult(res, tabUrl, tabTitle, favIconUrl) {
-    const { setPageInfo: setPI, setAlreadySaved: setAS } = settersRef.current;
-    if (res && res.url) {
-      const live = {
-        url: res.url,
-        title: res.title || tabTitle || 'Unknown Page',
-        favIconUrl: favIconUrl || '',
-        thumbnail: res.thumbnail || null,
-        author: res.author || res.channel || null,
-        authorUrl: res.authorUrl || null,
-        contentType: res.contentType || null,
-        platform: res.platform || null,
-        fromContentScript: true,
-      };
-      setPI(live);
-      checkAlreadySaved(live.url, setAS);
-      return live;
-    }
-    // Content script gave nothing — fall back to tab data (display only, not for saving video items)
-    const fallback = {
-      url: tabUrl,
-      title: tabTitle || 'Unknown Page',
-      favIconUrl: favIconUrl || '',
-      thumbnail: null, author: null, authorUrl: null,
-      contentType: null, platform: null,
-      fromContentScript: false,
-    };
-    setPI(fallback);
-    checkAlreadySaved(fallback.url, setAS);
-    return fallback;
-  }
-
-  // ── getActiveTab: finds the right browser tab from the popup context ─────
-  // chrome.tabs.query({ active:true, currentWindow:true }) from a popup can
-  // return the popup's own window, which is wrong. We query ALL windows and
-  // pick the tab whose URL is not a chrome-extension:// page.
-  function getActiveTab(cb) {
-    if (typeof chrome === 'undefined' || !chrome.tabs) return;
-    chrome.tabs.query({ active: true }, (tabs) => {
-      if (chrome.runtime.lastError) return;
-      const tab = tabs.find(t => t.url && !t.url.startsWith('chrome-extension://')) || tabs[0];
-      if (tab) cb(tab);
-    });
-  }
-
-  // ── refreshFromTab ────────────────────────────────────────────────────────
-  // Query the active browser tab's content script for live metadata.
-  // `callback` receives the resolved info object (fromContentScript true/false).
-  const refreshFromTabRef = React.useRef(null);
-  refreshFromTabRef.current = (callback) => {
-    getActiveTab((tab) => {
-      if (!tab?.id || !tab?.url) return;
-      chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (res) => {
-        const info = applyResult(
-          chrome.runtime.lastError ? null : res,
-          tab.url, tab.title, tab.favIconUrl
-        );
-        if (callback) callback(info);
-      });
-    });
-  };
-
-  // Stable wrapper — always calls the latest version, never changes identity
-  const refreshFromTab = React.useCallback((cb) => {
-    refreshFromTabRef.current(cb);
-  }, []); // [] = created once, stable forever
-
-  // ── Initialise ────────────────────────────────────────────────────────────
-  useEffect(() => {
-    initStorage().then(() => {
-      setGame(getGameState());
-      setReady(true);
-      refreshFromTab();       // initial scrape
-    });
-
-    const unsub = subscribe(STORAGE_KEYS.GAME, (g) => setGame(g));
-
-    // React immediately when content script broadcasts a navigation event
-    // (YouTube SPA: yt-navigate-finish fires GENRE_SCRAPED; this is faster
-    // than waiting for the next 1.2 s poll tick).
-    const onMsg = (msg) => {
-      if (msg?.type === 'GENRE_SCRAPED' && msg.url) {
-        const { setPageInfo: setPI, setAlreadySaved: setAS } = settersRef.current;
-        const live = {
-          url: msg.url,
-          title: msg.title || 'Unknown Page',
-          favIconUrl: '',
-          thumbnail: msg.thumbnail || null,
-          author: msg.author || msg.channel || null,
-          authorUrl: msg.authorUrl || null,
-          contentType: msg.contentType || null,
-          platform: msg.platform || null,
-          fromContentScript: true,
-        };
-        setPI(live);
-        checkAlreadySaved(live.url, setAS);
-      }
-    };
-    try { chrome.runtime.onMessage.addListener(onMsg); } catch (e) {}
-
-    return () => {
-      unsub();
-      try { chrome.runtime.onMessage.removeListener(onMsg); } catch (e) {}
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return { ready, pageInfo, setPageInfo, game, alreadySaved, setAlreadySaved, tabError, refreshFromTab };
-}
-
-
-// ─── Scroll Timer Hook ───────────────────────────────────────────────────────
-
-function formatDuration(ms) {
-  if (!ms || ms <= 0) return '0m';
-  const totalSeconds = Math.floor(ms / 1000);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-function useScrollTimer() {
-  const [timerState, setTimerState] = useState({ todayTotal: 0, activeSession: null, tabId: null });
-  const intervalRef = useRef(null);
-
-  const fetchState = useCallback(() => {
-    if (typeof chrome === 'undefined' || !chrome.tabs) return;
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const tab = tabs?.[0];
-      if (!tab) return;
-      // Ask the content script for the timer state via background
-      chrome.runtime.sendMessage({ type: 'GET_POPUP_TIMER_STATE', tabId: tab.id }, (res) => {
-        if (chrome.runtime.lastError || !res) return;
-        setTimerState({
-          todayTotal: res.todayTotal || 0,
-          activeSession: res.activeSession || null,
-          tabId: res.tabId || null,
-        });
-      });
-    });
-  }, []);
-
-  useEffect(() => {
-    fetchState();
-    intervalRef.current = setInterval(fetchState, 5000);
-    return () => clearInterval(intervalRef.current);
-  }, [fetchState]);
-
-  return timerState;
-}
-
-export default function PopupApp() {
-  const { ready, pageInfo, setPageInfo, game, alreadySaved, setAlreadySaved, tabError, refreshFromTab } = usePopupData();
-  const scrollTimer = useScrollTimer();
-  const [saved, setSaved] = useState(false);
-  const [saveError, setSaveError] = useState(null);
-  const [fetchingTranscript, setFetchingTranscript] = useState(false);
-  const [transcriptStatus, setTranscriptStatus] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [user, setUser] = useState(null);
-  const [authBusy, setAuthBusy] = useState(false);
-  const [authError, setAuthError] = useState(null);
-  const [syncing, setSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState(null);
-  const [tagInput, setTagInput] = useState('');
-  const [itemTags, setItemTags] = useState([]);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
-  // Keep live track of current video when scrolling Shorts/Reels while popup is open
-  const prevUrlRef = React.useRef(pageInfo?.url);
+  // Initialize
   useEffect(() => {
-    if (pageInfo?.url && prevUrlRef.current && prevUrlRef.current !== pageInfo.url) {
-      setSaved(false);
-      setSaveError(null);
-    }
-    prevUrlRef.current = pageInfo?.url;
-  }, [pageInfo?.url]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      refreshFromTab();
-    }, 1200);
-    return () => clearInterval(interval);
-  }, [refreshFromTab]);
-
-  useEffect(() => {
-    if (pageInfo?.url) {
-      const queue = getQueue();
-      const tabVideoId = extractYouTubeVideoId(pageInfo.url);
-      const item = queue.find(i => i.url === pageInfo.url || (tabVideoId && extractYouTubeVideoId(i.url) === tabVideoId));
-      if (item && item.tags) {
-        setItemTags(item.tags);
+    async function init() {
+      try {
+        await initStorage();
+        const gameState = getGameState();
+        setGame(gameState);
+        
+        // Check auth
+        const user = await getCurrentUser();
+        setUser(user);
+        
+        // Get current tab info
+        const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        if (tab && tab.url) {
+          const url = tab.url;
+          const title = tab.title || 'Current Page';
+          const favIconUrl = tab.favIconUrl || '';
+          
+          // Check if already saved
+          const queue = getQueue();
+          const vid = extractYouTubeVideoId(url);
+          const isSaved = queue.some((i) => {
+            if (i.deleted) return false;
+            if (i.url === url) return true;
+            if (vid && extractYouTubeVideoId(i.url) === vid) return true;
+            return false;
+          });
+          
+          setPageInfo({ url, title, favIconUrl });
+          setAlreadySaved(isSaved);
+        }
+        
+        setReady(true);
+      } catch (err) {
+        console.error('Popup init error:', err);
+        setTabError('Failed to initialize. Please refresh.');
       }
     }
-  }, [pageInfo, alreadySaved, saved]);
-
-  // Subscribe to auth state changes so the popup reflects sign-in/sign-out
-  // without needing a manual refresh.
-  useEffect(() => {
-    // 1. Recover persisted session immediately to prevent screen flickers
-    getPersistedAuthState().then(({ user: persistedUser }) => {
-      if (persistedUser) {
-        setUser(persistedUser);
-      }
+    
+    init();
+    
+    // Subscribe to storage changes
+    const unsubscribe = subscribe(STORAGE_KEYS.GAME, (newGame) => {
+      setGame(newGame);
     });
-
-    // 2. Query current session in background
-    getCurrentUser().then((current) => {
-      if (current) {
-        setUser(current);
-      }
-    }).catch((err) => {
-      console.warn('DopaQueue: getCurrentUser failed in popup', err);
-    });
-
-    // 3. Listen to state changes
-    const { data: authListener } = supabaseClient.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-    });
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
+    
+    return () => unsubscribe?.();
   }, []);
 
-  const handleSignIn = async () => {
-    if (typeof chrome !== 'undefined' && chrome.tabs) {
-      chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html?auth=true') });
-      window.close();
+  // Calculate plant status
+  const plantStatus = useMemo(() => {
+    return calculatePlantStatus(game.budgetMinutesUsed, game.budgetMinutesTotal);
+  }, [game.budgetMinutesUsed, game.budgetMinutesTotal]);
+
+  const plantConfig = PLANT_STATUS[plantStatus] || PLANT_STATUS.thriving;
+  const remainingMinutes = Math.max(0, game.budgetMinutesTotal - game.budgetMinutesUsed);
+  const progressPercent = Math.min(100, (remainingMinutes / game.budgetMinutesTotal) * 100);
+
+  // Handle save
+  const handleSave = useCallback(async () => {
+    if (!pageInfo || !pageInfo.url) {
+      showError('No page to save');
       return;
     }
-    setAuthBusy(true);
-    setAuthError(null);
+    
+    setIsSaving(true);
+    
+    try {
+      // Validate URL
+      const validatedUrl = validateUrl(pageInfo.url, { requireVideoPlatform: true });
+      if (!validatedUrl) {
+        showError('Please navigate to a supported video page');
+        setIsSaving(false);
+        return;
+      }
+      
+      // Check if already saved
+      if (alreadySaved) {
+        warning('This video is already saved!');
+        setIsSaving(false);
+        return;
+      }
+      
+      // Create queue item
+      const videoId = extractYouTubeVideoId(validatedUrl);
+      const entry = {
+        id: crypto.randomUUID(),
+        url: validatedUrl,
+        title: pageInfo.title || 'Untitled',
+        favIconUrl: pageInfo.favIconUrl || '',
+        platform: 'youtube',
+        contentType: isVideoPage(validatedUrl) ? 'video' : 'link',
+        savedAt: Date.now(),
+        updatedAt: Date.now(),
+        fromContentScript: false,
+      };
+      
+      // Validate and add
+      const validatedEntry = validateQueueItem(entry);
+      if (!validatedEntry) {
+        showError('Invalid video data');
+        setIsSaving(false);
+        return;
+      }
+      
+      await addToQueue(validatedEntry);
+      setAlreadySaved(true);
+      
+      success('Video saved successfully! ✨');
+      
+      // Trigger scrape
+      chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' });
+      
+    } catch (err) {
+      console.error('Save error:', err);
+      showError('Failed to save video. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [pageInfo, alreadySaved, showError, success, warning]);
+
+  // Handle sync
+  const handleSync = useCallback(async () => {
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
+    
+    setIsSyncing(true);
+    try {
+      await syncWithCloud();
+      success('Synced successfully! ☁️');
+    } catch (err) {
+      console.error('Sync error:', err);
+      showError('Sync failed. Please try again.');
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [user, success, showError]);
+
+  // Handle auth
+  const handleSignIn = useCallback(async () => {
     try {
       await signInWithGoogle();
-      const current = await getCurrentUser();
-      setUser(current);
+      const user = await getCurrentUser();
+      setUser(user);
+      setShowAuthModal(false);
+      success('Signed in successfully! 🎉');
     } catch (err) {
-      setAuthError(err.message || 'Sign-in failed');
-    } finally {
-      setAuthBusy(false);
+      console.error('Sign in error:', err);
+      showError('Sign in failed. Please try again.');
     }
-  };
+  }, [success, showError]);
 
-  const handleSignOut = async () => {
-    setAuthBusy(true);
+  const handleSignOut = useCallback(async () => {
     try {
       await signOut();
       setUser(null);
+      success('Signed out successfully');
     } catch (err) {
-      setAuthError(err.message || 'Sign-out failed');
-    } finally {
-      setAuthBusy(false);
+      console.error('Sign out error:', err);
+      showError('Sign out failed');
     }
-  };
+  }, [success, showError]);
 
-  const handleSync = async () => {
-    if (!user) {
-      setSyncStatus('error');
-      setAuthError('Sign in first to sync to cloud.');
-      return;
-    }
-    setSyncing(true);
-    setSyncStatus(null);
-    try {
-      await syncWithCloud();
-      setSyncStatus('success');
-      setTimeout(() => setSyncStatus(null), 3000);
-    } catch (err) {
-      setSyncStatus('error');
-      setAuthError(err.message || 'Sync failed');
-    } finally {
-      setSyncing(false);
-    }
-  };
+  // Open dashboard
+  const openDashboard = useCallback(() => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+  }, []);
 
-  const isChannel = pageInfo ? isChannelUrl(pageInfo.url) : false;
-  const isLinkPage = pageInfo ? !isVideoPage(pageInfo.url) && !isChannel : false;
-
-  const handleSave = () => {
-    if (!pageInfo || saved || alreadySaved) return;
-    setSaveError(null);
-
-    // Always scrape live from the content script at click time.
-    // If the content script could not return a URL, we abort rather than
-    // saving stale data from the Chrome tab object.
-    refreshFromTab((liveInfo) => {
-      try {
-        const info = liveInfo || pageInfo;
-
-        // Abort if no real URL came back from the content script
-        // (fromContentScript=false means we only have tab.url, which can be
-        // stale during SPA navigation). In link-save mode it's fine to use
-        // tab.url because we are not on a video SPA.
-        if (!info.fromContentScript && isVideoPage(info.url)) {
-          setSaveError('Could not read video data. Try closing and reopening the popup.');
-          return;
-        }
-
-        const pageVideoId = extractYouTubeVideoId(info.url);
-        const existing = getQueue().find((i) =>
-          i.deleted && (
-            i.url === info.url ||
-            (pageVideoId && extractYouTubeVideoId(i.url) === pageVideoId)
-          )
-        );
-
-        const channelPage = isChannelUrl(info.url);
-        const linkPage = !isVideoPage(info.url) && !channelPage;
-
-        if (channelPage) {
-          if (existing) {
-            updateQueueItem(existing.id, {
-              title: extractChannelId(info.url) || info.title,
-              type: 'channel',
-              savedAt: Date.now(),
-              deleted: false,
-            });
-          } else {
-            addToQueue({
-              id: crypto.randomUUID(),
-              url: info.url,
-              title: extractChannelId(info.url) || info.title,
-              type: 'channel',
-              savedAt: Date.now(),
-            });
-          }
-        } else if (linkPage) {
-          // Save Link mode — no transcript, no author, just URL + title + favicon
-          if (existing) {
-            updateQueueItem(existing.id, {
-              title: info.title,
-              thumbnail: info.favIconUrl || null,
-              type: 'link',
-              contentType: 'link',
-              savedAt: Date.now(),
-              deleted: false,
-            });
-          } else {
-            addToQueue({
-              id: crypto.randomUUID(),
-              url: info.url,
-              title: info.title,
-              thumbnail: info.favIconUrl || null,
-              type: 'link',
-              contentType: 'link',
-              platform: info.platform || 'Web',
-              savedAt: Date.now(),
-            });
-          }
-        } else {
-          // Video / Reel
-          if (existing) {
-            updateQueueItem(existing.id, {
-              url: info.url,
-              title: info.title,
-              thumbnail: info.thumbnail || existing.thumbnail || null,
-              author: info.author || existing.author || null,
-              contentType: info.contentType || existing.contentType || 'video',
-              platform: info.platform || existing.platform || null,
-              type: 'video',
-              savedAt: Date.now(),
-              watched: false,
-              deleted: false,
-            });
-          } else {
-            addToQueue({
-              id: crypto.randomUUID(),
-              url: info.url,
-              title: info.title,
-              thumbnail: info.thumbnail || null,
-              author: info.author || null,
-              contentType: info.contentType || 'video',
-              platform: info.platform || null,
-              type: 'video',
-              savedAt: Date.now(),
-              watched: false,
-            });
-          }
-
-          if (info.author) {
-            ensureChannelSaved(info.author, info.authorUrl || '', info.platform || 'Social Media');
-          }
-        }
-
-        setSaved(true);
-        setAlreadySaved(true);
-        setFetchingTranscript(false);
-      } catch (err) {
-        console.error('DopaQueue: failed to save item', err);
-        setSaveError('Failed to save. Please try again.');
-      }
-    });
-  };
-
-  const handleAddQuickTag = (e) => {
-    e.preventDefault();
-    if (!tagInput.trim() || !pageInfo?.url) return;
-    const cleanTag = tagInput.trim().replace(/^#/, '');
-    const queue = getQueue();
-    const tabVideoId = extractYouTubeVideoId(pageInfo.url);
-    const item = queue.find(i => i.url === pageInfo.url || (tabVideoId && extractYouTubeVideoId(i.url) === tabVideoId));
-    if (item) {
-      const nextTags = Array.from(new Set([...(item.tags || []), cleanTag]));
-      updateQueueItem(item.id, { tags: nextTags });
-      setItemTags(nextTags);
-    }
-    setTagInput('');
-  };
-
-  const handleRemoveQuickTag = (tagToRemove) => {
-    if (!pageInfo?.url) return;
-    const queue = getQueue();
-    const tabVideoId = extractYouTubeVideoId(pageInfo.url);
-    const item = queue.find(i => i.url === pageInfo.url || (tabVideoId && extractYouTubeVideoId(i.url) === tabVideoId));
-    if (item) {
-      const nextTags = (item.tags || []).filter(t => t !== tagToRemove);
-      updateQueueItem(item.id, { tags: nextTags });
-      setItemTags(nextTags);
-    }
-  };
-
-  const openDashboard = () => {
-    if (typeof chrome !== 'undefined' && chrome.tabs) {
-      chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
-    }
-  };
-
-  const plantStatus = game.plant || 'thriving';
-  const remaining = Math.max(0, game.budgetMinutesTotal - game.budgetMinutesUsed);
-  const budgetPct = Math.max(0, 100 - (game.budgetMinutesUsed / (game.budgetMinutesTotal || 60)) * 100);
-  const savedVideos = getSavedVideos().slice(0, 2);
-  const videoId = pageInfo?.url ? extractYouTubeVideoId(pageInfo.url) : null;
-  const isShorts = pageInfo?.url && /\/shorts\//i.test(pageInfo.url);
-
+  // If not ready, show loading
   if (!ready) {
     return (
-      <div className="w-[360px] h-[440px] flex flex-col items-center justify-center bg-[#09090b] text-zinc-400 gap-3">
-        <div className="w-7 h-7 rounded-full border-2 border-lime-400 border-t-transparent animate-spin" />
-        <span className="text-xs font-medium tracking-wide">Loading DopaQueue...</span>
+      <div className="w-[320px] h-[400px] flex items-center justify-center bg-[var(--theme-surface)]">
+        <div className="flex flex-col items-center gap-4">
+          <Spinner size="lg" />
+          <p className="text-sm text-[var(--theme-text-secondary)]">
+            Loading DopaQueue...
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="relative w-[360px] bg-[#09090b] text-zinc-100 flex flex-col overflow-hidden select-none border border-white/10 shadow-2xl" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      <Meteors number={12} />
-
-      {/* Enterprise Header */}
-      <div className="z-10 px-4 py-3.5 border-b border-white/10 flex items-center justify-between bg-zinc-900/80 backdrop-blur-xl">
+    <div className="w-[320px] min-h-[400px] bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-xl shadow-glass overflow-hidden">
+      {/* Header */}
+      <header className="flex items-center justify-between p-4 border-b border-[var(--theme-border)]">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 flex items-center justify-center bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg">
+            <Leaf className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 className="font-semibold text-[var(--theme-text-primary)]">DopaQueue</h1>
+            <p className="text-xs text-[var(--theme-text-muted)]">Save intentionally</p>
+          </div>
+        </div>
+        
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-lime-400/10 border border-lime-400/30 flex items-center justify-center text-sm shadow-inner">
-            🌿
-          </div>
-          <div className="leading-none">
-            <div className="flex items-center gap-1.5">
-              <span className="font-bold text-sm tracking-tight text-white">DopaQueue</span>
-              <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-lime-400/20 text-lime-300 border border-lime-400/30">PRO</span>
+          <ThemeToggle />
+          {user && (
+            <button 
+              onClick={openDashboard}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              title="Open Dashboard"
+            >
+              <LayoutDashboard className="w-4 h-4 text-[var(--theme-text-secondary)]" />
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="p-4 space-y-4">
+        {/* Plant Status Card */}
+        <div className="glass-elevated rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-sm font-medium text-[var(--theme-text-secondary)]">
+                Your Focus Plant
+              </h2>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`text-2xl ${plantConfig.glow}`}>{plantConfig.emoji}</span>
+                <Badge variant={plantStatus === 'thriving' ? 'success' : plantStatus === 'okay' ? 'warning' : plantStatus === 'wilting' ? 'danger' : 'default'}>
+                  {plantConfig.label}
+                </Badge>
+              </div>
             </div>
-            <p className="text-[10px] text-zinc-500 mt-0.5">Intentional Video Library</p>
-          </div>
-        </div>
-
-        <div className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border shadow-sm ${PLANT_COLOR[plantStatus]}`}>
-          <span>{PLANT_EMOJI[plantStatus]}</span>
-          <span className="capitalize">{plantStatus}</span>
-        </div>
-      </div>
-
-      {/* Daily Scroll Budget Indicator */}
-      <div className="z-10 px-4 pt-3 pb-2 bg-gradient-to-b from-zinc-900/40 to-transparent">
-        <div className="flex items-center justify-between text-xs mb-1.5">
-          <span className="text-zinc-400 font-medium flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5 text-lime-400" /> Daily Budget
-          </span>
-          <span className="font-mono text-xs font-bold text-white">
-            {remaining} <span className="text-zinc-500 font-normal">min left</span>
-          </span>
-        </div>
-        <div className="h-2 bg-zinc-800/80 rounded-full overflow-hidden border border-white/5">
-          <div
-            className="h-full bg-gradient-to-r from-lime-500 to-emerald-400 rounded-full transition-all duration-500"
-            style={{ width: `${budgetPct}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Scroll Time Card — only visible on Shorts/Reels tabs or if today has data */}
-      {(scrollTimer.todayTotal > 0 || scrollTimer.activeSession) && (() => {
-        const totalMs = scrollTimer.todayTotal +
-          (scrollTimer.activeSession ? (scrollTimer.activeSession.accumulatedTime || 0) : 0);
-        const isRecording = !!scrollTimer.activeSession;
-        const thresholdColor =
-          totalMs < 20 * 60 * 1000 ? 'text-emerald-400 border-emerald-400/20 bg-emerald-400/8'
-          : totalMs < 45 * 60 * 1000 ? 'text-amber-400 border-amber-400/20 bg-amber-400/8'
-          : 'text-red-400 border-red-400/20 bg-red-400/8';
-        return (
-          <div className="z-10 px-4 pb-2">
-            <div className={`flex items-center justify-between px-3 py-2 rounded-xl border ${thresholdColor}`}>
-              <span className="flex items-center gap-1.5 text-xs font-semibold">
-                <Timer className="w-3.5 h-3.5" />
-                Today's Scroll Time
-              </span>
-              <span className="flex items-center gap-2 text-xs font-mono font-bold">
-                {formatDuration(totalMs)}
-                {isRecording && (
-                  <span className="flex items-center gap-1 text-[10px] font-semibold text-red-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
-                    live
-                  </span>
-                )}
-              </span>
+            
+            <div className="text-right">
+              <p className="text-xs text-[var(--theme-text-muted)]">Remaining</p>
+              <p className="text-lg font-semibold text-[var(--theme-text-primary)]">
+                {formatTime(remainingMinutes)}
+              </p>
             </div>
           </div>
-        );
-      })()}
+          
+          {/* Progress Bar */}
+          <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div 
+              className={`h-full bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full transition-all duration-500`}
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          
+          <div className="flex justify-between text-xs text-[var(--theme-text-muted)] mt-2">
+            <span>0%</span>
+            <span>100%</span>
+          </div>
+        </div>
 
-      {/* Speed Bump Banner when budget is 0 */}
-      {remaining === 0 && savedVideos.length > 0 && (
-        <div className="z-10 px-4 pt-2">
-          <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl space-y-1.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-red-400">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Budget Depleted
+        {/* Current Page Card */}
+        {pageInfo && (
+          <div className="glass-elevated rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              {pageInfo.favIconUrl && (
+                <img 
+                  src={pageInfo.favIconUrl} 
+                  alt="" 
+                  className="w-8 h-8 rounded object-cover flex-shrink-0"
+                />
+              )}
+              
+              <div className="flex-1 min-w-0">
+                <h3 className="font-medium text-[var(--theme-text-primary)] truncate">
+                  {pageInfo.title}
+                </h3>
+                <p className="text-xs text-[var(--theme-text-muted)] truncate">
+                  {pageInfo.url}
+                </p>
+              </div>
             </div>
-            <p className="text-[11px] text-zinc-400 leading-snug">
-              Clear a saved video from your queue instead of endless scroll feeds.
+            
+            <div className="mt-4">
+              {alreadySaved ? (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="w-full"
+                  leftIcon={<Check className="w-4 h-4" />}
+                  disabled
+                >
+                  Already Saved
+                </Button>
+              ) : (
+                <Button 
+                  variant="primary" 
+                  size="sm" 
+                  className="w-full glass-btn neon-glow"
+                  leftIcon={<Save className="w-4 h-4" />}
+                  onClick={handleSave}
+                  isLoading={isSaving}
+                >
+                  {isSaving ? 'Saving...' : 'Save Video'}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-2 gap-3">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="w-full justify-start gap-2"
+            leftIcon={<LayoutDashboard className="w-4 h-4" />}
+            onClick={openDashboard}
+          >
+            Dashboard
+          </Button>
+          
+          {user ? (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="w-full justify-start gap-2"
+              leftIcon={<Cloud className="w-4 h-4" />}
+              onClick={handleSync}
+              isLoading={isSyncing}
+            >
+              {isSyncing ? 'Syncing...' : 'Sync'}
+            </Button>
+          ) : (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="w-full justify-start gap-2"
+              leftIcon={<LogIn className="w-4 h-4" />}
+              onClick={() => setShowAuthModal(true)}
+            >
+              Sign In
+            </Button>
+          )}
+        </div>
+
+        {/* Stats */}
+        <div className="glass-elevated rounded-lg p-4">
+          <h3 className="text-sm font-medium text-[var(--theme-text-secondary)] mb-3">
+            Today's Stats
+          </h3>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="text-center">
+              <p className="text-lg font-semibold text-[var(--theme-text-primary)]">
+                {getSavedVideos().length}
+              </p>
+              <p className="text-xs text-[var(--theme-text-muted)]">Saved</p>
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-semibold text-[var(--theme-text-primary)]">
+                {formatTime(game.budgetMinutesUsed)}
+              </p>
+              <p className="text-xs text-[var(--theme-text-muted)]">Used</p>
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-semibold text-[var(--theme-text-primary)]">
+                {formatTime(remainingMinutes)}
+              </p>
+              <p className="text-xs text-[var(--theme-text-muted)]">Left</p>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="p-4 border-t border-[var(--theme-border)] text-center">
+        <p className="text-xs text-[var(--theme-text-muted)]">
+          v0.2.0 - Save intentionally, not impulsively
+        </p>
+      </footer>
+
+      {/* Auth Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="glass-elevated rounded-xl p-6 max-w-sm w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-[var(--theme-text-primary)]">
+                Sign In
+              </h2>
+              <button 
+                onClick={() => setShowAuthModal(false)}
+                className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                <X className="w-5 h-5 text-[var(--theme-text-secondary)]" />
+              </button>
+            </div>
+            
+            <p className="text-sm text-[var(--theme-text-secondary)] mb-6">
+              Sign in to sync your data across devices and unlock cloud features.
             </p>
+            
+            <Button 
+              variant="primary" 
+              size="md" 
+              className="w-full glass-btn"
+              leftIcon={<Cloud className="w-5 h-5" />}
+              onClick={handleSignIn}
+            >
+              Continue with Google
+            </Button>
+            
+            <div className="mt-4 text-center">
+              <button 
+                onClick={() => setShowAuthModal(false)}
+                className="text-sm text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)]"
+              >
+                Maybe later
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Hero Media / Preview Card */}
-      <div className="z-10 p-4 flex flex-col gap-3">
-        {tabError ? (
-          <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400">
-            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-            <p className="text-xs leading-relaxed">{tabError}</p>
-          </div>
-        ) : pageInfo ? (
-          <div className="group rounded-xl bg-zinc-900/90 border border-white/10 overflow-hidden shadow-lg transition-all hover:border-white/20">
-            {videoId ? (
-              <div className="relative h-28 bg-zinc-950 overflow-hidden">
-                <img
-                  src={`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`}
-                  alt=""
-                  className="w-full h-full object-cover opacity-85 group-hover:scale-105 transition-transform duration-300"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-transparent to-black/30" />
-                <div className="absolute top-2 left-2 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md border border-white/10 text-lime-300">
-                  {isShorts ? 'SHORT' : 'VIDEO'}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="p-3 flex items-start gap-3">
-              {!videoId && (
-                pageInfo.favIconUrl ? (
-                  <img src={pageInfo.favIconUrl} className="w-7 h-7 rounded-md mt-0.5 shrink-0" alt="" />
-                ) : (
-                  <div className="w-7 h-7 rounded-md bg-zinc-800 flex items-center justify-center shrink-0">
-                    <PlayCircle className="w-4 h-4 text-zinc-500" />
-                  </div>
-                )
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-white leading-snug line-clamp-2">{pageInfo.title}</p>
-                <p className="text-[11px] text-zinc-500 mt-0.5 truncate">{pageInfo.url}</p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="p-3 rounded-xl bg-zinc-900/60 border border-white/5 animate-pulse h-20" />
-        )}
-
-        {/* Save Link mode badge */}
-        {isLinkPage && !saved && !alreadySaved && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-[11px] font-medium">
-            <ExternalLink className="w-3 h-3 shrink-0" />
-            <span>Not a video page — will be saved as a <strong>Link</strong> with title &amp; URL.</span>
-          </div>
-        )}
-
-        {/* Primary Save Action Button */}
-        <ShimmerButton
-          onClick={handleSave}
-          disabled={alreadySaved || !pageInfo || fetchingTranscript}
-          className="w-full h-11 text-sm font-semibold shadow-xl"
-        >
-          {alreadySaved || saved ? (
-            <span className="flex items-center justify-center gap-2 text-lime-400 font-bold">
-              <Check className="w-4 h-4" /> Saved to Library
-            </span>
-          ) : isChannel ? (
-            <span className="flex items-center justify-center gap-2">
-              <Hash className="w-4 h-4" /> Save Channel
-            </span>
-          ) : isLinkPage ? (
-            <span className="flex items-center justify-center gap-2">
-              <ExternalLink className="w-4 h-4" /> Save Link
-            </span>
-          ) : (
-            <span className="flex items-center justify-center gap-2">
-              <Save className="w-4 h-4" /> Save for Later
-            </span>
-          )}
-        </ShimmerButton>
-
-        {/* Inline Quick Tagging Bar (Appears when video is saved) */}
-        {(saved || alreadySaved) && (
-          <div className="p-3 rounded-xl bg-zinc-900/70 border border-white/10 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-zinc-300 flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5 text-lime-400" /> Categorize Video
-              </span>
-              <span className="text-[10px] text-zinc-500">Press enter to tag</span>
-            </div>
-
-            <div className="flex flex-wrap gap-1.5">
-              {itemTags.map(t => (
-                <span
-                  key={t}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-lime-400/15 text-lime-300 border border-lime-400/30"
-                >
-                  #{t}
-                  <button
-                    onClick={() => handleRemoveQuickTag(t)}
-                    className="hover:text-white font-bold ml-0.5"
-                    aria-label="Remove tag"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-
-            <form onSubmit={handleAddQuickTag} className="flex gap-1.5">
-              <input
-                type="text"
-                value={tagInput}
-                onChange={e => setTagInput(e.target.value)}
-                placeholder="Add custom tag (e.g. tech, design)..."
-                className="flex-1 bg-zinc-950 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-lime-400 transition-colors"
-              />
-              <button
-                type="submit"
-                className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors border border-white/5"
-              >
-                + Add
-              </button>
-            </form>
-          </div>
-        )}
-
-        {saveError && (
-          <p role="alert" className="flex items-center gap-1.5 text-xs text-red-400">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {saveError}
-          </p>
-        )}
-
-        {/* Open Dashboard Button */}
-        <button
-          onClick={openDashboard}
-          className="w-full flex items-center justify-center gap-2 h-10 rounded-xl border border-white/10 bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-all text-xs font-semibold shadow-sm"
-        >
-          <LayoutDashboard className="w-4 h-4 text-lime-400" />
-          Open Intentional Dashboard
-          <ExternalLink className="w-3 h-3 ml-0.5 opacity-60" />
-        </button>
-
-        {/* Auth & Sync Bar */}
-        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-zinc-900/40 border border-white/5 mt-0.5">
-          {isLoggedIn(user) ? (
-            <>
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Signed in</p>
-                <p className="text-xs text-white truncate font-medium">{getUserEmail(user) || getUserName(user)}</p>
-              </div>
-              <button
-                onClick={handleSync}
-                disabled={syncing}
-                title="Sync to cloud"
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs font-medium transition-colors disabled:opacity-50 border border-blue-500/20"
-              >
-                {syncing ? (
-                  <div className="w-3 h-3 rounded-full border-2 border-blue-300 border-t-transparent animate-spin" />
-                ) : (
-                  <Cloud className="w-3 h-3" />
-                )}
-                Sync
-              </button>
-              <button
-                onClick={handleSignOut}
-                disabled={authBusy}
-                title="Sign out"
-                className="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium transition-colors disabled:opacity-50 border border-red-500/20"
-              >
-                Sign Out
-              </button>
-            </>
-          ) : (
-            <>
-              <p className="text-xs text-zinc-400 font-medium flex-1">Sync library across devices</p>
-              <button
-                onClick={handleSignIn}
-                disabled={authBusy}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-lime-400/20 hover:bg-lime-400/30 text-lime-300 text-xs font-semibold transition-colors disabled:opacity-50 border border-lime-400/30"
-              >
-                {authBusy ? (
-                  <div className="w-3 h-3 rounded-full border-2 border-lime-300 border-t-transparent animate-spin" />
-                ) : (
-                  <LogIn className="w-3.5 h-3.5" />
-                )}
-                Sign in
-              </button>
-            </>
-          )}
+      {/* Error Toast */}
+      {tabError && (
+        <div className="fixed bottom-4 left-4 right-4 p-3 bg-red-500/10 backdrop-blur-md rounded-lg border border-red-500/20">
+          <p className="text-sm text-red-500">{tabError}</p>
         </div>
-
-        {syncStatus === 'success' && (
-          <p className="text-[10px] text-lime-400 text-center font-medium">Cloud Synced ✓</p>
-        )}
-        {authError && (
-          <p role="alert" className="text-[10px] text-red-400 text-center">{authError}</p>
-        )}
-      </div>
+      )}
     </div>
+  );
+}
+
+// Wrap with theme provider
+export default function App() {
+  return (
+    <PopupApp />
   );
 }
