@@ -221,7 +221,7 @@ function mustFindTranscript(strategyPromise) {
   });
 }
 
-export async function scrapeYouTube() {
+export function scrapeYouTubeMetadataOnly() {
   const url = location.href;
   const videoId = extractVideoId(url);
 
@@ -244,6 +244,23 @@ export async function scrapeYouTube() {
   const thumbnail = videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null;
   const genre = scrapeCategory();
 
+  return {
+    url,
+    title,
+    thumbnail,
+    author: channel,
+    authorUrl,
+    genre,
+    channel,
+    contentType: 'video',
+    platform: 'YouTube'
+  };
+}
+
+export async function scrapeYouTube() {
+  const metadata = scrapeYouTubeMetadataOnly();
+  const videoId = extractVideoId(metadata.url);
+
   const racePromise = Promise.any([
     mustFindTranscript(strategyD_livePlayerAPI(videoId)),
     mustFindTranscript(strategyA_DOM(videoId)),
@@ -258,15 +275,7 @@ export async function scrapeYouTube() {
   const transcript = await Promise.race([racePromise, timeoutPromise]);
 
   return {
-    url,
-    title,
-    thumbnail,
-    author: channel,
-    authorUrl,
-    genre,
-    channel,
-    contentType: 'video',
-    platform: 'YouTube',
+    ...metadata,
     transcript: transcript || null
   };
 }
@@ -281,20 +290,28 @@ export function injectYouTubeShortsButtons() {
 
     // Find the currently active short container
     const activeRenderer = document.querySelector('ytd-reel-video-renderer[is-active]');
-    if (!activeRenderer) return;
-
-    // Find the Like button (it can be standalone or segmented)
-    const likeButton = activeRenderer.querySelector(
-      'ytd-toggle-button-renderer #like-button button, ' +
-      'yt-button-renderer#like-button button, ' +
-      'ytd-segmented-like-dislike-button-renderer'
-    );
+    // Fallback: If activeRenderer isn't found (if they completely removed it), we can look for any visible like-button-view-model
     
-    const targetAnchor = likeButton?.closest('ytd-toggle-button-renderer, yt-button-renderer, ytd-segmented-like-dislike-button-renderer');
+    // Find the Like button (supporting both new view-model DOM and older Polymer DOM)
+    let likeButton = null;
+    if (activeRenderer) {
+      likeButton = activeRenderer.querySelector(
+        'like-button-view-model, ' +
+        'ytd-toggle-button-renderer #like-button button, ' +
+        'yt-button-renderer#like-button button, ' +
+        'ytd-segmented-like-dislike-button-renderer'
+      );
+    } else {
+      // Very aggressive fallback if `ytd-reel-video-renderer[is-active]` is gone
+      const allLikeButtons = Array.from(document.querySelectorAll('like-button-view-model, ytd-like-button-renderer, ytd-segmented-like-dislike-button-renderer'));
+      likeButton = allLikeButtons.find(b => b.getBoundingClientRect().height > 0);
+    }
+    
+    const targetAnchor = likeButton?.closest('like-button-view-model, ytd-toggle-button-renderer, yt-button-renderer, ytd-segmented-like-dislike-button-renderer, ytd-like-button-renderer');
     if (!targetAnchor) return;
 
     // Find the main vertical actions column it lives in
-    const actionsContainer = targetAnchor.closest('#actions');
+    const actionsContainer = targetAnchor.closest('reel-action-bar-view-model, #actions');
     if (!actionsContainer) return;
 
     let wrapper = actionsContainer.querySelector('.dq-yt-shorts-save');
@@ -375,8 +392,8 @@ export function injectYouTubeShortsButtons() {
         label.textContent = 'Saving...';
         const urlToSave = location.href;
         
-        // Scope the scrape to the active renderer if possible, or just use location.href
-        const scraped = await scrapeYouTube();
+        // Use fast synchronous metadata to instantly update UI and save
+        const scraped = scrapeYouTubeMetadataOnly();
         
         chrome.runtime.sendMessage({
           type: 'SAVE_INSTAGRAM_ITEM',
@@ -388,6 +405,14 @@ export function injectYouTubeShortsButtons() {
             wrapper.dqSetSaved(true);
           }
         });
+        
+        // Fire and forget the full scrape to capture transcript for background DB
+        (async () => {
+          try {
+            const full = await scrapeYouTube();
+            chrome.runtime.sendMessage({ type: 'GENRE_SCRAPED', ...full });
+          } catch (err) {}
+        })();
       });
 
       // Inject perfectly above the like button
