@@ -276,18 +276,22 @@ export function injectYouTubeShortsButtons() {
   if (!location.hostname.includes('youtube.com')) return;
 
   const observer = new MutationObserver(() => {
-    // YouTube Shorts render inside ytd-reel-video-renderer
-    const renderers = document.querySelectorAll('ytd-reel-video-renderer');
-    renderers.forEach((renderer) => {
-      // Find the vertical actions column
-      const actionsContainer = renderer.querySelector('#actions.ytd-reel-video-renderer');
+    // Look for the Like button component directly (standalone or segmented)
+    const likeButtons = document.querySelectorAll('ytd-like-button-renderer, ytd-segmented-like-dislike-button-renderer');
+    
+    likeButtons.forEach((likeElement) => {
+      // Find the main vertical actions column it lives in
+      const actionsContainer = likeElement.closest('#actions');
       if (!actionsContainer) return;
+
+      // Ensure we are actually inside a Shorts player (not a normal video or feed)
+      if (!actionsContainer.closest('ytd-reel-video-renderer, ytd-shorts')) return;
 
       // Prevent duplicate injection
       if (actionsContainer.querySelector('.dq-yt-shorts-save')) return;
 
       const wrapper = document.createElement('div');
-      wrapper.className = 'dq-yt-shorts-save style-scope ytd-reel-video-renderer';
+      wrapper.className = 'dq-yt-shorts-save';
       wrapper.style.cssText = `
         display: flex;
         flex-direction: column;
@@ -340,7 +344,6 @@ export function injectYouTubeShortsButtons() {
 
       const setSavedUI = () => {
         isSaved = true;
-        // Turn green to indicate DopaQueue save
         iconBox.style.background = 'rgba(132, 204, 22, 0.2)';
         iconBox.innerHTML = `
           <svg class="dq-svg-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -376,13 +379,11 @@ export function injectYouTubeShortsButtons() {
         });
       };
 
-      // IntersectionObserver memory hygiene - matches Instagram implementation
+      // IntersectionObserver memory hygiene
       const io = new IntersectionObserver((entries) => {
         if (entries[0].isIntersecting) {
-          // Wait 300ms for SPA URL update
           setTimeout(checkSavedStatus, 300);
         } else {
-          // Reset when scrolled away so recycled DOM nodes don't flash "Saved"
           setUnsavedUI();
           lastCheckedUrl = null;
         }
@@ -399,7 +400,6 @@ export function injectYouTubeShortsButtons() {
 
         if (!isSaved) {
           label.textContent = 'Saving...';
-          // Triggers the background scrape pipeline
           const scraped = await scrapeYouTube();
           chrome.runtime.sendMessage({
             type: 'SAVE_INSTAGRAM_ITEM',
@@ -412,13 +412,8 @@ export function injectYouTubeShortsButtons() {
         }
       });
 
-      // Inject at the very top of the actions column
-      const firstChild = actionsContainer.firstElementChild;
-      if (firstChild) {
-        actionsContainer.insertBefore(wrapper, firstChild);
-      } else {
-        actionsContainer.appendChild(wrapper);
-      }
+      // Inject perfectly above the like button
+      actionsContainer.insertBefore(wrapper, likeElement);
     });
   });
 

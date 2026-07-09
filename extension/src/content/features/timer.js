@@ -166,8 +166,14 @@ export function initScrollTimer() {
 
   function urgentSave() {
     tickTime();
-    if (tickInterval) clearInterval(tickInterval);
-    if (urlInterval) clearInterval(urlInterval);
+    if (tickInterval) {
+      clearInterval(tickInterval);
+      tickInterval = null;
+    }
+    if (urlInterval) {
+      clearInterval(urlInterval);
+      urlInterval = null;
+    }
   }
 
   try {
@@ -192,7 +198,13 @@ export function initScrollTimer() {
   } catch (e) { }
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') urgentSave();
+    if (document.visibilityState === 'hidden') {
+      urgentSave();
+    } else if (document.visibilityState === 'visible') {
+      lastUpdate = Date.now();
+      if (!tickInterval) tickInterval = setInterval(tickTime, 1000);
+      if (!urlInterval) urlInterval = setInterval(checkUrlChange, 500);
+    }
   });
   window.addEventListener('pagehide', urgentSave);
 }
