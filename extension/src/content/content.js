@@ -623,7 +623,7 @@ async function sendScrapeResult() {
   if (!result.genre && !result.channel && !result.transcript && !result.thumbnail) return;
   try {
     chrome.runtime.sendMessage({ type: 'GENRE_SCRAPED', ...result });
-  } catch (e) {}
+  } catch (e) { }
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -637,7 +637,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       try {
         const full = await scrapeAll();
         chrome.runtime.sendMessage({ type: 'GENRE_SCRAPED', ...full });
-      } catch (e) {}
+      } catch (e) { }
     })();
 
     return false; // synchronous response already sent
@@ -680,7 +680,7 @@ function initInstagramButtons() {
         !!actionItem.closest('[role="list"]') ||
         !!actionItem.closest('[aria-label*="Comment"]') ||
         !!actionItem.closest('[aria-label*="comment"]');
-        
+
       // Comment hearts are 12x12. Main post/reel hearts are 24x24+.
       const svgHeight = parseInt(likeSvg.getAttribute('height') || '24');
       const svgWidth = parseInt(likeSvg.getAttribute('width') || '24');
@@ -743,6 +743,20 @@ function initInstagramButtons() {
       wrapper.appendChild(label);
 
       let isSaved = false;
+      chrome.runtime.sendMessage({ type: 'CHECK_SAVED_URL', url: location.href }, (res) => {
+        if (!chrome.runtime.lastError && res?.saved) {
+          isSaved = true;
+          iconBox.style.background = 'rgba(34, 197, 94, 0.28)';
+          iconBox.style.borderColor = '#4ade80';
+          iconBox.innerHTML = `
+            <svg class="dq-svg-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M9 16.17L4.83 12L3.41 13.41L9 19L21 7L19.59 5.59L9 16.17Z" fill="#4ade80"/>
+            </svg>
+          `;
+          label.textContent = 'Saved';
+          label.style.color = '#4ade80';
+        }
+      });
 
       wrapper.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -871,7 +885,7 @@ document.addEventListener('yt-navigate-finish', () => {
   try {
     const meta = scrapeMetadataOnly();
     if (meta.url) chrome.runtime.sendMessage({ type: 'GENRE_SCRAPED', ...meta });
-  } catch (e) {}
+  } catch (e) { }
 
   // Full scrape (with transcript) fires 800ms later
   setTimeout(sendScrapeResult, 800);

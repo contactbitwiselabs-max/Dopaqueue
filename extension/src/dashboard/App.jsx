@@ -31,11 +31,11 @@ function detectContentType(url) {
 }
 
 const TYPE_CONFIG = {
-  video:  { label: 'Video', icon: PlayCircle, color: 'bg-blue-500/15 text-blue-400 border-blue-500/20' },
-  short:  { label: 'Short', icon: Zap,        color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/20' },
-  reel:   { label: 'Reel',  icon: Film,       color: 'bg-pink-500/15 text-pink-400 border-pink-500/20' },
-  post:   { label: 'Post',  icon: Image,      color: 'bg-green-500/15 text-green-400 border-green-500/20' },
-  link:   { label: 'Link',  icon: Link,       color: 'bg-purple-500/15 text-purple-400 border-purple-500/20' },
+  video: { label: 'Video', icon: PlayCircle, color: 'bg-blue-500/15 text-blue-400 border-blue-500/20' },
+  short: { label: 'Short', icon: Zap, color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/20' },
+  reel: { label: 'Reel', icon: Film, color: 'bg-pink-500/15 text-pink-400 border-pink-500/20' },
+  post: { label: 'Post', icon: Image, color: 'bg-green-500/15 text-green-400 border-green-500/20' },
+  link: { label: 'Link', icon: Link, color: 'bg-purple-500/15 text-purple-400 border-purple-500/20' },
 };
 
 function formatDateTime(ts) {
@@ -163,7 +163,7 @@ function AuthPage({ onAuthSuccess }) {
               onClick={() => handleOAuth('google')}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800 transition-colors font-medium"
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+              <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" /><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" /><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" /><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" /></svg>
               Continue with Google
             </button>
 
@@ -290,9 +290,8 @@ function PomodoroBar() {
       <div className="flex items-center gap-2">
         <button
           onClick={() => setActive(!active)}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 ${
-            active ? 'bg-amber-500 text-black hover:bg-amber-400' : 'bg-lime-400 text-black hover:bg-lime-300'
-          }`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 ${active ? 'bg-amber-500 text-black hover:bg-amber-400' : 'bg-lime-400 text-black hover:bg-lime-300'
+            }`}
         >
           {active ? <><Pause className="w-3.5 h-3.5" /> Pause</> : <><Play className="w-3.5 h-3.5" /> Start Focus</>}
         </button>
@@ -624,9 +623,8 @@ export default function App() {
 
         {/* Toast */}
         {status && (
-          <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl border shadow-lg max-w-sm ${
-            status.type === 'success' ? 'bg-green-500/10 border-green-500/20 text-green-400' : 'bg-red-500/10 border-red-500/20 text-red-400'
-          }`}>
+          <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl border shadow-lg max-w-sm ${status.type === 'success' ? 'bg-green-500/10 border-green-500/20 text-green-400' : 'bg-red-500/10 border-red-500/20 text-red-400'
+            }`}>
             {status.type === 'success' ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
             <span className="text-sm">{status.message}</span>
             <button onClick={() => setStatus(null)} className="ml-2 opacity-70 hover:opacity-100"><X className="w-4 h-4" /></button>
@@ -841,11 +839,10 @@ function FilterChip({ active, onClick, label, count }) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
-        active
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${active
           ? 'bg-lime-500/15 text-lime-300 border-lime-500/30'
           : 'bg-zinc-900/50 text-zinc-500 border-zinc-800 hover:text-zinc-300 hover:border-zinc-700'
-      }`}
+        }`}
     >
       {label}
       {count != null && (
@@ -859,9 +856,8 @@ function NavItem({ active, onClick, icon, label, count }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
-        active ? 'bg-zinc-800/80 text-white shadow-lg border border-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent'
-      }`}
+      className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${active ? 'bg-zinc-800/80 text-white shadow-lg border border-white/10' : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent'
+        }`}
     >
       <div className="flex items-center gap-3">
         {React.cloneElement(icon, { className: 'w-5 h-5' })}
@@ -918,10 +914,10 @@ function ArticleModal({ video, onClose }) {
   const activeTranscriptText = manualTranscript || scrape.transcript || '';
   const paragraphs = activeTranscriptText
     ? activeTranscriptText.split(/(?<=\.)\s+/).reduce((acc, sentence, idx) => {
-        const pIdx = Math.floor(idx / 5);
-        acc[pIdx] = (acc[pIdx] || '') + ' ' + sentence;
-        return acc;
-      }, [])
+      const pIdx = Math.floor(idx / 5);
+      acc[pIdx] = (acc[pIdx] || '') + ' ' + sentence;
+      return acc;
+    }, [])
     : [];
 
   return (
@@ -933,21 +929,19 @@ function ArticleModal({ video, onClose }) {
             <div className="flex items-center gap-2 mb-2.5">
               <button
                 onClick={() => setActiveModalTab('notes')}
-                className={`text-xs font-semibold px-3.5 py-1.5 rounded-full transition-all border flex items-center gap-1.5 ${
-                  activeModalTab === 'notes'
+                className={`text-xs font-semibold px-3.5 py-1.5 rounded-full transition-all border flex items-center gap-1.5 ${activeModalTab === 'notes'
                     ? 'bg-lime-500/20 text-lime-300 border-lime-500/30 shadow-sm'
                     : 'bg-zinc-800 text-zinc-400 border-transparent hover:text-white'
-                }`}
+                  }`}
               >
                 <FileText className="w-3.5 h-3.5 text-lime-400" /> Notes & Organization
               </button>
               <button
                 onClick={() => setActiveModalTab('transcript')}
-                className={`text-xs font-semibold px-3.5 py-1.5 rounded-full transition-all border flex items-center gap-1.5 ${
-                  activeModalTab === 'transcript'
+                className={`text-xs font-semibold px-3.5 py-1.5 rounded-full transition-all border flex items-center gap-1.5 ${activeModalTab === 'transcript'
                     ? 'bg-blue-500/20 text-blue-300 border-blue-500/30 shadow-sm'
                     : 'bg-zinc-800 text-zinc-400 border-transparent hover:text-white'
-                }`}
+                  }`}
               >
                 <FileText className="w-3.5 h-3.5 text-blue-400" /> Transcript & Text
               </button>
@@ -1280,9 +1274,8 @@ function VideoCard({ video, viewMode = 'grid', onRemove, onExport, onReadArticle
                       <button
                         key={opt.value}
                         onClick={() => handleSetPriority(opt.value)}
-                        className={`w-full text-left px-3.5 py-2.5 text-xs font-medium hover:bg-white/5 transition-colors flex items-center gap-2 ${
-                          currentUrgency === opt.value ? 'text-white bg-white/5' : 'text-zinc-400'
-                        }`}
+                        className={`w-full text-left px-3.5 py-2.5 text-xs font-medium hover:bg-white/5 transition-colors flex items-center gap-2 ${currentUrgency === opt.value ? 'text-white bg-white/5' : 'text-zinc-400'
+                          }`}
                       >
                         {currentUrgency === opt.value && <span className="w-1.5 h-1.5 rounded-full bg-lime-400 shrink-0" />}
                         {opt.label}
@@ -1360,9 +1353,8 @@ function VideoCard({ video, viewMode = 'grid', onRemove, onExport, onReadArticle
                   <button
                     key={opt.value}
                     onClick={() => handleSetPriority(opt.value)}
-                    className={`w-full text-left px-3.5 py-2.5 text-xs font-medium hover:bg-white/5 transition-colors flex items-center gap-2 ${
-                      currentUrgency === opt.value ? 'text-white bg-white/5' : 'text-zinc-400'
-                    }`}
+                    className={`w-full text-left px-3.5 py-2.5 text-xs font-medium hover:bg-white/5 transition-colors flex items-center gap-2 ${currentUrgency === opt.value ? 'text-white bg-white/5' : 'text-zinc-400'
+                      }`}
                   >
                     {currentUrgency === opt.value && <span className="w-1.5 h-1.5 rounded-full bg-lime-400 shrink-0" />}
                     {opt.label}
@@ -1539,11 +1531,10 @@ function ChannelList({ channels, videos = [], onDelete, onSelectChannel }) {
             <button
               key={p}
               onClick={() => setSelectedPlatform(p)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                selectedPlatform === p
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${selectedPlatform === p
                   ? 'bg-lime-400 text-black shadow-lg shadow-lime-400/20'
                   : 'bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
             >
               {p}
             </button>
@@ -1583,12 +1574,11 @@ function ChannelList({ channels, videos = [], onDelete, onSelectChannel }) {
                 <div key={channel.id} className="flex items-center justify-between p-4 bg-zinc-900/90 rounded-2xl border border-white/5 hover:border-white/15 transition-all">
                   <div className="min-w-0 flex-1 pr-3">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${
-                        platName.includes('Instagram') ? 'bg-pink-500/15 text-pink-300 border-pink-500/30' :
-                        platName.includes('TikTok') ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' :
-                        platName.includes('X') ? 'bg-blue-500/15 text-blue-300 border-blue-500/30' :
-                        'bg-red-500/15 text-red-300 border-red-500/30'
-                      }`}>
+                      <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${platName.includes('Instagram') ? 'bg-pink-500/15 text-pink-300 border-pink-500/30' :
+                          platName.includes('TikTok') ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' :
+                            platName.includes('X') ? 'bg-blue-500/15 text-blue-300 border-blue-500/30' :
+                              'bg-red-500/15 text-red-300 border-red-500/30'
+                        }`}>
                         {platName}
                       </span>
                       <a
@@ -1630,11 +1620,10 @@ function ChannelList({ channels, videos = [], onDelete, onSelectChannel }) {
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={() => toggleWhitelist(channel.title)}
-                      className={`px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
-                        isW
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors ${isW
                           ? 'bg-green-500/20 text-green-300 border-green-500/30 hover:bg-green-500/30'
                           : 'bg-zinc-800 text-zinc-400 border-white/5 hover:text-white hover:bg-zinc-700'
-                      }`}
+                        }`}
                       title="Exempt this channel from dopamine budget countdown"
                     >
                       <ShieldCheck className="w-3.5 h-3.5 inline mr-1" />

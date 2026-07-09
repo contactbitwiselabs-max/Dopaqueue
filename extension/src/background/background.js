@@ -16,6 +16,7 @@ import {
   isWhitelistedChannel,
   addToQueue,
   ensureChannelSaved,
+  getQueue,
 } from '../shared/storage.js';
 
 const BUDGET_TICK_ALARM = 'budgetTick';
@@ -235,6 +236,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then((dataUrl) => sendResponse({ ok: !!dataUrl, dataUrl }))
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;
+  }
+
+  if (message?.type === 'CHECK_SAVED_URL') {
+    initStorage().then(() => {
+      const queue = getQueue();
+      const saved = queue.some(i => !i.deleted && i.url === message.url);
+      sendResponse({ saved });
+    });
+    return true; // async
   }
 
   if (message?.type === 'SAVE_INSTAGRAM_ITEM') {
