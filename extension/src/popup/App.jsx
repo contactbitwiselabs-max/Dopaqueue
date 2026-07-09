@@ -10,6 +10,7 @@ import {
   updateQueueItem,
   subscribe,
   getSavedVideos,
+  ensureChannelSaved,
 } from '../shared/storage.js';
 import { isChannelUrl, extractChannelId, extractYouTubeVideoId, STORAGE_KEYS } from '../shared/constants.js';
 import { getCurrentUser, signInWithGoogle, signOut, isLoggedIn, getUserEmail, getUserName, getPersistedAuthState } from '../shared/auth.js';
@@ -54,8 +55,29 @@ function usePopupData() {
             url: tab.url,
             title: tab.title || 'Unknown Page',
             favIconUrl: tab.favIconUrl || '',
+            thumbnail: null,
+            author: null,
+            authorUrl: null,
+            contentType: null,
+            platform: null,
           };
           setPageInfo(info);
+
+          if (tab.id) {
+            chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (res) => {
+              if (res) {
+                setPageInfo((prev) => prev ? {
+                  ...prev,
+                  title: res.title || prev.title,
+                  thumbnail: res.thumbnail || prev.thumbnail,
+                  author: res.author || res.channel || prev.author,
+                  authorUrl: res.authorUrl || null,
+                  contentType: res.contentType || prev.contentType,
+                  platform: res.platform || prev.platform,
+                } : null);
+              }
+            });
+          }
 
           // Check if already saved. Deleted items are soft-deleted
           // (kept in the queue with deleted: true so the sync engine
@@ -235,6 +257,10 @@ export default function PopupApp() {
         if (existing) {
           updateQueueItem(existing.id, {
             title: pageInfo.title,
+            thumbnail: pageInfo.thumbnail || existing.thumbnail || null,
+            author: pageInfo.author || existing.author || null,
+            contentType: pageInfo.contentType || existing.contentType || 'video',
+            platform: pageInfo.platform || existing.platform || null,
             type: 'video',
             savedAt: Date.now(),
             watched: false,
@@ -245,10 +271,18 @@ export default function PopupApp() {
             id: crypto.randomUUID(),
             url: pageInfo.url,
             title: pageInfo.title,
+            thumbnail: pageInfo.thumbnail || null,
+            author: pageInfo.author || null,
+            contentType: pageInfo.contentType || 'video',
+            platform: pageInfo.platform || null,
             type: 'video',
             savedAt: Date.now(),
             watched: false,
           });
+        }
+
+        if (pageInfo.author) {
+          ensureChannelSaved(pageInfo.author, pageInfo.authorUrl || '', pageInfo.platform || 'Social Media');
         }
 
         // Instant enterprise-grade save: update UI immediately
@@ -260,8 +294,22 @@ export default function PopupApp() {
         if (typeof chrome !== 'undefined' && chrome.tabs) {
           chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
             if (tab?.id) {
-              chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, () => {
-                // Ignore errors; metadata is updated opportunistically
+              chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (res) => {
+                if (res && (res.thumbnail || res.author || res.channel || res.contentType)) {
+                  const authorName = res.author || res.channel;
+                  if (authorName) {
+                    ensureChannelSaved(authorName, '', res.platform || 'Social Media');
+                  }
+                  const queue = getQueue();
+                  const target = queue.find(i => i.url === pageInfo.url);
+                  if (target) {
+                    updateQueueItem(target.id, {
+                      thumbnail: res.thumbnail || target.thumbnail || null,
+                      author: authorName || target.author || null,
+                      contentType: res.contentType || target.contentType || null,
+                    });
+                  }
+                }
               });
             }
           });

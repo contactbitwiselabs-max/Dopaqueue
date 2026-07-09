@@ -14,6 +14,8 @@ import {
   getScrapeResult,
   getUrlChannel,
   isWhitelistedChannel,
+  addToQueue,
+  ensureChannelSaved,
 } from '../shared/storage.js';
 
 const BUDGET_TICK_ALARM = 'budgetTick';
@@ -147,6 +149,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         channel: message.channel || null,
         transcript: message.transcript || null,
       });
+      const authorOrChan = message.channel || message.author;
+      if (authorOrChan && message.url) {
+        let platform = 'YouTube';
+        if (message.url.includes('instagram.com')) platform = 'Instagram';
+        else if (message.url.includes('tiktok.com')) platform = 'TikTok';
+        else if (message.url.includes('x.com') || message.url.includes('twitter.com')) platform = 'X / Twitter';
+        else if (message.url.includes('linkedin.com')) platform = 'LinkedIn';
+        ensureChannelSaved(authorOrChan, '', platform);
+      }
       console.info('DopaQueue: GENRE_SCRAPED', {
         url: message.url,
         transcriptLength: message.transcript ? message.transcript.length : 0,
@@ -219,6 +230,39 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === 'FETCH_BASE64_IMAGE') {
+    fetchBase64Image(message.url)
+      .then((dataUrl) => sendResponse({ ok: !!dataUrl, dataUrl }))
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return true;
+  }
+
+  if (message?.type === 'SAVE_INSTAGRAM_ITEM') {
+    initStorage().then(() => {
+      const entry = {
+        id: crypto.randomUUID(),
+        url: message.url,
+        title: message.title || 'Instagram Post',
+        thumbnail: message.thumbnail || null,
+        author: message.author || null,
+        contentType: message.contentType || 'reel',
+        type: 'video',
+        savedAt: Date.now(),
+        watched: false,
+      };
+      addToQueue(entry);
+      cacheScrapeResult(message.url, {
+        genre: message.contentType || 'Instagram',
+        channel: message.author || null,
+      });
+      if (message.author) {
+        ensureChannelSaved(message.author, '', message.platform || 'Instagram');
+      }
+      sendResponse({ ok: true, entry });
+    });
+    return true;
+  }
+
   if (message?.type === 'OPEN_DASHBOARD') {
     chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
     return false;
@@ -226,6 +270,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   return false;
 });
+
+async function fetchBase64Image(url) {
+  try {
+    const res = await fetch(url, { credentials: 'omit' });
+    if (!res.ok) return null;
+    const arrayBuffer = await res.arrayBuffer();
+    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    const bytes = new Uint8Array(arrayBuffer);
+    if (bytes.byteLength > 2500000) return null;
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+    return `data:${contentType};base64,${base64}`;
+  } catch (err) {
+    console.error('DopaQueue background: fetchBase64Image error', err);
+    return null;
+  }
+}
 
 /**
  * Parse YouTube timedtext response (JSON3 or XML).

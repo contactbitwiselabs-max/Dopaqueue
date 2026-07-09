@@ -4,7 +4,7 @@ import {
   Clock, Download, Folder, FileText, FileSpreadsheet, LogIn, X, AlertCircle,
   LogOut, RefreshCw, Film, Zap, Image, Calendar, ChevronDown, Search, Plus,
   Sparkles, CheckSquare, Share2, Users, Copy, ExternalLink, ShieldCheck, Award, TrendingUp,
-  Send, Timer, Pause, Play, Shield
+  Send, Timer, Pause, Play, Shield, LayoutGrid, LayoutList, SlidersHorizontal
 } from 'lucide-react';
 import {
   initStorage, getSavedVideos, getSavedChannels, subscribe,
@@ -321,6 +321,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [readingVideo, setReadingVideo] = useState(null);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
+  const [sortBy, setSortBy] = useState('newest'); // 'newest' | 'oldest' | 'az'
   const searchInputRef = useRef(null);
 
   const refreshData = useCallback(() => {
@@ -537,18 +539,25 @@ export default function App() {
   }
 
   // Filter videos by content type, review urgency, and search query
-  const filteredVideos = videos.filter(v => {
-    if (filterType !== 'all' && detectContentType(v.url) !== filterType) return false;
-    if (filterUrgency !== 'all' && (v.urgency || 'Unscheduled') !== filterUrgency) return false;
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase().trim();
-    const titleMatch = (v.title || '').toLowerCase().includes(q);
-    const tagMatch = (v.tags || []).some(t => t.toLowerCase().includes(q));
-    const scrape = getScrapeResult(v.url) || {};
-    const transcriptMatch = (scrape.transcript || '').toLowerCase().includes(q);
-    const channelMatch = (scrape.channel || '').toLowerCase().includes(q);
-    return titleMatch || tagMatch || transcriptMatch || channelMatch;
-  });
+  const filteredVideos = videos
+    .filter(v => {
+      if (filterType !== 'all' && detectContentType(v.url) !== filterType) return false;
+      if (filterUrgency !== 'all' && (v.urgency || 'Unscheduled') !== filterUrgency) return false;
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase().trim();
+      const titleMatch = (v.title || '').toLowerCase().includes(q);
+      const tagMatch = (v.tags || []).some(t => t.toLowerCase().includes(q));
+      const scrape = getScrapeResult(v.url) || {};
+      const transcriptMatch = (scrape.transcript || '').toLowerCase().includes(q);
+      const channelMatch = (scrape.channel || '').toLowerCase().includes(q);
+      return titleMatch || tagMatch || transcriptMatch || channelMatch;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'newest') return (b.savedAt || 0) - (a.savedAt || 0);
+      if (sortBy === 'oldest') return (a.savedAt || 0) - (b.savedAt || 0);
+      if (sortBy === 'az') return (a.title || '').localeCompare(b.title || '');
+      return 0;
+    });
 
   // Count by type for category chips
   const typeCounts = videos.reduce((acc, v) => {
@@ -632,79 +641,145 @@ export default function App() {
             <div>
               {readingVideo && <ArticleModal video={readingVideo} onClose={() => setReadingVideo(null)} />}
               {showShareModal && <ShareModal videos={filteredVideos} onClose={() => setShowShareModal(false)} onStatus={setStatus} />}
-              
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                <h2 className="text-3xl font-bold">Your Video Queue</h2>
-                <div className="relative flex-1 max-w-md">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    placeholder="Search titles, #tags, or spoken transcript (Cmd+K)..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-sm rounded-xl pl-9 pr-8 py-2 text-white placeholder-zinc-500 focus:outline-none focus:border-lime-500 transition-colors shadow-inner"
-                  />
-                  {searchQuery && (
-                    <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setShowShareModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-lime-500/20 text-lime-300 border border-lime-500/30 text-xs font-semibold hover:bg-lime-500/30 transition-colors shrink-0"
-                  >
-                    <Share2 className="w-3.5 h-3.5" /> Share Playlist
-                  </button>
-                  <span className="text-sm text-zinc-500 shrink-0">{filteredVideos.length} items</span>
-                  <div className="relative">
-                    <select
-                      onChange={(e) => { if (e.target.value) { handleBulkExport(e.target.value); e.target.value = ''; } }}
-                      className="appearance-none bg-zinc-900 border border-zinc-800 text-zinc-300 text-sm rounded-lg pl-3 pr-8 py-1.5 hover:border-zinc-700 focus:outline-none focus:border-lime-500 cursor-pointer"
-                      defaultValue=""
+
+              {/* ── Page Header ── */}
+              <div className="mb-6">
+                <div className="flex items-start justify-between gap-4 mb-5">
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">Saved Videos</h2>
+                    <p className="text-sm text-zinc-500 mt-0.5">{filteredVideos.length} item{filteredVideos.length !== 1 ? 's' : ''} in your intentional queue</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowShareModal(true)}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-lime-500/15 text-lime-300 border border-lime-500/25 text-xs font-semibold hover:bg-lime-500/25 transition-colors"
                     >
-                      <option value="" disabled>Export all…</option>
-                      <option value="markdown">Markdown</option>
-                      <option value="csv">CSV</option>
-                      <option value="json">JSON</option>
-                      <option value="notion">Notion</option>
+                      <Share2 className="w-3.5 h-3.5" /> Share
+                    </button>
+                    <div className="relative">
+                      <select
+                        onChange={(e) => { if (e.target.value) { handleBulkExport(e.target.value); e.target.value = ''; } }}
+                        className="appearance-none bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs rounded-xl pl-3 pr-7 py-2 hover:border-zinc-700 focus:outline-none focus:border-lime-500 cursor-pointer"
+                        defaultValue=""
+                      >
+                        <option value="" disabled>Export all…</option>
+                        <option value="markdown">Markdown</option>
+                        <option value="csv">CSV</option>
+                        <option value="json">JSON</option>
+                        <option value="notion">Notion</option>
+                      </select>
+                      <ChevronDown className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Toolbar row: search + sort + layout toggle ── */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      placeholder="Search titles, #tags, channels, transcripts… (Ctrl+K)"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      className="w-full bg-zinc-900/80 border border-zinc-800 text-sm rounded-xl pl-9 pr-8 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:border-lime-500/60 transition-colors"
+                    />
+                    {searchQuery && (
+                      <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white">
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Sort select */}
+                  <div className="relative shrink-0">
+                    <SlidersHorizontal className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500" />
+                    <select
+                      value={sortBy}
+                      onChange={e => setSortBy(e.target.value)}
+                      className="appearance-none bg-zinc-900/80 border border-zinc-800 text-zinc-300 text-xs rounded-xl pl-8 pr-7 py-2.5 hover:border-zinc-700 focus:outline-none focus:border-lime-500/60 cursor-pointer"
+                    >
+                      <option value="newest">Newest first</option>
+                      <option value="oldest">Oldest first</option>
+                      <option value="az">A → Z</option>
                     </select>
-                    <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500" />
+                    <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500" />
+                  </div>
+
+                  {/* Layout toggle */}
+                  <div className="flex items-center bg-zinc-900/80 border border-zinc-800 rounded-xl p-1 gap-0.5 shrink-0">
+                    <button
+                      onClick={() => setViewMode('grid')}
+                      title="Grid view"
+                      className={`p-1.5 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                    >
+                      <LayoutGrid className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setViewMode('list')}
+                      title="List view"
+                      className={`p-1.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                    >
+                      <LayoutList className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* ── Filter chips row ── */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wider mr-0.5">Type</span>
+                    <FilterChip active={filterType === 'all'} onClick={() => setFilterType('all')} label="All" count={videos.length} />
+                    {Object.entries(TYPE_CONFIG).map(([key, cfg]) =>
+                      typeCounts[key] > 0 && (
+                        <FilterChip key={key} active={filterType === key} onClick={() => setFilterType(key)} label={cfg.label} count={typeCounts[key] || 0} />
+                      )
+                    )}
+                  </div>
+
+                  <div className="w-px h-5 bg-zinc-800 mx-1" />
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wider mr-0.5">Priority</span>
+                    <FilterChip active={filterUrgency === 'all'} onClick={() => setFilterUrgency('all')} label="All" />
+                    {['Tomorrow', 'Weekend', 'Reference'].map(u => (
+                      <FilterChip key={u} active={filterUrgency === u} onClick={() => setFilterUrgency(u)} label={u} count={urgencyCounts[u] || 0} />
+                    ))}
                   </div>
                 </div>
               </div>
 
-              {/* Category Filter Chips */}
-              <div className="flex items-center gap-2 mb-3 flex-wrap">
-                <span className="text-xs text-zinc-500 mr-1">Type:</span>
-                <FilterChip active={filterType === 'all'} onClick={() => setFilterType('all')} label="All" count={videos.length} />
-                {Object.entries(TYPE_CONFIG).map(([key, cfg]) => (
-                  typeCounts[key] > 0 && (
-                    <FilterChip key={key} active={filterType === key} onClick={() => setFilterType(key)} label={cfg.label} count={typeCounts[key] || 0} />
-                  )
-                ))}
-              </div>
-
-              {/* Urgency Review Deck Chips */}
-              <div className="flex items-center gap-2 mb-6 flex-wrap">
-                <span className="text-xs text-zinc-500 mr-1">Review Deck:</span>
-                <FilterChip active={filterUrgency === 'all'} onClick={() => setFilterUrgency('all')} label="All Decks" />
-                {['Tomorrow', 'Weekend', 'Reference'].map(u => (
-                  <FilterChip key={u} active={filterUrgency === u} onClick={() => setFilterUrgency(u)} label={u} count={urgencyCounts[u] || 0} />
-                ))}
-              </div>
-
               {filteredVideos.length === 0 ? (
-                <div className="text-center py-20 text-zinc-500 border border-dashed border-zinc-800 rounded-2xl">
-                  <PlayCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>{videos.length === 0 ? 'No videos saved yet. Save a video using the extension!' : 'No items match your search or filter.'}</p>
+                <div className="flex flex-col items-center justify-center py-24 text-zinc-500 border border-dashed border-zinc-800/60 rounded-2xl gap-3">
+                  <PlayCircle className="w-14 h-14 opacity-25" />
+                  <div className="text-center">
+                    <p className="font-medium text-zinc-400">{videos.length === 0 ? 'Your queue is empty' : 'No matches found'}</p>
+                    <p className="text-sm mt-1">{videos.length === 0 ? 'Save a video using the DopaQueue extension.' : 'Try adjusting your search or filters.'}</p>
+                  </div>
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              ) : viewMode === 'grid' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                   {filteredVideos.map(video => (
                     <VideoCard
                       key={video.id}
                       video={video}
+                      viewMode="grid"
+                      onRemove={() => handleDelete(video.id)}
+                      onExport={handleExport}
+                      onReadArticle={() => setReadingVideo(video)}
+                      onUpdateTags={handleUpdateTags}
+                      onSetUrgency={handleSetUrgency}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {filteredVideos.map(video => (
+                    <VideoCard
+                      key={video.id}
+                      video={video}
+                      viewMode="list"
                       onRemove={() => handleDelete(video.id)}
                       onExport={handleExport}
                       onReadArticle={() => setReadingVideo(video)}
@@ -727,7 +802,15 @@ export default function App() {
                   <p>No channels saved. Save a channel from YouTube to organize them here.</p>
                 </div>
               ) : (
-                <ChannelList channels={channels} onDelete={handleDelete} />
+                <ChannelList
+                  channels={channels}
+                  videos={videos}
+                  onDelete={handleDelete}
+                  onSelectChannel={(authorTitle) => {
+                    setSearchQuery(authorTitle);
+                    setActiveTab('videos');
+                  }}
+                />
               )}
             </div>
           )}
@@ -1034,15 +1117,17 @@ function ArticleModal({ video, onClose }) {
   );
 }
 
-function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onSetUrgency }) {
+function VideoCard({ video, viewMode = 'grid', onRemove, onExport, onReadArticle, onUpdateTags, onSetUrgency }) {
   const contentType = detectContentType(video.url);
   const typeInfo = TYPE_CONFIG[contentType] || TYPE_CONFIG.video;
   const TypeIcon = typeInfo.icon;
 
-  let thumbUrl = '';
-  const ytMatch = video.url.match(/v=([^&]+)/) || video.url.match(/youtu\.be\/([^?]+)/) || video.url.match(/shorts\/([^?/]+)/);
-  if (ytMatch) {
-    thumbUrl = `https://img.youtube.com/vi/${ytMatch[1]}/mqdefault.jpg`;
+  let thumbUrl = video.thumbnail || '';
+  if (!thumbUrl) {
+    const ytMatch = video.url.match(/v=([^&]+)/) || video.url.match(/youtu\.be\/([^?]+)/) || video.url.match(/shorts\/([^?/]+)/);
+    if (ytMatch) {
+      thumbUrl = `https://img.youtube.com/vi/${ytMatch[1]}/mqdefault.jpg`;
+    }
   }
 
   const [showExport, setShowExport] = useState(false);
@@ -1051,17 +1136,19 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
   const [pushingVault, setPushingVault] = useState(false);
   const scrapeResult = getScrapeResult(video.url);
 
-  const urgencyCycle = ['Tomorrow', 'Weekend', 'Reference', null];
-  const currentUrgency = video.urgency || null;
-  const urgencyColor = {
-    Tomorrow: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-    Weekend: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-    Reference: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-  };
+  const URGENCY_OPTIONS = [
+    { value: '', label: 'No Priority', color: 'bg-zinc-800 text-zinc-400 border-zinc-700' },
+    { value: 'Tomorrow', label: '🌅 Tomorrow', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+    { value: 'Weekend', label: '🗓 Weekend', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
+    { value: 'Reference', label: '📌 Reference', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
+  ];
+  const currentUrgency = video.urgency || '';
+  const currentUrgencyOption = URGENCY_OPTIONS.find(o => o.value === currentUrgency) || URGENCY_OPTIONS[0];
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
 
-  const handleCycleUrgency = () => {
-    const nextIdx = (urgencyCycle.indexOf(currentUrgency) + 1) % urgencyCycle.length;
-    onSetUrgency(video.id, urgencyCycle[nextIdx]);
+  const handleSetPriority = (value) => {
+    onSetUrgency(video.id, value || null);
+    setShowPriorityDropdown(false);
   };
 
   const handleAutoTag = () => {
@@ -1134,8 +1221,107 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
     onUpdateTags(video.id, currentTags.filter(t => t !== tagToRemove));
   };
 
+  if (viewMode === 'list') {
+    return (
+      <div className="group flex items-center gap-4 bg-zinc-900/80 border border-white/10 rounded-2xl p-3 hover:border-white/20 transition-all duration-200 hover:bg-zinc-900">
+        {/* Thumbnail */}
+        <div className="w-32 h-20 rounded-xl bg-zinc-950 shrink-0 overflow-hidden relative">
+          {thumbUrl ? (
+            <img src={thumbUrl} alt="" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <PlayCircle className="w-8 h-8 text-zinc-700" />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent to-zinc-900/30" />
+          <div className={`absolute top-1.5 left-1.5 flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md border backdrop-blur-sm ${typeInfo.color}`}>
+            <TypeIcon className="w-2.5 h-2.5" />
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-semibold text-white leading-snug line-clamp-1 group-hover:text-lime-300 transition-colors" title={video.title}>
+                {video.title}
+              </h3>
+              <div className="flex items-center gap-3 mt-1">
+                <span className="text-[11px] text-zinc-500 flex items-center gap-1">
+                  <Calendar className="w-3 h-3" /> {formatDateTime(video.savedAt)}
+                </span>
+                {(video.tags || []).slice(0, 3).map(tag => (
+                  <span key={tag} className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-lime-400/10 text-lime-400 border border-lime-400/20">
+                    #{tag}
+                  </span>
+                ))}
+                {(video.tags || []).length > 3 && (
+                  <span className="text-[11px] text-zinc-500">+{(video.tags || []).length - 3} more</span>
+                )}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Priority dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowPriorityDropdown(p => !p)}
+                  className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition-all ${currentUrgencyOption.color}`}
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>{currentUrgency || 'Priority'}</span>
+                  <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+                </button>
+                {showPriorityDropdown && (
+                  <div className="absolute right-0 top-full mt-1.5 w-40 bg-zinc-900 border border-white/15 rounded-xl shadow-2xl overflow-hidden z-30">
+                    {URGENCY_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => handleSetPriority(opt.value)}
+                        className={`w-full text-left px-3.5 py-2.5 text-xs font-medium hover:bg-white/5 transition-colors flex items-center gap-2 ${
+                          currentUrgency === opt.value ? 'text-white bg-white/5' : 'text-zinc-400'
+                        }`}
+                      >
+                        {currentUrgency === opt.value && <span className="w-1.5 h-1.5 rounded-full bg-lime-400 shrink-0" />}
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => onReadArticle(video)}
+                className="p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-colors border border-white/5"
+                title="Manage Notes & Tags"
+              >
+                <FileText className="w-3.5 h-3.5" />
+              </button>
+              <a
+                href={video.url}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-2 bg-lime-400 hover:bg-lime-300 text-zinc-950 text-xs font-bold rounded-xl transition-all flex items-center gap-1"
+              >
+                Watch <ExternalLink className="w-3 h-3" />
+              </a>
+              <button
+                onClick={onRemove}
+                className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 bg-zinc-800/60 rounded-xl transition-colors border border-white/5"
+                title="Delete"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Grid card layout ──
   return (
-    <div className="group bg-zinc-900/80 border border-white/10 rounded-2xl overflow-hidden hover:border-white/25 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-lime-500/10 flex flex-col">
+    <div className="group bg-zinc-900/80 border border-white/10 rounded-2xl overflow-hidden hover:border-white/25 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-black/30 flex flex-col">
       {/* Card Thumbnail Deck */}
       <div className="h-44 bg-zinc-950 relative overflow-hidden shrink-0">
         {thumbUrl ? (
@@ -1156,117 +1342,133 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
           <TypeIcon className="w-3.5 h-3.5" /> {typeInfo.label}
         </div>
 
-        {/* Urgency Review Deck Selector */}
+        {/* Priority dropdown */}
         <div className="absolute top-3 right-3">
-          <button
-            onClick={handleCycleUrgency}
-            className={`text-xs font-semibold px-3 py-1 rounded-full border backdrop-blur-md transition-all flex items-center gap-1.5 shadow-sm ${
-              currentUrgency
-                ? urgencyColor[currentUrgency]
-                : 'bg-zinc-900/80 text-zinc-400 border-white/10 hover:text-white hover:border-white/20'
-            }`}
-            title="Click to cycle review urgency (Tomorrow -> Weekend -> Reference)"
-          >
-            <Clock className="w-3.5 h-3.5" /> {currentUrgency || 'Set Priority'}
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowPriorityDropdown(p => !p)}
+              className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border backdrop-blur-md shadow-sm transition-all ${currentUrgencyOption.color}`}
+            >
+              <Clock className="w-3 h-3" />
+              <span>{currentUrgency || 'Priority'}</span>
+              <ChevronDown className="w-3 h-3 opacity-60" />
+            </button>
+            {showPriorityDropdown && (
+              <div className="absolute right-0 top-full mt-1.5 w-40 bg-zinc-900 border border-white/15 rounded-xl shadow-2xl overflow-hidden z-30">
+                {URGENCY_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => handleSetPriority(opt.value)}
+                    className={`w-full text-left px-3.5 py-2.5 text-xs font-medium hover:bg-white/5 transition-colors flex items-center gap-2 ${
+                      currentUrgency === opt.value ? 'text-white bg-white/5' : 'text-zinc-400'
+                    }`}
+                  >
+                    {currentUrgency === opt.value && <span className="w-1.5 h-1.5 rounded-full bg-lime-400 shrink-0" />}
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Card Body */}
-      <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
-        <div className="space-y-3">
-          <h3 className="font-bold text-white text-base leading-snug line-clamp-2 group-hover:text-lime-300 transition-colors" title={video.title}>
-            {video.title}
-          </h3>
+      {/* ── Grid Card Body ── */}
+      <div className="p-4 flex flex-col flex-1">
+        {/* Title */}
+        <h3 className="text-sm font-bold text-white leading-snug line-clamp-2 group-hover:text-lime-300 transition-colors mb-2" title={video.title}>
+          {video.title}
+        </h3>
 
-          <div className="flex items-center gap-2 text-xs text-zinc-500">
-            <Calendar className="w-3.5 h-3.5" />
-            <span>Saved {formatDateTime(video.savedAt)}</span>
-          </div>
+        {/* Meta row */}
+        <div className="flex items-center gap-2 text-[11px] text-zinc-500 mb-3">
+          <Calendar className="w-3 h-3 shrink-0" />
+          <span className="truncate">{formatDateTime(video.savedAt)}</span>
+        </div>
 
-          {/* Interactive Tags Section */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-            {(video.tags || []).map(tag => (
-              <span
-                key={tag}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-lime-400/15 text-lime-300 border border-lime-400/30 shadow-sm"
-              >
-                #{tag}
-                <button
-                  onClick={() => handleRemoveTag(tag)}
-                  className="hover:text-white font-extrabold ml-1"
-                  aria-label="Remove tag"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-            {showTagInput ? (
-              <form onSubmit={handleAddTag} className="inline-flex items-center">
-                <input
-                  type="text"
-                  value={newTag}
-                  onChange={e => setNewTag(e.target.value)}
-                  placeholder="tag name..."
-                  autoFocus
-                  onBlur={() => setShowTagInput(false)}
-                  className="bg-zinc-950 border border-lime-400 text-xs text-white rounded-full px-2.5 py-0.5 w-24 focus:outline-none"
-                />
-              </form>
-            ) : (
+        {/* Tags */}
+        <div className="flex flex-wrap items-center gap-1 mb-3">
+          {(video.tags || []).map(tag => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-0.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-lime-400/10 text-lime-400 border border-lime-400/20"
+            >
+              #{tag}
               <button
-                onClick={() => setShowTagInput(true)}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 border border-white/5 transition-colors"
+                onClick={() => handleRemoveTag(tag)}
+                className="hover:text-white ml-0.5 leading-none"
+                aria-label="Remove tag"
               >
-                <Plus className="w-3 h-3" /> Tag
+                ×
               </button>
-            )}
-          </div>
-
-          {/* Custom Notes / Description snippet if existing */}
-          {(video.userNotes || video.description) && (
-            <p className="text-xs text-zinc-400 line-clamp-2 bg-zinc-950/50 p-2.5 rounded-xl border border-white/5 font-sans leading-relaxed">
-              <span className="font-semibold text-zinc-300">Note: </span>
-              {video.userNotes || video.description}
-            </p>
+            </span>
+          ))}
+          {showTagInput ? (
+            <form onSubmit={handleAddTag} className="inline-flex">
+              <input
+                type="text"
+                value={newTag}
+                onChange={e => setNewTag(e.target.value)}
+                placeholder="tag..."
+                autoFocus
+                onBlur={() => setShowTagInput(false)}
+                className="bg-zinc-950 border border-lime-400/60 text-[11px] text-white rounded-full px-2 py-0.5 w-20 focus:outline-none"
+              />
+            </form>
+          ) : (
+            <button
+              onClick={() => setShowTagInput(true)}
+              className="inline-flex items-center gap-0.5 text-[11px] px-2 py-0.5 rounded-full bg-zinc-800/80 text-zinc-500 hover:text-zinc-200 border border-white/5 transition-colors"
+            >
+              <Plus className="w-2.5 h-2.5" /> Tag
+            </button>
           )}
         </div>
 
-        {/* Enterprise Actions Footer */}
-        <div className="flex items-center gap-2 pt-3 border-t border-white/10">
+        {/* Notes snippet */}
+        {(video.userNotes || video.description) && (
+          <p className="text-[11px] text-zinc-400 line-clamp-2 bg-zinc-950/60 px-2.5 py-2 rounded-lg border border-white/5 mb-3 leading-relaxed">
+            <span className="font-semibold text-zinc-300">Note: </span>
+            {video.userNotes || video.description}
+          </p>
+        )}
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* ── Card Actions Footer ── */}
+        <div className="flex items-center gap-2 pt-3 mt-1 border-t border-white/8">
           <a
             href={video.url}
             target="_blank"
             rel="noreferrer"
-            className="flex-1 bg-lime-400 hover:bg-lime-300 text-zinc-950 text-xs font-bold py-2.5 rounded-xl text-center transition-all shadow-md shadow-lime-500/10 flex items-center justify-center gap-1.5"
+            className="flex-1 bg-lime-400 hover:bg-lime-300 active:scale-95 text-zinc-950 text-xs font-bold py-2 rounded-lg text-center transition-all flex items-center justify-center gap-1 shadow-sm"
           >
-            <span>Watch</span>
-            <ExternalLink className="w-3.5 h-3.5" />
+            Watch <ExternalLink className="w-3 h-3" />
           </a>
 
           <button
             onClick={() => onReadArticle(video)}
-            className="px-3.5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-xl transition-all text-xs font-semibold border border-white/10 flex items-center gap-1.5"
-            title="Manage Notes, Tags & Transcript"
+            className="p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition-colors border border-white/5"
+            title="Notes, Tags & Transcript"
           >
-            <FileText className="w-3.5 h-3.5 text-lime-400" />
-            <span>Manage & Notes</span>
+            <FileText className="w-3.5 h-3.5" />
           </button>
 
           <button
             onClick={handleShareCard}
-            className="p-2.5 text-blue-400 hover:text-white bg-blue-500/10 hover:bg-blue-600 rounded-xl transition-colors border border-blue-500/20"
-            title="Copy Shareable Review Link"
+            className="p-2 text-blue-400 hover:text-white bg-blue-500/10 hover:bg-blue-600 rounded-lg transition-colors border border-blue-500/15"
+            title="Copy share link"
           >
-            <Share2 className="w-4 h-4" />
+            <Share2 className="w-3.5 h-3.5" />
           </button>
 
           <button
             onClick={onRemove}
-            className="p-2.5 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 bg-zinc-800/80 rounded-xl transition-colors border border-white/5"
-            title="Delete from Queue"
+            className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 bg-zinc-800/60 rounded-lg transition-colors border border-white/5"
+            title="Delete"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
@@ -1274,8 +1476,10 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
   );
 }
 
-function ChannelList({ channels, onDelete }) {
+function ChannelList({ channels, videos = [], onDelete, onSelectChannel }) {
   const [whitelist, setWhitelist] = useState(getWhitelist());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPlatform, setSelectedPlatform] = useState('All');
 
   const toggleWhitelist = (title) => {
     if (!title) return;
@@ -1288,7 +1492,26 @@ function ChannelList({ channels, onDelete }) {
     setWhitelist(updated);
   };
 
-  const grouped = channels.reduce((acc, channel) => {
+  const getProfileUrl = (channel) => {
+    if (channel.url && channel.url.trim() !== '') return channel.url;
+    const cleanTitle = (channel.title || '').replace(/^@/, '').trim();
+    if (!cleanTitle) return '#';
+    const plat = (channel.platform || 'YouTube').toLowerCase();
+    if (plat.includes('instagram')) return `https://www.instagram.com/${cleanTitle}/`;
+    if (plat.includes('tiktok')) return `https://www.tiktok.com/@${cleanTitle}`;
+    if (plat.includes('twitter') || plat.includes('x')) return `https://x.com/${cleanTitle}`;
+    return `https://www.youtube.com/@${cleanTitle}`;
+  };
+
+  const platforms = ['All', 'YouTube', 'Instagram', 'TikTok', 'X / Twitter'];
+
+  const filteredChannels = channels.filter(c => {
+    const matchesSearch = !searchQuery || (c.title || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesPlatform = selectedPlatform === 'All' || (c.platform || 'YouTube').toLowerCase().includes(selectedPlatform.toLowerCase().replace(' / ', ''));
+    return matchesSearch && matchesPlatform;
+  });
+
+  const grouped = filteredChannels.reduce((acc, channel) => {
     const groupName = channel.group || 'Ungrouped';
     if (!acc[groupName]) acc[groupName] = [];
     acc[groupName].push(channel);
@@ -1296,15 +1519,44 @@ function ChannelList({ channels, onDelete }) {
   }, {});
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="bg-lime-500/10 border border-lime-500/30 rounded-2xl p-5 flex items-center justify-between">
         <div>
           <h4 className="text-sm font-bold text-lime-300 flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-lime-400" /> Deep Focus Whitelisted Channels ({whitelist.length})
+            <ShieldCheck className="w-4 h-4 text-lime-400" /> Deep Focus Whitelisted Creators ({whitelist.length})
           </h4>
           <p className="text-xs text-zinc-400 mt-1">
-            Watching videos from whitelisted educational channels will not decay your daily Dopamine Budget.
+            Watching videos from whitelisted educational creators will not decay your daily Dopamine Budget.
           </p>
+        </div>
+      </div>
+
+      {/* Search & Platform Filter Bar */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 bg-zinc-900/40 border border-white/5 p-4 rounded-2xl">
+        <div className="flex items-center gap-2 flex-wrap">
+          {platforms.map(p => (
+            <button
+              key={p}
+              onClick={() => setSelectedPlatform(p)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                selectedPlatform === p
+                  ? 'bg-lime-400 text-black shadow-lg shadow-lime-400/20'
+                  : 'bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-800'
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search saved creators..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full md:w-64 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-lime-500 transition-colors"
+          />
         </div>
       </div>
 
@@ -1312,32 +1564,72 @@ function ChannelList({ channels, onDelete }) {
         <div key={groupName} className="bg-zinc-900/30 border border-white/5 rounded-2xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 bg-zinc-800 rounded-lg"><Folder className="w-5 h-5 text-lime-400" /></div>
-            <h3 className="text-xl font-bold">{groupName}</h3>
-            <span className="text-zinc-500 text-sm ml-auto">{items.length} channels</span>
+            <h3 className="text-lg font-bold">{groupName}</h3>
+            <span className="text-zinc-500 text-xs ml-auto font-medium">{items.length} creators</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {items.map(channel => {
               const isW = whitelist.some(c => c.toLowerCase() === (channel.title || '').toLowerCase());
+              const savedCount = videos.filter(v =>
+                (v.author && v.author.toLowerCase() === (channel.title || '').toLowerCase()) ||
+                (v.channel && v.channel.toLowerCase() === (channel.title || '').toLowerCase())
+              ).length;
+              const profileUrl = getProfileUrl(channel);
+              const platName = channel.platform || 'YouTube';
+
               return (
-                <div key={channel.id} className="flex items-center justify-between p-4 bg-zinc-900 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-semibold truncate">{channel.title}</h4>
+                <div key={channel.id} className="flex items-center justify-between p-4 bg-zinc-900/90 rounded-2xl border border-white/5 hover:border-white/15 transition-all">
+                  <div className="min-w-0 flex-1 pr-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${
+                        platName.includes('Instagram') ? 'bg-pink-500/15 text-pink-300 border-pink-500/30' :
+                        platName.includes('TikTok') ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' :
+                        platName.includes('X') ? 'bg-blue-500/15 text-blue-300 border-blue-500/30' :
+                        'bg-red-500/15 text-red-300 border-red-500/30'
+                      }`}>
+                        {platName}
+                      </span>
+                      <a
+                        href={profileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-bold text-sm text-white hover:text-lime-400 truncate transition-colors flex items-center gap-1 group"
+                        title={`Open ${channel.title}'s official profile page`}
+                      >
+                        <span>{channel.title}</span>
+                        <span className="text-[10px] text-zinc-500 group-hover:text-lime-400">↗</span>
+                      </a>
                       {isW && (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/20 text-green-300 border border-green-500/30 font-semibold">
                           Whitelisted
                         </span>
                       )}
                     </div>
-                    <a href={channel.url} target="_blank" rel="noreferrer" className="text-xs text-lime-400 hover:underline mt-1 block">Visit Channel</a>
-                    <span className="text-xs text-zinc-600 mt-1 block">{formatDateTime(channel.savedAt)}</span>
+
+                    <div className="flex items-center gap-3 mt-2">
+                      <a
+                        href={profileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-lime-400 hover:underline font-medium"
+                      >
+                        Visit Profile
+                      </a>
+                      <button
+                        onClick={() => onSelectChannel && onSelectChannel(channel.title)}
+                        className="text-xs text-zinc-400 hover:text-lime-300 flex items-center gap-1.5 transition-colors font-medium bg-zinc-800/60 px-2.5 py-1 rounded-lg border border-white/5"
+                        title={`Filter library to view all saved items from ${channel.title}`}
+                      >
+                        <span>🎬 {savedCount} saved items</span>
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0 ml-3">
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={() => toggleWhitelist(channel.title)}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
                         isW
                           ? 'bg-green-500/20 text-green-300 border-green-500/30 hover:bg-green-500/30'
                           : 'bg-zinc-800 text-zinc-400 border-white/5 hover:text-white hover:bg-zinc-700'
@@ -1345,11 +1637,11 @@ function ChannelList({ channels, onDelete }) {
                       title="Exempt this channel from dopamine budget countdown"
                     >
                       <ShieldCheck className="w-3.5 h-3.5 inline mr-1" />
-                      {isW ? 'Focus Exempt' : 'Whitelist'}
+                      {isW ? 'Exempt' : 'Whitelist'}
                     </button>
 
                     <select
-                      className="bg-zinc-950 border border-zinc-800 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-lime-500"
+                      className="bg-zinc-950 border border-zinc-800 text-xs rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-lime-500 text-zinc-300"
                       value={channel.group || ''}
                       onChange={(e) => updateChannelGroup(channel.id, e.target.value)}
                     >
@@ -1359,7 +1651,7 @@ function ChannelList({ channels, onDelete }) {
                       <option value="Productivity">Productivity</option>
                       <option value="Tech">Tech</option>
                     </select>
-                    <button onClick={() => onDelete(channel.id)} className="p-1.5 text-red-400 hover:text-white hover:bg-red-500/20 rounded-lg transition-colors" title="Delete">
+                    <button onClick={() => onDelete(channel.id)} className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors" title="Delete">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>

@@ -5,10 +5,7 @@
   "description": "Save videos intentionally, watch them distraction-free, and keep your daily scroll budget in check.",
   "permissions": ["activeTab", "storage", "tabs", "alarms", "notifications"],
   "host_permissions": [
-    "*://www.youtube.com/*",
-    "*://youtube.com/*",
-    "*://m.youtube.com/*",
-    "*://www.instagram.com/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "src/background/background.js",
@@ -30,7 +27,7 @@
       "world": "MAIN"
     },
     {
-      "matches": ["*://www.youtube.com/*", "*://youtube.com/*", "*://m.youtube.com/*", "*://www.instagram.com/*"],
+      "matches": ["<all_urls>"],
       "js": ["src/content/content.js"],
       "run_at": "document_idle"
     }
@@ -38,7 +35,7 @@
   "web_accessible_resources": [
     {
       "resources": ["dashboard.html"],
-      "matches": ["*://www.youtube.com/*", "*://www.instagram.com/*"]
+      "matches": ["<all_urls>"]
     }
   ],
   "icons": {

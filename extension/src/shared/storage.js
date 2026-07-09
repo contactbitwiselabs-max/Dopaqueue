@@ -178,6 +178,34 @@ export function addToQueue(entry) {
   return localQueue;
 }
 
+export function ensureChannelSaved(authorName, authorUrl, platform = 'YouTube') {
+  if (!authorName || typeof authorName !== 'string') return;
+  const cleanName = authorName.trim();
+  if (!cleanName) return;
+
+  const existing = localQueue.find(
+    (item) => item.type === 'channel' && !item.deleted && (
+      item.title?.toLowerCase() === cleanName.toLowerCase()
+    )
+  );
+  if (existing) {
+    if ((!existing.url || existing.url === '') && authorUrl) {
+      updateQueueItem(existing.id, { url: authorUrl, platform: platform || existing.platform });
+    }
+    return;
+  }
+
+  const channelEntry = {
+    id: crypto.randomUUID(),
+    title: cleanName,
+    url: authorUrl || '',
+    type: 'channel',
+    platform,
+    savedAt: Date.now(),
+  };
+  addToQueue(channelEntry);
+}
+
 export function updateQueueItem(id, patch) {
   localQueue = localQueue.map((item) => (item.id === id ? { ...item, ...patch, updatedAt: Date.now() } : item));
   storageSet(STORAGE_KEYS.QUEUE, localQueue);

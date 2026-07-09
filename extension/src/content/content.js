@@ -285,7 +285,137 @@ function mustFindTranscript(strategyPromise) {
   });
 }
 
+async function getPermanentThumbnail(imageUrl) {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith('data:')) return imageUrl;
+  try {
+    const res = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'FETCH_BASE64_IMAGE', url: imageUrl }, (r) => {
+        if (chrome.runtime.lastError || !r?.ok) return resolve(null);
+        resolve(r.dataUrl);
+      });
+    });
+    if (!res) return imageUrl;
+
+    return await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const maxW = 320;
+          const scale = Math.min(1, maxW / (img.width || 320));
+          const w = Math.round((img.width || 320) * scale);
+          const h = Math.round((img.height || 320) * scale);
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL('image/jpeg', 0.72);
+          resolve(compressed);
+        } catch (e) {
+          resolve(res);
+        }
+      };
+      img.onerror = () => resolve(res);
+      img.src = res;
+    });
+  } catch (e) {
+    return imageUrl;
+  }
+}
+
+async function universalScrapeAll(targetUrl) {
+  const url = targetUrl || location.href;
+  const host = location.hostname.toLowerCase();
+
+  let platform = 'Social Media';
+  if (host.includes('instagram.com')) platform = 'Instagram';
+  else if (host.includes('tiktok.com')) platform = 'TikTok';
+  else if (host.includes('twitter.com') || host.includes('x.com')) platform = 'X / Twitter';
+  else if (host.includes('linkedin.com')) platform = 'LinkedIn';
+  else if (host.includes('reddit.com')) platform = 'Reddit';
+  else if (host.includes('facebook.com')) platform = 'Facebook';
+  else if (host.includes('youtube.com')) platform = 'YouTube';
+
+  const isReel = /\/(reel|reels|shorts|video)\//i.test(url);
+  const contentType = isReel ? 'reel' : 'post';
+
+  let rawImgUrl = null;
+  const ogImg = document.querySelector('meta[property="og:image"]');
+  if (ogImg?.content) rawImgUrl = ogImg.content;
+  if (!rawImgUrl) {
+    const videoPoster = document.querySelector('video[poster]');
+    if (videoPoster?.poster) rawImgUrl = videoPoster.poster;
+  }
+  if (!rawImgUrl) {
+    const twitterImg = document.querySelector('meta[name="twitter:image"]');
+    if (twitterImg?.content) rawImgUrl = twitterImg.content;
+  }
+  if (!rawImgUrl) {
+    const firstImg = document.querySelector('article img[src*="http"], main img[src*="http"]');
+    if (firstImg?.src) rawImgUrl = firstImg.src;
+  }
+
+  const thumbnail = await getPermanentThumbnail(rawImgUrl);
+
+  let title = document.title || `${platform} Item`;
+  const ogTitle = document.querySelector('meta[property="og:title"]');
+  if (ogTitle?.content) title = ogTitle.content;
+  else {
+    const twitterTitle = document.querySelector('meta[name="twitter:title"]');
+    if (twitterTitle?.content) title = twitterTitle.content;
+  }
+
+  let author = null;
+  const ogDesc = document.querySelector('meta[property="og:description"]');
+  if (ogDesc?.content) {
+    const match = ogDesc.content.match(/(@[\w.-]+)/);
+    if (match) author = match[1];
+  }
+  if (!author) {
+    const twitterCreator = document.querySelector('meta[name="twitter:creator"]');
+    if (twitterCreator?.content) author = twitterCreator.content;
+  }
+  if (!author) {
+    const authorLink = document.querySelector('header a[href*="/"]');
+    if (authorLink) {
+      const href = authorLink.getAttribute('href') || '';
+      const handle = href.replace(/^\/|\/$/g, '');
+      if (handle && !['explore', 'reels', 'home', 'status'].includes(handle.toLowerCase())) {
+        author = handle.startsWith('@') ? handle : '@' + handle;
+      }
+    }
+  }
+
+  let authorUrl = null;
+  if (author) {
+    const cleanHandle = author.replace(/^@/, '');
+    if (platform === 'Instagram') authorUrl = `https://www.instagram.com/${cleanHandle}/`;
+    else if (platform === 'TikTok') authorUrl = `https://www.tiktok.com/@${cleanHandle}`;
+    else if (platform === 'X / Twitter') authorUrl = `https://x.com/${cleanHandle}`;
+    else if (platform === 'YouTube') authorUrl = `https://www.youtube.com/@${cleanHandle}`;
+    else authorUrl = location.origin;
+  }
+
+  return {
+    url,
+    title,
+    thumbnail,
+    author,
+    authorUrl,
+    genre: contentType,
+    channel: author,
+    contentType,
+    platform,
+    transcript: null
+  };
+}
+
 async function scrapeAll() {
+  if (!location.hostname.includes('youtube.com')) {
+    return await universalScrapeAll();
+  }
+
   const url = location.href;
   const genre = scrapeCategory();
   const channel = scrapeChannel();
@@ -293,8 +423,6 @@ async function scrapeAll() {
   const videoId = extractVideoId(url);
   if (!videoId) return { url, genre, channel, transcript: null };
 
-  // Race all four strategies. mustFindTranscript rejects on null
-  // so Promise.any only resolves when a strategy actually finds text.
   const racePromise = Promise.any([
     mustFindTranscript(strategyD_livePlayerAPI(videoId)),
     mustFindTranscript(strategyA_DOM(videoId)),
@@ -313,34 +441,230 @@ async function scrapeAll() {
 
 async function sendScrapeResult() {
   const url = location.href;
-  if (!/\/watch/.test(location.pathname) && !/\/shorts\//.test(location.pathname)) return;
+  if (location.hostname.includes('youtube.com') && !/\/watch/.test(location.pathname) && !/\/shorts\//.test(location.pathname)) return;
   const result = await scrapeAll();
-  if (!result.genre && !result.channel && !result.transcript) return;
+  if (!result.genre && !result.channel && !result.transcript && !result.thumbnail) return;
   try {
     chrome.runtime.sendMessage({ type: 'GENRE_SCRAPED', ...result });
   } catch (e) {}
 }
 
-// ─── SCRAPE_NOW handler (popup Save button) ──────────────────────────────────
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'SCRAPE_NOW') {
     (async () => {
       const result = await scrapeAll();
-
-      // Cache in background regardless of result
       try {
         chrome.runtime.sendMessage({ type: 'GENRE_SCRAPED', ...result });
       } catch (e) {}
-
       sendResponse(result);
     })();
-    return true; // keep message channel open for async response
+    return true;
   }
 });
+
+function initInstagramButtons() {
+  if (!location.hostname.includes('instagram.com')) return;
+
+  // Inject keyframes for SVG micro-animation
+  if (!document.getElementById('dq-ig-styles')) {
+    const styleSheet = document.createElement('style');
+    styleSheet.id = 'dq-ig-styles';
+    styleSheet.innerHTML = `
+      @keyframes dqIconBounce {
+        0% { transform: scale(1); }
+        35% { transform: scale(1.4) rotate(-12deg); }
+        70% { transform: scale(0.85); }
+        100% { transform: scale(1); }
+      }
+      .dq-animate-bounce {
+        animation: dqIconBounce 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      }
+    `;
+    document.head.appendChild(styleSheet);
+  }
+
+  const observer = new MutationObserver(() => {
+    // 1. Animated SVG Icon directly ABOVE Like button on Reels / Posts
+    const likeSvgs = document.querySelectorAll('svg[aria-label="Like"], svg[aria-label="Unlike"]');
+    likeSvgs.forEach((likeSvg) => {
+      const actionItem = likeSvg.closest('button') || likeSvg.closest('div[role="button"]') || likeSvg.parentElement;
+      if (!actionItem || !actionItem.parentElement) return;
+      const parentContainer = actionItem.parentElement;
+
+      if (parentContainer.querySelector('.dq-ig-above-like')) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'dq-ig-above-like';
+      wrapper.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 18px;
+        cursor: pointer;
+        user-select: none;
+        z-index: 10;
+      `;
+
+      const iconBox = document.createElement('div');
+      iconBox.className = 'dq-icon-box';
+      iconBox.title = 'Save to DopaQueue Library';
+      iconBox.style.cssText = `
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(132, 204, 22, 0.15);
+        border: 1.5px solid rgba(132, 204, 22, 0.45);
+        transition: all 0.25s ease;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+      `;
+
+      iconBox.innerHTML = `
+        <svg class="dq-svg-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M17 3H7C5.9 3 5 3.9 5 5V21L12 18L19 21V5C19 3.9 18.1 3 17 3ZM17 18L12 15.82L7 18V5H17V18Z" fill="#84cc16"/>
+        </svg>
+      `;
+
+      const label = document.createElement('span');
+      label.className = 'dq-save-label';
+      label.textContent = 'Save';
+      label.style.cssText = `
+        font-size: 11px;
+        font-weight: 700;
+        color: #a3e635;
+        margin-top: 5px;
+        letter-spacing: 0.3px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      `;
+
+      wrapper.appendChild(iconBox);
+      wrapper.appendChild(label);
+
+      let isSaved = false;
+
+      wrapper.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+
+        // Play bounce micro-animation
+        iconBox.classList.remove('dq-animate-bounce');
+        void iconBox.offsetWidth;
+        iconBox.classList.add('dq-animate-bounce');
+
+        if (!isSaved) {
+          label.textContent = 'Saving...';
+          const scraped = await universalScrapeAll(location.href);
+          chrome.runtime.sendMessage({
+            type: 'SAVE_INSTAGRAM_ITEM',
+            ...scraped,
+          }, () => {
+            isSaved = true;
+            iconBox.style.background = 'rgba(34, 197, 94, 0.28)';
+            iconBox.style.borderColor = '#4ade80';
+            iconBox.innerHTML = `
+              <svg class="dq-svg-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 16.17L4.83 12L3.41 13.41L9 19L21 7L19.59 5.59L9 16.17Z" fill="#4ade80"/>
+              </svg>
+            `;
+            label.textContent = 'Saved';
+            label.style.color = '#4ade80';
+          });
+        }
+      });
+
+      parentContainer.insertBefore(wrapper, actionItem);
+    });
+
+    // 2. Modal / Dialog Share Sheet button
+    const dialogs = document.querySelectorAll('div[role="dialog"]');
+    dialogs.forEach((dialog) => {
+      const textContent = dialog.textContent || '';
+      const isShareDialog = textContent.includes('Share') || textContent.includes('Copy link') || textContent.includes('Share to');
+      if (!isShareDialog) return;
+      if (dialog.querySelector('#dq-instagram-share-btn')) return;
+
+      let postUrl = location.href;
+      const inputEl = dialog.querySelector('input');
+      if (inputEl?.value && /instagram\.com\/(p|reel|reels)\//i.test(inputEl.value)) {
+        postUrl = inputEl.value;
+      }
+
+      const btnContainer = document.createElement('div');
+      btnContainer.id = 'dq-instagram-share-btn';
+      btnContainer.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px;
+        margin: 12px 16px;
+        background: rgba(132, 204, 22, 0.12);
+        border: 1px solid rgba(132, 204, 22, 0.35);
+        border-radius: 14px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        color: #84cc16;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-weight: 600;
+        font-size: 14px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      `;
+      btnContainer.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 20px;">🌿</span>
+          <div>
+            <div style="color: #f4f4f5; font-weight: 600; font-size: 14px;">Save to DopaQueue</div>
+            <div style="color: #a1a1aa; font-weight: 400; font-size: 12px;">Save post & permanent thumbnail intentionally</div>
+          </div>
+        </div>
+        <span style="font-size: 11px; background: #84cc16; color: #09090b; padding: 4px 10px; border-radius: 8px; font-weight: 700; text-transform: uppercase;">Save</span>
+      `;
+
+      btnContainer.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        btnContainer.style.opacity = '0.7';
+        btnContainer.style.pointerEvents = 'none';
+        btnContainer.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 10px; color: #f4f4f5;">
+            <span>⏳ Saving with permanent thumbnail...</span>
+          </div>
+        `;
+
+        const scraped = await universalScrapeAll(postUrl);
+
+        chrome.runtime.sendMessage({
+          type: 'SAVE_INSTAGRAM_ITEM',
+          ...scraped,
+        }, () => {
+          btnContainer.style.background = 'rgba(34, 197, 94, 0.18)';
+          btnContainer.style.borderColor = 'rgba(34, 197, 94, 0.5)';
+          btnContainer.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 10px; color: #4ade80;">
+              <span style="font-size: 18px;">✅</span>
+              <span style="font-weight: 700;">Saved to DopaQueue Library!</span>
+            </div>
+          `;
+        });
+      });
+
+      const contentArea = dialog.querySelector('div[class*="content"]') || dialog.firstElementChild;
+      if (contentArea) {
+        contentArea.appendChild(btnContainer);
+      } else {
+        dialog.appendChild(btnContainer);
+      }
+    });
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
+}
 
 // Initial load
 sendScrapeResult();
 checkMindfulFlowBreaker();
+initInstagramButtons();
 
 // YouTube SPA navigation
 document.addEventListener('yt-navigate-finish', () => {
