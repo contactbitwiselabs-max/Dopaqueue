@@ -324,6 +324,19 @@ async function getPermanentThumbnail(imageUrl) {
   }
 }
 
+function getActiveContainer() {
+  const elements = Array.from(document.querySelectorAll('article, main, [data-testid="post-container"]'));
+  const h = window.innerHeight;
+  for (const el of elements) {
+    const rect = el.getBoundingClientRect();
+    // If the element covers the vertical center of the screen, it's the active one
+    if (rect.top <= h / 2 && rect.bottom >= h / 2) {
+      return el;
+    }
+  }
+  return document;
+}
+
 async function universalScrapeAll(targetUrl) {
   const url = targetUrl || location.href;
   const host = location.hostname.toLowerCase();
@@ -340,51 +353,58 @@ async function universalScrapeAll(targetUrl) {
   const isReel = /\/(reel|reels|shorts|video)\//i.test(url);
   const contentType = isReel ? 'reel' : 'post';
 
+  const container = getActiveContainer();
+
   let rawImgUrl = null;
-  const ogImg = document.querySelector('meta[property="og:image"]');
-  if (ogImg?.content) rawImgUrl = ogImg.content;
+  const localVideo = container.querySelector('video');
+  if (localVideo?.poster && !localVideo.poster.startsWith('blob:')) rawImgUrl = localVideo.poster;
   if (!rawImgUrl) {
-    const videoPoster = document.querySelector('video[poster]');
-    if (videoPoster?.poster) rawImgUrl = videoPoster.poster;
+    const localImg = container.querySelector('img[src*="http"]');
+    if (localImg?.src) rawImgUrl = localImg.src;
+  }
+
+  if (!rawImgUrl) {
+    const ogImg = document.querySelector('meta[property="og:image"]');
+    if (ogImg?.content) rawImgUrl = ogImg.content;
   }
   if (!rawImgUrl) {
     const twitterImg = document.querySelector('meta[name="twitter:image"]');
     if (twitterImg?.content) rawImgUrl = twitterImg.content;
   }
-  if (!rawImgUrl) {
-    const firstImg = document.querySelector('article img[src*="http"], main img[src*="http"]');
-    if (firstImg?.src) rawImgUrl = firstImg.src;
-  }
 
   const thumbnail = await getPermanentThumbnail(rawImgUrl);
 
   let title = document.title || `${platform} Item`;
-  const ogTitle = document.querySelector('meta[property="og:title"]');
-  if (ogTitle?.content) title = ogTitle.content;
-  else {
-    const twitterTitle = document.querySelector('meta[name="twitter:title"]');
-    if (twitterTitle?.content) title = twitterTitle.content;
+  const localCaption = container.querySelector('h1, span[dir="auto"]');
+  if (localCaption?.textContent?.trim()) {
+    title = localCaption.textContent.trim().slice(0, 150);
+  } else {
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    if (ogTitle?.content) title = ogTitle.content;
+    else {
+      const twitterTitle = document.querySelector('meta[name="twitter:title"]');
+      if (twitterTitle?.content) title = twitterTitle.content;
+    }
   }
 
   let author = null;
-  const ogDesc = document.querySelector('meta[property="og:description"]');
-  if (ogDesc?.content) {
-    const match = ogDesc.content.match(/(@[\w.-]+)/);
-    if (match) author = match[1];
+  const authorSpan = container.querySelector('a[href^="/"][role="link"] span, header a[href^="/"]');
+  if (authorSpan?.textContent?.trim()) {
+    const t = authorSpan.textContent.trim();
+    if (t && !['explore', 'reels', 'home'].includes(t.toLowerCase())) {
+      author = t.startsWith('@') ? t : '@' + t;
+    }
+  }
+  if (!author) {
+    const ogDesc = document.querySelector('meta[property="og:description"]');
+    if (ogDesc?.content) {
+      const match = ogDesc.content.match(/(@[\w.-]+)/);
+      if (match) author = match[1];
+    }
   }
   if (!author) {
     const twitterCreator = document.querySelector('meta[name="twitter:creator"]');
     if (twitterCreator?.content) author = twitterCreator.content;
-  }
-  if (!author) {
-    const authorLink = document.querySelector('header a[href*="/"]');
-    if (authorLink) {
-      const href = authorLink.getAttribute('href') || '';
-      const handle = href.replace(/^\/|\/$/g, '');
-      if (handle && !['explore', 'reels', 'home', 'status'].includes(handle.toLowerCase())) {
-        author = handle.startsWith('@') ? handle : '@' + handle;
-      }
-    }
   }
 
   let authorUrl = null;
@@ -471,6 +491,7 @@ async function scrapeAll() {
 }
 
 /** Fast metadata-only scrape — NO transcript fetching, returns instantly */
+/** Fast metadata-only scrape — NO transcript fetching, returns instantly */
 function scrapeMetadataOnly() {
   if (!location.hostname.includes('youtube.com')) {
     const url = location.href;
@@ -487,45 +508,56 @@ function scrapeMetadataOnly() {
     const isReel = /\/(reel|reels|shorts|video)\//i.test(url);
     const contentType = isReel ? 'reel' : 'post';
 
+    const container = getActiveContainer();
+
     let rawImgUrl = null;
-    const ogImg = document.querySelector('meta[property="og:image"]');
-    if (ogImg?.content) rawImgUrl = ogImg.content;
+    const localVideo = container.querySelector('video');
+    if (localVideo?.poster && !localVideo.poster.startsWith('blob:')) rawImgUrl = localVideo.poster;
     if (!rawImgUrl) {
-      const videoPoster = document.querySelector('video[poster]');
-      if (videoPoster?.poster) rawImgUrl = videoPoster.poster;
+      const localImg = container.querySelector('img[src*="http"]');
+      if (localImg?.src) rawImgUrl = localImg.src;
+    }
+    if (!rawImgUrl) {
+      const ogImg = document.querySelector('meta[property="og:image"]');
+      if (ogImg?.content) rawImgUrl = ogImg.content;
     }
     if (!rawImgUrl) {
       const twitterImg = document.querySelector('meta[name="twitter:image"]');
       if (twitterImg?.content) rawImgUrl = twitterImg.content;
     }
 
-    let title = document.title || `${platform} Item`;
-    const ogTitle = document.querySelector('meta[property="og:title"]');
-    if (ogTitle?.content) title = ogTitle.content;
-    else {
-      const twitterTitle = document.querySelector('meta[name="twitter:title"]');
-      if (twitterTitle?.content) title = twitterTitle.content;
+    let title = null;
+    const visibleCaption = container.querySelector('h1, span[dir="auto"]');
+    if (visibleCaption?.textContent?.trim()) {
+      title = visibleCaption.textContent.trim().slice(0, 150);
     }
+    if (!title && document.title && document.title !== 'Instagram' && document.title !== 'TikTok') {
+      title = document.title;
+    }
+    if (!title) {
+      const ogTitle = document.querySelector('meta[property="og:title"]');
+      if (ogTitle?.content) title = ogTitle.content;
+    }
+    if (!title) title = `${platform} Item`;
 
     let author = null;
-    const ogDesc = document.querySelector('meta[property="og:description"]');
-    if (ogDesc?.content) {
-      const match = ogDesc.content.match(/(@[\w.-]+)/);
-      if (match) author = match[1];
+    const authorSpan = container.querySelector('a[href^="/"][role="link"] span, header a[href^="/"]');
+    if (authorSpan?.textContent?.trim()) {
+      const t = authorSpan.textContent.trim();
+      if (t && !['explore', 'reels', 'home'].includes(t.toLowerCase())) {
+        author = t.startsWith('@') ? t : '@' + t;
+      }
+    }
+    if (!author) {
+      const ogDesc = document.querySelector('meta[property="og:description"]');
+      if (ogDesc?.content) {
+        const match = ogDesc.content.match(/(@[\w.-]+)/);
+        if (match) author = match[1];
+      }
     }
     if (!author) {
       const twitterCreator = document.querySelector('meta[name="twitter:creator"]');
       if (twitterCreator?.content) author = twitterCreator.content;
-    }
-    if (!author) {
-      const authorLink = document.querySelector('header a[href*="/"]');
-      if (authorLink) {
-        const href = authorLink.getAttribute('href') || '';
-        const handle = href.replace(/^\/|\/$/g, '');
-        if (handle && !['explore', 'reels', 'home', 'status'].includes(handle.toLowerCase())) {
-          author = handle.startsWith('@') ? handle : '@' + handle;
-        }
-      }
     }
 
     let authorUrl = null;
@@ -547,16 +579,30 @@ function scrapeMetadataOnly() {
   const url = location.href;
   const videoId = extractVideoId(url);
 
-  let title = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, ytd-watch-metadata #title h1, h1.title')?.textContent?.trim();
+  let title = null;
+  let channel = null;
+  let authorUrl = null;
+
+  const activeReel = document.querySelector('ytd-reel-video-renderer[is-active]');
+  if (activeReel) {
+    title = activeReel.querySelector('h2.title yt-formatted-string, .title yt-formatted-string, yt-reel-metapanel-view-model h2')?.textContent?.trim();
+    channel = activeReel.querySelector('#channel-name a, ytd-channel-name a, a[href*="/@"]')?.textContent?.trim();
+    authorUrl = activeReel.querySelector('#channel-name a, ytd-channel-name a, a[href*="/@"]')?.href || null;
+  }
+
+  if (!title) {
+    title = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, ytd-watch-metadata #title h1, h1.title')?.textContent?.trim();
+  }
   if (!title && document.title && document.title !== 'YouTube') {
     title = document.title.replace(/\s*-\s*YouTube$/i, '').trim();
   }
   if (!title) title = 'YouTube Video';
 
-  let channel = document.querySelector('#channel-name a, ytd-video-owner-renderer #channel-name a, ytd-channel-name a')?.textContent?.trim();
-  if (!channel) channel = scrapeChannel();
+  if (!channel) {
+    channel = document.querySelector('#channel-name a, ytd-video-owner-renderer #channel-name a, ytd-channel-name a')?.textContent?.trim();
+    if (!channel) channel = scrapeChannel();
+  }
 
-  let authorUrl = document.querySelector('#channel-name a, ytd-video-owner-renderer #channel-name a')?.href || null;
   if (!authorUrl && channel) {
     authorUrl = `https://www.youtube.com/@${channel.replace(/^@/, '')}`;
   }
@@ -625,6 +671,23 @@ function initInstagramButtons() {
     likeSvgs.forEach((likeSvg) => {
       const actionItem = likeSvg.closest('button') || likeSvg.closest('div[role="button"]') || likeSvg.parentElement;
       if (!actionItem || !actionItem.parentElement) return;
+
+      // ── Guard: skip if this Like button is inside a comment thread ──
+      // Comments live inside ul / [role="list"] / elements whose aria-label
+      // contains "Comment". The main post action bar is never inside those.
+      const isInsideCommentList =
+        !!actionItem.closest('ul') ||
+        !!actionItem.closest('[role="list"]') ||
+        !!actionItem.closest('[aria-label*="Comment"]') ||
+        !!actionItem.closest('[aria-label*="comment"]');
+        
+      // Comment hearts are 12x12. Main post/reel hearts are 24x24+.
+      const svgHeight = parseInt(likeSvg.getAttribute('height') || '24');
+      const svgWidth = parseInt(likeSvg.getAttribute('width') || '24');
+      const isTiny = svgHeight < 20 || svgWidth < 20;
+
+      if (isInsideCommentList || isTiny) return;
+
       const parentContainer = actionItem.parentElement;
 
       if (parentContainer.querySelector('.dq-ig-above-like')) return;
@@ -804,6 +867,13 @@ initInstagramButtons();
 
 // YouTube SPA navigation
 document.addEventListener('yt-navigate-finish', () => {
+  // Immediately push fast metadata to the popup (no transcript wait)
+  try {
+    const meta = scrapeMetadataOnly();
+    if (meta.url) chrome.runtime.sendMessage({ type: 'GENRE_SCRAPED', ...meta });
+  } catch (e) {}
+
+  // Full scrape (with transcript) fires 800ms later
   setTimeout(sendScrapeResult, 800);
   setTimeout(checkMindfulFlowBreaker, 600);
 });

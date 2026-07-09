@@ -13,6 +13,19 @@ import {
   ensureChannelSaved,
 } from '../shared/storage.js';
 import { isChannelUrl, extractChannelId, extractYouTubeVideoId, STORAGE_KEYS } from '../shared/constants.js';
+
+// Pages where saving makes sense as a proper video/reel item.
+// On other pages we fall back to "Save Link" mode.
+function isVideoPage(url) {
+  if (!url) return false;
+  return (
+    /youtube\.com\/(watch|shorts)/i.test(url) ||
+    /instagram\.com\/(reel|reels|p)\//i.test(url) ||
+    /tiktok\.com\/@.+\/video\//i.test(url) ||
+    /twitter\.com\/.*\/status\//i.test(url) ||
+    /x\.com\/.*\/status\//i.test(url)
+  );
+}
 import { getCurrentUser, signInWithGoogle, signOut, isLoggedIn, getUserEmail, getUserName, getPersistedAuthState } from '../shared/auth.js';
 import { supabaseClient } from '../shared/supabase.js';
 import { syncWithCloud } from '../shared/sync.js';
@@ -38,93 +51,140 @@ function usePopupData() {
   const [alreadySaved, setAlreadySaved] = useState(false);
   const [tabError, setTabError] = useState(null);
 
+  // ── Stable callback ref ──────────────────────────────────────────────────
+  // We store the latest setters in a ref so the setInterval (created once)
+  // can always call the most-recent version without being recreated.
+  const settersRef = React.useRef({ setPageInfo, setAlreadySaved });
+  useEffect(() => {
+    settersRef.current = { setPageInfo, setAlreadySaved };
+  });
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  function checkAlreadySaved(url, setter) {
+    const queue = getQueue();
+    const vid = extractYouTubeVideoId(url);
+    setter(queue.some((i) => {
+      if (i.deleted) return false;
+      if (i.url === url) return true;
+      if (vid && extractYouTubeVideoId(i.url) === vid) return true;
+      return false;
+    }));
+  }
+
+  // Apply a scrape result to the popup state
+  function applyResult(res, tabUrl, tabTitle, favIconUrl) {
+    const { setPageInfo: setPI, setAlreadySaved: setAS } = settersRef.current;
+    if (res && res.url) {
+      const live = {
+        url: res.url,
+        title: res.title || tabTitle || 'Unknown Page',
+        favIconUrl: favIconUrl || '',
+        thumbnail: res.thumbnail || null,
+        author: res.author || res.channel || null,
+        authorUrl: res.authorUrl || null,
+        contentType: res.contentType || null,
+        platform: res.platform || null,
+        fromContentScript: true,
+      };
+      setPI(live);
+      checkAlreadySaved(live.url, setAS);
+      return live;
+    }
+    // Content script gave nothing — fall back to tab data (display only, not for saving video items)
+    const fallback = {
+      url: tabUrl,
+      title: tabTitle || 'Unknown Page',
+      favIconUrl: favIconUrl || '',
+      thumbnail: null, author: null, authorUrl: null,
+      contentType: null, platform: null,
+      fromContentScript: false,
+    };
+    setPI(fallback);
+    checkAlreadySaved(fallback.url, setAS);
+    return fallback;
+  }
+
+  // ── getActiveTab: finds the right browser tab from the popup context ─────
+  // chrome.tabs.query({ active:true, currentWindow:true }) from a popup can
+  // return the popup's own window, which is wrong. We query ALL windows and
+  // pick the tab whose URL is not a chrome-extension:// page.
+  function getActiveTab(cb) {
+    if (typeof chrome === 'undefined' || !chrome.tabs) return;
+    chrome.tabs.query({ active: true }, (tabs) => {
+      if (chrome.runtime.lastError) return;
+      const tab = tabs.find(t => t.url && !t.url.startsWith('chrome-extension://')) || tabs[0];
+      if (tab) cb(tab);
+    });
+  }
+
+  // ── refreshFromTab ────────────────────────────────────────────────────────
+  // Query the active browser tab's content script for live metadata.
+  // `callback` receives the resolved info object (fromContentScript true/false).
+  const refreshFromTabRef = React.useRef(null);
+  refreshFromTabRef.current = (callback) => {
+    getActiveTab((tab) => {
+      if (!tab?.id || !tab?.url) return;
+      chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (res) => {
+        const info = applyResult(
+          chrome.runtime.lastError ? null : res,
+          tab.url, tab.title, tab.favIconUrl
+        );
+        if (callback) callback(info);
+      });
+    });
+  };
+
+  // Stable wrapper — always calls the latest version, never changes identity
+  const refreshFromTab = React.useCallback((cb) => {
+    refreshFromTabRef.current(cb);
+  }, []); // [] = created once, stable forever
+
+  // ── Initialise ────────────────────────────────────────────────────────────
   useEffect(() => {
     initStorage().then(() => {
-      const g = getGameState();
-      setGame(g);
+      setGame(getGameState());
       setReady(true);
-
-      // Get the active tab URL/title
-      if (typeof chrome !== 'undefined' && chrome.tabs) {
-        chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-          if (chrome.runtime.lastError || !tab || !tab.url) {
-            setTabError("Couldn't read the current tab. Try reopening the popup.");
-            return;
-          }
-          const info = {
-            url: tab.url,
-            title: tab.title || 'Unknown Page',
-            favIconUrl: tab.favIconUrl || '',
-            thumbnail: null,
-            author: null,
-            authorUrl: null,
-            contentType: null,
-            platform: null,
-          };
-          setPageInfo(info);
-
-          if (tab.id) {
-            chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (res) => {
-              if (res) {
-                const liveUrl = res.url || tab.url;
-                setPageInfo((prev) => prev ? {
-                  ...prev,
-                  url: liveUrl,
-                  title: res.title || prev.title,
-                  thumbnail: res.thumbnail || prev.thumbnail,
-                  author: res.author || res.channel || prev.author,
-                  authorUrl: res.authorUrl || null,
-                  contentType: res.contentType || prev.contentType,
-                  platform: res.platform || prev.platform,
-                } : null);
-
-                const queue = getQueue();
-                const liveVideoId = extractYouTubeVideoId(liveUrl);
-                const isSavedLive = queue.some((i) => {
-                  if (i.deleted) return false;
-                  if (i.url === liveUrl) return true;
-                  if (liveVideoId && extractYouTubeVideoId(i.url) === liveVideoId) return true;
-                  return false;
-                });
-                setAlreadySaved(isSavedLive);
-              }
-            });
-          }
-
-          // Check if already saved. Deleted items are soft-deleted
-          // (kept in the queue with deleted: true so the sync engine
-          // can propagate the removal) — they must be excluded here,
-          // otherwise a video removed from the dashboard would show
-          // as "Already Saved" forever in the popup.
-          //
-          // Match by normalized video id when possible so the same video
-          // opened with different tracking params (t=, si=, list=, pp=)
-          // isn't treated as a new, separate save.
-          const queue = getQueue();
-          const tabVideoId = extractYouTubeVideoId(tab.url);
-          setAlreadySaved(queue.some((i) => {
-            if (i.deleted) return false;
-            if (i.url === tab.url) return true;
-            if (tabVideoId && extractYouTubeVideoId(i.url) === tabVideoId) return true;
-            return false;
-          }));
-        });
-      } else {
-        setTabError('Extension APIs unavailable in this context.');
-      }
+      refreshFromTab();       // initial scrape
     });
 
-    // Subscribe to game state changes (key must match STORAGE_KEYS.GAME,
-    // which is what storage.js uses when it notifies subscribers)
     const unsub = subscribe(STORAGE_KEYS.GAME, (g) => setGame(g));
-    return unsub;
-  }, []);
 
-  return { ready, pageInfo, game, alreadySaved, setAlreadySaved, tabError };
+    // React immediately when content script broadcasts a navigation event
+    // (YouTube SPA: yt-navigate-finish fires GENRE_SCRAPED; this is faster
+    // than waiting for the next 1.2 s poll tick).
+    const onMsg = (msg) => {
+      if (msg?.type === 'GENRE_SCRAPED' && msg.url) {
+        const { setPageInfo: setPI, setAlreadySaved: setAS } = settersRef.current;
+        const live = {
+          url: msg.url,
+          title: msg.title || 'Unknown Page',
+          favIconUrl: '',
+          thumbnail: msg.thumbnail || null,
+          author: msg.author || msg.channel || null,
+          authorUrl: msg.authorUrl || null,
+          contentType: msg.contentType || null,
+          platform: msg.platform || null,
+          fromContentScript: true,
+        };
+        setPI(live);
+        checkAlreadySaved(live.url, setAS);
+      }
+    };
+    try { chrome.runtime.onMessage.addListener(onMsg); } catch (e) {}
+
+    return () => {
+      unsub();
+      try { chrome.runtime.onMessage.removeListener(onMsg); } catch (e) {}
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return { ready, pageInfo, setPageInfo, game, alreadySaved, setAlreadySaved, tabError, refreshFromTab };
 }
 
+
 export default function PopupApp() {
-  const { ready, pageInfo, game, alreadySaved, setAlreadySaved, tabError } = usePopupData();
+  const { ready, pageInfo, setPageInfo, game, alreadySaved, setAlreadySaved, tabError, refreshFromTab } = usePopupData();
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [fetchingTranscript, setFetchingTranscript] = useState(false);
@@ -136,6 +196,23 @@ export default function PopupApp() {
   const [syncStatus, setSyncStatus] = useState(null);
   const [tagInput, setTagInput] = useState('');
   const [itemTags, setItemTags] = useState([]);
+
+  // Keep live track of current video when scrolling Shorts/Reels while popup is open
+  const prevUrlRef = React.useRef(pageInfo?.url);
+  useEffect(() => {
+    if (pageInfo?.url && prevUrlRef.current && prevUrlRef.current !== pageInfo.url) {
+      setSaved(false);
+      setSaveError(null);
+    }
+    prevUrlRef.current = pageInfo?.url;
+  }, [pageInfo?.url]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshFromTab();
+    }, 1200);
+    return () => clearInterval(interval);
+  }, [refreshFromTab]);
 
   useEffect(() => {
     if (pageInfo?.url) {
@@ -229,102 +306,122 @@ export default function PopupApp() {
   };
 
   const isChannel = pageInfo ? isChannelUrl(pageInfo.url) : false;
+  const isLinkPage = pageInfo ? !isVideoPage(pageInfo.url) && !isChannel : false;
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!pageInfo || saved || alreadySaved) return;
     setSaveError(null);
-    try {
-      let liveInfo = { ...pageInfo };
-      if (typeof chrome !== 'undefined' && chrome.tabs) {
-        liveInfo = await new Promise((resolve) => {
-          chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-            if (!tab?.id) return resolve(liveInfo);
-            chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (res) => {
-              if (res && res.url) {
-                resolve({
-                  url: res.url,
-                  title: res.title || liveInfo.title,
-                  thumbnail: res.thumbnail || liveInfo.thumbnail,
-                  author: res.author || res.channel || liveInfo.author,
-                  authorUrl: res.authorUrl || liveInfo.authorUrl,
-                  contentType: res.contentType || liveInfo.contentType || 'video',
-                  platform: res.platform || liveInfo.platform
-                });
-              } else {
-                resolve(liveInfo);
-              }
+
+    // Always scrape live from the content script at click time.
+    // If the content script could not return a URL, we abort rather than
+    // saving stale data from the Chrome tab object.
+    refreshFromTab((liveInfo) => {
+      try {
+        const info = liveInfo || pageInfo;
+
+        // Abort if no real URL came back from the content script
+        // (fromContentScript=false means we only have tab.url, which can be
+        // stale during SPA navigation). In link-save mode it's fine to use
+        // tab.url because we are not on a video SPA.
+        if (!info.fromContentScript && isVideoPage(info.url)) {
+          setSaveError('Could not read video data. Try closing and reopening the popup.');
+          return;
+        }
+
+        const pageVideoId = extractYouTubeVideoId(info.url);
+        const existing = getQueue().find((i) =>
+          i.deleted && (
+            i.url === info.url ||
+            (pageVideoId && extractYouTubeVideoId(i.url) === pageVideoId)
+          )
+        );
+
+        const channelPage = isChannelUrl(info.url);
+        const linkPage = !isVideoPage(info.url) && !channelPage;
+
+        if (channelPage) {
+          if (existing) {
+            updateQueueItem(existing.id, {
+              title: extractChannelId(info.url) || info.title,
+              type: 'channel',
+              savedAt: Date.now(),
+              deleted: false,
             });
-          });
-        });
-        setPageInfo(liveInfo);
-      }
-
-      const pageVideoId = extractYouTubeVideoId(liveInfo.url);
-      const existing = getQueue().find((i) =>
-        i.deleted && (
-          i.url === liveInfo.url ||
-          (pageVideoId && extractYouTubeVideoId(i.url) === pageVideoId)
-        )
-      );
-
-      if (isChannel) {
-        if (existing) {
-          updateQueueItem(existing.id, {
-            title: extractChannelId(liveInfo.url) || liveInfo.title,
-            type: 'channel',
-            savedAt: Date.now(),
-            deleted: false,
-          });
+          } else {
+            addToQueue({
+              id: crypto.randomUUID(),
+              url: info.url,
+              title: extractChannelId(info.url) || info.title,
+              type: 'channel',
+              savedAt: Date.now(),
+            });
+          }
+        } else if (linkPage) {
+          // Save Link mode — no transcript, no author, just URL + title + favicon
+          if (existing) {
+            updateQueueItem(existing.id, {
+              title: info.title,
+              thumbnail: info.favIconUrl || null,
+              type: 'link',
+              contentType: 'link',
+              savedAt: Date.now(),
+              deleted: false,
+            });
+          } else {
+            addToQueue({
+              id: crypto.randomUUID(),
+              url: info.url,
+              title: info.title,
+              thumbnail: info.favIconUrl || null,
+              type: 'link',
+              contentType: 'link',
+              platform: info.platform || 'Web',
+              savedAt: Date.now(),
+            });
+          }
         } else {
-          addToQueue({
-            id: crypto.randomUUID(),
-            url: liveInfo.url,
-            title: extractChannelId(liveInfo.url) || liveInfo.title,
-            type: 'channel',
-            savedAt: Date.now(),
-          });
-        }
-      } else {
-        if (existing) {
-          updateQueueItem(existing.id, {
-            url: liveInfo.url,
-            title: liveInfo.title,
-            thumbnail: liveInfo.thumbnail || existing.thumbnail || null,
-            author: liveInfo.author || existing.author || null,
-            contentType: liveInfo.contentType || existing.contentType || 'video',
-            platform: liveInfo.platform || existing.platform || null,
-            type: 'video',
-            savedAt: Date.now(),
-            watched: false,
-            deleted: false,
-          });
-        } else {
-          addToQueue({
-            id: crypto.randomUUID(),
-            url: liveInfo.url,
-            title: liveInfo.title,
-            thumbnail: liveInfo.thumbnail || null,
-            author: liveInfo.author || null,
-            contentType: liveInfo.contentType || 'video',
-            platform: liveInfo.platform || null,
-            type: 'video',
-            savedAt: Date.now(),
-            watched: false,
-          });
-        }
+          // Video / Reel
+          if (existing) {
+            updateQueueItem(existing.id, {
+              url: info.url,
+              title: info.title,
+              thumbnail: info.thumbnail || existing.thumbnail || null,
+              author: info.author || existing.author || null,
+              contentType: info.contentType || existing.contentType || 'video',
+              platform: info.platform || existing.platform || null,
+              type: 'video',
+              savedAt: Date.now(),
+              watched: false,
+              deleted: false,
+            });
+          } else {
+            addToQueue({
+              id: crypto.randomUUID(),
+              url: info.url,
+              title: info.title,
+              thumbnail: info.thumbnail || null,
+              author: info.author || null,
+              contentType: info.contentType || 'video',
+              platform: info.platform || null,
+              type: 'video',
+              savedAt: Date.now(),
+              watched: false,
+            });
+          }
 
-        if (liveInfo.author) {
-          ensureChannelSaved(liveInfo.author, liveInfo.authorUrl || '', liveInfo.platform || 'Social Media');
+          if (info.author) {
+            ensureChannelSaved(info.author, info.authorUrl || '', info.platform || 'Social Media');
+          }
         }
 
         setSaved(true);
         setAlreadySaved(true);
         setFetchingTranscript(false);
+      } catch (err) {
+        console.error('DopaQueue: failed to save item', err);
+        setSaveError('Failed to save. Please try again.');
       }
-    } catch (err) {
-      console.error('DopaQueue: failed to save item', err);
-      setSaveError('Failed to save. Please try again.');
-    }
+    });
   };
 
   const handleAddQuickTag = (e) => {
@@ -476,6 +573,14 @@ export default function PopupApp() {
           <div className="p-3 rounded-xl bg-zinc-900/60 border border-white/5 animate-pulse h-20" />
         )}
 
+        {/* Save Link mode badge */}
+        {isLinkPage && !saved && !alreadySaved && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-[11px] font-medium">
+            <ExternalLink className="w-3 h-3 shrink-0" />
+            <span>Not a video page — will be saved as a <strong>Link</strong> with title &amp; URL.</span>
+          </div>
+        )}
+
         {/* Primary Save Action Button */}
         <ShimmerButton
           onClick={handleSave}
@@ -489,6 +594,10 @@ export default function PopupApp() {
           ) : isChannel ? (
             <span className="flex items-center justify-center gap-2">
               <Hash className="w-4 h-4" /> Save Channel
+            </span>
+          ) : isLinkPage ? (
+            <span className="flex items-center justify-center gap-2">
+              <ExternalLink className="w-4 h-4" /> Save Link
             </span>
           ) : (
             <span className="flex items-center justify-center gap-2">

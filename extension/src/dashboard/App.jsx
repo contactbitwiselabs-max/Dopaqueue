@@ -4,7 +4,7 @@ import {
   Clock, Download, Folder, FileText, FileSpreadsheet, LogIn, X, AlertCircle,
   LogOut, RefreshCw, Film, Zap, Image, Calendar, ChevronDown, Search, Plus,
   Sparkles, CheckSquare, Share2, Users, Copy, ExternalLink, ShieldCheck, Award, TrendingUp,
-  Send, Timer, Pause, Play, Shield, LayoutGrid, LayoutList, SlidersHorizontal
+  Send, Timer, Pause, Play, Shield, LayoutGrid, LayoutList, SlidersHorizontal, Link
 } from 'lucide-react';
 import {
   initStorage, getSavedVideos, getSavedChannels, subscribe,
@@ -35,6 +35,7 @@ const TYPE_CONFIG = {
   short:  { label: 'Short', icon: Zap,        color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/20' },
   reel:   { label: 'Reel',  icon: Film,       color: 'bg-pink-500/15 text-pink-400 border-pink-500/20' },
   post:   { label: 'Post',  icon: Image,      color: 'bg-green-500/15 text-green-400 border-green-500/20' },
+  link:   { label: 'Link',  icon: Link,       color: 'bg-purple-500/15 text-purple-400 border-purple-500/20' },
 };
 
 function formatDateTime(ts) {
@@ -1118,7 +1119,7 @@ function ArticleModal({ video, onClose }) {
 }
 
 function VideoCard({ video, viewMode = 'grid', onRemove, onExport, onReadArticle, onUpdateTags, onSetUrgency }) {
-  const contentType = detectContentType(video.url);
+  const contentType = video.contentType || video.type || detectContentType(video.url);
   const typeInfo = TYPE_CONFIG[contentType] || TYPE_CONFIG.video;
   const TypeIcon = typeInfo.icon;
 
