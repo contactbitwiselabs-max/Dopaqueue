@@ -1225,16 +1225,23 @@ function VideoCard({ video, viewMode = 'grid', onRemove, onExport, onReadArticle
   if (viewMode === 'list') {
     return (
       <div className="group flex items-center gap-4 bg-zinc-900/80 border border-white/10 rounded-2xl p-3 hover:border-white/20 transition-all duration-200 hover:bg-zinc-900">
-        {/* Thumbnail */}
+        {/* Thumbnail or Rich Text */}
         <div className="w-32 h-20 rounded-xl bg-zinc-950 shrink-0 overflow-hidden relative">
-          {thumbUrl ? (
+          {contentType === 'post' && video.postTextHtml ? (
+            <div 
+              className="w-full h-full p-2 overflow-hidden whitespace-pre-wrap break-words text-[8px] font-inherit text-zinc-400 leading-tight"
+              dangerouslySetInnerHTML={{ __html: video.postTextHtml }}
+            />
+          ) : thumbUrl ? (
             <img src={thumbUrl} alt="" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <PlayCircle className="w-8 h-8 text-zinc-700" />
             </div>
           )}
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent to-zinc-900/30" />
+          {!(contentType === 'post' && video.postTextHtml) && (
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent to-zinc-900/30" />
+          )}
           <div className={`absolute top-1.5 left-1.5 flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md border backdrop-blur-sm ${typeInfo.color}`}>
             <TypeIcon className="w-2.5 h-2.5" />
           </div>
@@ -1322,9 +1329,14 @@ function VideoCard({ video, viewMode = 'grid', onRemove, onExport, onReadArticle
   // ── Grid card layout ──
   return (
     <div className="group bg-zinc-900/80 border border-white/10 rounded-2xl overflow-hidden hover:border-white/25 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-black/30 flex flex-col">
-      {/* Card Thumbnail Deck */}
+      {/* Card Thumbnail Deck / Rich Text Post Deck */}
       <div className="h-44 bg-zinc-950 relative overflow-hidden shrink-0">
-        {thumbUrl ? (
+        {contentType === 'post' && video.postTextHtml ? (
+          <div 
+            className="w-full h-full p-4 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words text-sm font-inherit text-zinc-300 leading-relaxed scrollbar-thin scrollbar-thumb-zinc-700 hover:scrollbar-thumb-lime-500"
+            dangerouslySetInnerHTML={{ __html: video.postTextHtml }}
+          />
+        ) : thumbUrl ? (
           <img
             src={thumbUrl}
             alt=""
@@ -1335,7 +1347,9 @@ function VideoCard({ video, viewMode = 'grid', onRemove, onExport, onReadArticle
             <PlayCircle className="w-12 h-12 text-zinc-500" />
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-transparent to-black/40 pointer-events-none" />
+        {!(contentType === 'post' && video.postTextHtml) && (
+          <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-transparent to-black/40 pointer-events-none" />
+        )}
 
         {/* Content Type Badge */}
         <div className={`absolute top-3 left-3 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border backdrop-blur-md shadow-md ${typeInfo.color}`}>

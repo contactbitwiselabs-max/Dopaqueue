@@ -1,5 +1,6 @@
 import { scrapeMetadataOnly, initInstagramButtons, universalScrapeAll } from './platforms/instagram.js';
 import { scrapeYouTube, injectYouTubeShortsButtons } from './platforms/youtube.js';
+import { initTextPlatformButtons } from './platforms/text_platforms.js';
 import { initScrollTimer } from './features/timer.js';
 import { checkMindfulFlowBreaker } from './features/flowBreaker.js';
 

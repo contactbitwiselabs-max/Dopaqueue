@@ -1,6 +1,8 @@
 // DopaQueue Enterprise Analytics Engine
 // Pure computation module — no DOM, no React.
-// Takes raw data arrays from chrome.storage and returns structured insights.
+
+export * from './analytics_insights.js';
+export * from './analytics_storage.js';
 
 /**
  * 1. Attention Decay Curve

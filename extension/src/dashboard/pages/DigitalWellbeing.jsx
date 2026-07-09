@@ -11,6 +11,7 @@ import {
   computeAttentionDecay, computeSPMTrend, computeVulnerabilityHeatmap,
   computePlatformSplit, computeSessionDistribution, computeWeeklyComparison,
   computeFlowBreakerStats, computeStreakTracker, filterSessionsByRange, buildChartData,
+  generateNaturalLanguageInsights
 } from '../../shared/analytics.js';
 
 const RANGE_OPTIONS = [
@@ -45,6 +46,12 @@ export default function DigitalWellbeing() {
   const flowStats = useMemo(() => computeFlowBreakerStats(flowLog), [flowLog]);
   const streak = useMemo(() => computeStreakTracker(allSessions), [allSessions]);
 
+  const insights = useMemo(() => generateNaturalLanguageInsights({
+    heatmap,
+    attentionDecay,
+    platformSplit,
+    streak
+  }), [heatmap, attentionDecay, platformSplit, streak]);
   const totalMinutes = sessions.reduce((s, x) => s + (x.duration || 0) / 60000, 0);
   const totalScrolls = sessions.reduce((s, x) => s + (x.scrollCount || 1), 0);
   const avgSPM = totalMinutes > 0 ? (totalScrolls / totalMinutes).toFixed(1) : '0.0';
@@ -84,6 +91,30 @@ export default function DigitalWellbeing() {
           ))}
         </div>
       </div>
+
+      {/* ─── Natural Language Insights Panel ─── */}
+      {insights && insights.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {insights.map((insight, idx) => (
+            <div 
+              key={idx} 
+              className={`p-4 rounded-xl border flex flex-col gap-2 relative overflow-hidden ${
+                insight.type === 'warning' ? 'bg-rose-950/20 border-rose-500/20 text-rose-200' :
+                insight.type === 'success' ? 'bg-emerald-950/20 border-emerald-500/20 text-emerald-200' :
+                'bg-blue-950/20 border-blue-500/20 text-blue-200'
+              }`}
+            >
+              <h3 className="font-bold flex items-center gap-2">
+                {insight.type === 'warning' && '⚠️'}
+                {insight.type === 'success' && '🌟'}
+                {insight.type === 'info' && '💡'}
+                {insight.title}
+              </h3>
+              <p className="text-sm opacity-80 leading-relaxed">{insight.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ─── Scorecard Row ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
