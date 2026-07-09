@@ -13,6 +13,7 @@ export function initScrollTimer() {
 
   let accumulatedTime = 0;
   let scrollCount = 1;
+  let scrollTimestamps = [Date.now()]; // Track timestamp of each scroll for attention decay
   let lastUpdate = Date.now();
   let lastStorageSync = Date.now();
   let tabId = null;
@@ -146,7 +147,7 @@ export function initScrollTimer() {
       if (tabId !== null) {
         try {
           chrome.storage.local.set({
-            [`activeTimer_${tabId}`]: { accumulatedTime, scrollCount, lastUpdate: now },
+            [`activeTimer_${tabId}`]: { accumulatedTime, scrollCount, scrollTimestamps, lastUpdate: now },
           });
         } catch (e) { }
       }
@@ -159,6 +160,7 @@ export function initScrollTimer() {
       currentUrl = location.href;
       if (isScrollTimerPage()) {
         scrollCount += 1;
+        scrollTimestamps.push(Date.now());
         updateDOM();
       }
     }

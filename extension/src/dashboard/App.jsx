@@ -20,6 +20,7 @@ import { generateSharePayload, encodeShareLink } from '../shared/share.js';
 import { getMyCircle, createCircle, joinCircleByCode, getWeeklyMirrorReport } from '../shared/circles.js';
 import { SHARE_BASE_URL } from '../shared/constants.js';
 import Settings from './pages/Settings.jsx';
+import DigitalWellbeing from './pages/DigitalWellbeing.jsx';
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
@@ -587,6 +588,7 @@ export default function App() {
           <NavItem active={activeTab === 'videos'} onClick={() => setActiveTab('videos')} icon={<PlayCircle />} label="Saved Videos" count={videos.length} />
           <NavItem active={activeTab === 'channels'} onClick={() => setActiveTab('channels')} icon={<Hash />} label="Channels" count={channels.length} />
           <NavItem active={activeTab === 'circles'} onClick={() => setActiveTab('circles')} icon={<Users />} label="Focus Circles" />
+          <NavItem active={activeTab === 'wellbeing'} onClick={() => setActiveTab('wellbeing')} icon={<Shield />} label="Digital Wellbeing" />
           <NavItem active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<SettingsIcon />} label="Settings" />
         </nav>
 
@@ -817,6 +819,9 @@ export default function App() {
 
           {/* ─── Focus Circles Tab ─── */}
           {activeTab === 'circles' && <AccountabilityCirclesView videos={videos} />}
+
+          {/* ─── Digital Wellbeing Tab ─── */}
+          {activeTab === 'wellbeing' && <DigitalWellbeing />}
 
           {/* ─── Settings Tab ─── */}
           {activeTab === 'settings' && (
@@ -1768,64 +1773,12 @@ function AccountabilityCirclesView({ videos }) {
   const [newCircleName, setNewCircleName] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
-  
   const [report, setReport] = useState({ mindlessMinutesAvg: 0, revisitRate: 0, hoursSavedEst: 0, totalVideosScrolled: 0 });
-  const [historyData, setHistoryData] = useState([]);
-  
-  // Chart Filters
-  const [timeRange, setTimeRange] = useState(7); // 7 or 30 days
-  const [platformFilter, setPlatformFilter] = useState('All'); // 'All', 'shorts', 'reels'
 
   useEffect(() => {
     getMyCircle(videos).then(res => setCircle(res));
     getWeeklyMirrorReport(videos).then(res => setReport(res));
-    
-    // Fetch raw history for charts
-    if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.get(['dq_timer_history'], (res) => {
-        setHistoryData(res['dq_timer_history'] || []);
-      });
-    }
   }, [videos]);
-
-  const chartData = useMemo(() => {
-    const now = new Date();
-    now.setHours(0,0,0,0);
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - timeRange + 1);
-
-    // Filter raw data
-    const filtered = historyData.filter(session => {
-      const d = new Date(session.startTime || Date.now());
-      if (d < startDate) return false;
-      if (platformFilter !== 'All' && session.pageType !== platformFilter) return false;
-      return true;
-    });
-
-    // Group by date string (YYYY-MM-DD)
-    const grouped = {};
-    for (let i = 0; i < timeRange; i++) {
-      const d = new Date(startDate);
-      d.setDate(d.getDate() + i);
-      const ds = d.toISOString().split('T')[0];
-      const shortDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      grouped[ds] = { dateStr: ds, displayDate: shortDate, duration: 0 };
-    }
-
-    filtered.forEach(session => {
-      const d = new Date(session.startTime || Date.now());
-      const ds = d.toISOString().split('T')[0];
-      if (grouped[ds]) {
-        grouped[ds].duration += (session.duration || 0);
-      }
-    });
-
-    // Convert duration to minutes
-    return Object.values(grouped).map(day => ({
-      ...day,
-      minutes: Math.round(day.duration / 60000)
-    }));
-  }, [historyData, timeRange, platformFilter]);
 
   const handleCreateCircle = async (e) => {
     e.preventDefault();
@@ -1846,7 +1799,7 @@ function AccountabilityCirclesView({ videos }) {
     <div className="space-y-8 animate-in fade-in duration-300">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold">Accountability Circles & Weekly Mirror</h2>
+          <h2 className="text-3xl font-bold">Focus Circles</h2>
           <p className="text-sm text-zinc-400 mt-1">
             Compare your weekly dopamine balance anonymously with your focus squad
           </p>
@@ -1894,7 +1847,7 @@ function AccountabilityCirclesView({ videos }) {
         </form>
       )}
 
-      {/* ─── Weekly Attention Mirror Scorecard ─── */}
+      {/* ─── Weekly Summary Cards ─── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-6 relative overflow-hidden">
           <div className="flex items-center justify-between mb-3">
@@ -1902,9 +1855,6 @@ function AccountabilityCirclesView({ videos }) {
             <ShieldCheck className="w-5 h-5 text-lime-400" />
           </div>
           <div className="text-3xl font-extrabold text-white">{report.mindlessMinutesAvg}m <span className="text-sm font-normal text-zinc-400">/ day</span></div>
-          <p className="text-xs text-green-400 mt-2 flex items-center gap-1">
-            <TrendingUp className="w-3.5 h-3.5" /> 28% better than average doomscroller
-          </p>
         </div>
 
         <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-6 relative overflow-hidden">
@@ -1913,9 +1863,7 @@ function AccountabilityCirclesView({ videos }) {
             <Award className="w-5 h-5 text-amber-400" />
           </div>
           <div className="text-3xl font-extrabold text-white">{report.revisitRate}%</div>
-          <p className="text-xs text-zinc-400 mt-2">
-            Of saved queue items revisited or processed
-          </p>
+          <p className="text-xs text-zinc-400 mt-2">Of saved queue items revisited or processed</p>
         </div>
 
         <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-6 relative overflow-hidden">
@@ -1924,66 +1872,11 @@ function AccountabilityCirclesView({ videos }) {
             <Sparkles className="w-5 h-5 text-blue-400" />
           </div>
           <div className="text-3xl font-extrabold text-white">{report.hoursSavedEst} hrs</div>
-          <p className="text-xs text-blue-400 mt-2">
-            Based on {videos.length} videos intentionally saved
-          </p>
+          <p className="text-xs text-blue-400 mt-2">Based on {videos.length} videos intentionally saved</p>
         </div>
       </div>
 
-      {/* ─── Scroll Analytics Chart ─── */}
-      <div className="bg-zinc-900/80 border border-white/10 rounded-3xl p-7 space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-5">
-          <div>
-            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <LayoutList className="w-5 h-5 text-lime-400" /> Daily Scroll Trends
-            </h3>
-            <p className="text-xs text-zinc-400 mt-1">Visualize your mindless scrolling habits over time</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <select
-              value={timeRange}
-              onChange={(e) => setTimeRange(Number(e.target.value))}
-              className="bg-zinc-950 border border-zinc-800 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-lime-500 text-zinc-300"
-            >
-              <option value={7}>Last 7 Days</option>
-              <option value={30}>Last 30 Days</option>
-            </select>
-            <select
-              value={platformFilter}
-              onChange={(e) => setPlatformFilter(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-lime-500 text-zinc-300"
-            >
-              <option value="All">All Platforms</option>
-              <option value="shorts">YouTube Shorts</option>
-              <option value="reels">Instagram Reels</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-              <XAxis dataKey="displayDate" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} dy={10} />
-              <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}m`} />
-              <Tooltip 
-                cursor={{ fill: '#27272a', opacity: 0.4 }}
-                contentStyle={{ backgroundColor: '#18181b', borderColor: '#3f3f46', borderRadius: '12px', fontSize: '12px' }}
-                itemStyle={{ color: '#a3e635', fontWeight: 'bold' }}
-                labelStyle={{ color: '#a1a1aa', marginBottom: '4px' }}
-                formatter={(value) => [`${value} minutes`, 'Scroll Time']}
-              />
-              <Bar dataKey="minutes" radius={[4, 4, 0, 0]}>
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.minutes > 30 ? '#f87171' : entry.minutes > 15 ? '#fbbf24' : '#a3e635'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* ─── Circle Leaderboard / Member Comparison ─── */}
+      {/* ─── Circle Leaderboard ─── */}
       {circle ? (
         <div className="bg-zinc-900/80 border border-white/10 rounded-3xl p-7 space-y-6">
           <div className="flex items-center justify-between border-b border-white/10 pb-5">
@@ -1999,15 +1892,15 @@ function AccountabilityCirclesView({ videos }) {
           </div>
 
           <div className="space-y-3">
-            {circle.members.map((m, idx) => (
+            {circle.members.filter(m => m.id === 'me').map((m, idx) => (
               <div key={m.id} className="p-4 rounded-2xl bg-zinc-950/60 border border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${idx === 0 ? 'bg-lime-400 text-black' : 'bg-zinc-800 text-zinc-400'}`}>
-                    #{idx + 1}
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs bg-lime-400 text-black">
+                    #1
                   </div>
                   <div>
                     <span className="font-semibold text-white text-sm">{m.name}</span>
-                    {m.id === 'me' && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider text-lime-400 bg-lime-500/10 px-2 py-0.5 rounded-full">You</span>}
+                    <span className="ml-2 text-[10px] font-bold uppercase tracking-wider text-lime-400 bg-lime-500/10 px-2 py-0.5 rounded-full">You</span>
                   </div>
                 </div>
 
@@ -2024,11 +1917,12 @@ function AccountabilityCirclesView({ videos }) {
               </div>
             ))}
           </div>
+          <p className="text-xs text-zinc-500 text-center">Invite friends with code <span className="font-mono text-lime-300">{circle.code}</span> to see their stats here.</p>
         </div>
       ) : (
         <div className="text-center py-16 bg-zinc-900/30 border border-dashed border-zinc-800 rounded-3xl space-y-3">
           <Users className="w-12 h-12 mx-auto text-zinc-600" />
-          <h3 className="text-lg font-semibold text-zinc-300">No Accountability Circle Joined</h3>
+          <h3 className="text-lg font-semibold text-zinc-300">No Focus Circle Joined</h3>
           <p className="text-xs text-zinc-500 max-w-sm mx-auto">
             Create your own focus circle or join a friend's invite code to see weekly comparisons.
           </p>

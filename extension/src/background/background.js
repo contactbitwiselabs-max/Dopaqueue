@@ -149,8 +149,10 @@ async function finaliseTimerSession(tabId, session = null) {
     endTime,
     duration,
     scrollCount: fresh.scrollCount || s.scrollCount || 1,
+    scrollTimestamps: fresh.scrollTimestamps || s.scrollTimestamps || [],
     pageType: s.pageType,
     date: s.date || todayLocalDateString(),
+    hourOfDay: new Date(s.startTime).getHours(),
   };
 
   const existing = await chrome.storage.local.get(STORAGE_KEYS.TIMER_HISTORY);
@@ -390,6 +392,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === 'OPEN_DASHBOARD') {
     chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+    return false;
+  }
+
+  if (message?.type === 'LOG_FLOW_BREAKER') {
+    (async () => {
+      try {
+        const data = await chrome.storage.local.get(STORAGE_KEYS.FLOW_BREAKER_LOG);
+        const log = data[STORAGE_KEYS.FLOW_BREAKER_LOG] || [];
+        log.push({
+          timestamp: Date.now(),
+          result: message.result || 'unknown',
+          platform: message.platform || (sender?.tab?.url?.includes('instagram') ? 'reels' : 'shorts'),
+        });
+        // Cap at 100 entries
+        const trimmed = log.slice(-100);
+        await chrome.storage.local.set({ [STORAGE_KEYS.FLOW_BREAKER_LOG]: trimmed });
+      } catch (e) { }
+    })();
     return false;
   }
 

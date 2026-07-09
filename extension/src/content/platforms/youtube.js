@@ -271,26 +271,36 @@ export async function scrapeYouTube() {
   };
 }
 
-// Exported function for orchestrator
 export function injectYouTubeShortsButtons() {
   if (!location.hostname.includes('youtube.com')) return;
 
-  const observer = new MutationObserver(() => {
-    // Look for the Like button component directly (standalone or segmented)
-    const likeButtons = document.querySelectorAll('ytd-like-button-renderer, ytd-segmented-like-dislike-button-renderer');
+  let currentShortUrl = null;
+
+  function attemptInjection() {
+    if (!location.pathname.startsWith('/shorts/')) return;
+
+    // Find the currently active short container
+    const activeRenderer = document.querySelector('ytd-reel-video-renderer[is-active]');
+    if (!activeRenderer) return;
+
+    // Find the Like button (it can be standalone or segmented)
+    const likeButton = activeRenderer.querySelector(
+      'ytd-toggle-button-renderer #like-button button, ' +
+      'yt-button-renderer#like-button button, ' +
+      'ytd-segmented-like-dislike-button-renderer'
+    );
     
-    likeButtons.forEach((likeElement) => {
-      // Find the main vertical actions column it lives in
-      const actionsContainer = likeElement.closest('#actions');
-      if (!actionsContainer) return;
+    const targetAnchor = likeButton?.closest('ytd-toggle-button-renderer, yt-button-renderer, ytd-segmented-like-dislike-button-renderer');
+    if (!targetAnchor) return;
 
-      // Ensure we are actually inside a Shorts player (not a normal video or feed)
-      if (!actionsContainer.closest('ytd-reel-video-renderer, ytd-shorts')) return;
+    // Find the main vertical actions column it lives in
+    const actionsContainer = targetAnchor.closest('#actions');
+    if (!actionsContainer) return;
 
-      // Prevent duplicate injection
-      if (actionsContainer.querySelector('.dq-yt-shorts-save')) return;
-
-      const wrapper = document.createElement('div');
+    let wrapper = actionsContainer.querySelector('.dq-yt-shorts-save');
+    
+    if (!wrapper) {
+      wrapper = document.createElement('div');
       wrapper.className = 'dq-yt-shorts-save';
       wrapper.style.cssText = `
         display: flex;
@@ -317,14 +327,7 @@ export function injectYouTubeShortsButtons() {
         transition: all 0.2s ease;
       `;
 
-      iconBox.innerHTML = `
-        <svg class="dq-svg-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M17 3H7C5.9 3 5 3.9 5 5V21L12 18L19 21V5C19 3.9 18.1 3 17 3ZM17 18L12 15.82L7 18V5H17V18Z" fill="#e5e5e5"/>
-        </svg>
-      `;
-
       const label = document.createElement('span');
-      label.textContent = 'Save';
       label.style.cssText = `
         font-size: 1.4rem;
         font-weight: 500;
@@ -336,86 +339,81 @@ export function injectYouTubeShortsButtons() {
       wrapper.appendChild(iconBox);
       wrapper.appendChild(label);
 
-      // On Shorts, the active video drives location.href
-      const getDynamicUrl = () => location.href;
-
-      let isSaved = false;
-      let lastCheckedUrl = null;
-
-      const setSavedUI = () => {
-        isSaved = true;
-        iconBox.style.background = 'rgba(132, 204, 22, 0.2)';
-        iconBox.innerHTML = `
-          <svg class="dq-svg-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M9 16.17L4.83 12L3.41 13.41L9 19L21 7L19.59 5.59L9 16.17Z" fill="#a3e635"/>
-          </svg>
-        `;
-        label.style.color = '#a3e635';
-        label.textContent = 'Saved';
-      };
-
-      const setUnsavedUI = () => {
-        isSaved = false;
-        iconBox.style.background = 'rgba(255, 255, 255, 0.1)';
-        iconBox.innerHTML = `
-          <svg class="dq-svg-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M17 3H7C5.9 3 5 3.9 5 5V21L12 18L19 21V5C19 3.9 18.1 3 17 3ZM17 18L12 15.82L7 18V5H17V18Z" fill="#e5e5e5"/>
-          </svg>
-        `;
-        label.style.color = '#fff';
-        label.textContent = 'Save';
-      };
-
-      const checkSavedStatus = () => {
-        const currentUrl = getDynamicUrl();
-        if (currentUrl === lastCheckedUrl) return;
-        lastCheckedUrl = currentUrl;
-        chrome.runtime.sendMessage({ type: 'CHECK_SAVED_URL', url: currentUrl }, (res) => {
-          if (!chrome.runtime.lastError && res?.saved) {
-            setSavedUI();
-          } else {
-            setUnsavedUI();
-          }
-        });
-      };
-
-      // IntersectionObserver memory hygiene
-      const io = new IntersectionObserver((entries) => {
-        if (entries[0].isIntersecting) {
-          setTimeout(checkSavedStatus, 300);
+      // Method to update visual state based on saved status
+      wrapper.dqSetSaved = (isSaved) => {
+        wrapper.dataset.saved = isSaved;
+        if (isSaved) {
+          iconBox.style.background = 'rgba(132, 204, 22, 0.2)';
+          iconBox.innerHTML = `
+            <svg class="dq-svg-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M9 16.17L4.83 12L3.41 13.41L9 19L21 7L19.59 5.59L9 16.17Z" fill="#a3e635"/>
+            </svg>
+          `;
+          label.style.color = '#a3e635';
+          label.textContent = 'Saved';
         } else {
-          setUnsavedUI();
-          lastCheckedUrl = null;
+          iconBox.style.background = 'rgba(255, 255, 255, 0.1)';
+          iconBox.innerHTML = `
+            <svg class="dq-svg-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M17 3H7C5.9 3 5 3.9 5 5V21L12 18L19 21V5C19 3.9 18.1 3 17 3ZM17 18L12 15.82L7 18V5H17V18Z" fill="#e5e5e5"/>
+            </svg>
+          `;
+          label.style.color = '#fff';
+          label.textContent = 'Save';
         }
-      }, { threshold: 0.1 });
-      io.observe(wrapper);
+      };
 
-      wrapper.addEventListener('mouseenter', checkSavedStatus);
+      // Set initial unsaved state
+      wrapper.dqSetSaved(false);
 
       wrapper.addEventListener('click', async (e) => {
         e.stopPropagation();
         e.preventDefault();
+        
+        if (wrapper.dataset.saved === 'true') return;
 
-        const currentUrl = getDynamicUrl();
-
-        if (!isSaved) {
-          label.textContent = 'Saving...';
-          const scraped = await scrapeYouTube();
-          chrome.runtime.sendMessage({
-            type: 'SAVE_INSTAGRAM_ITEM',
-            ...scraped,
-            url: scraped?.url || currentUrl
-          }, () => {
-            setSavedUI();
-            lastCheckedUrl = currentUrl;
-          });
-        }
+        label.textContent = 'Saving...';
+        const urlToSave = location.href;
+        
+        // Scope the scrape to the active renderer if possible, or just use location.href
+        const scraped = await scrapeYouTube();
+        
+        chrome.runtime.sendMessage({
+          type: 'SAVE_INSTAGRAM_ITEM',
+          ...scraped,
+          platform: 'YouTube',
+          url: scraped?.url || urlToSave
+        }, () => {
+          if (location.href === urlToSave) {
+            wrapper.dqSetSaved(true);
+          }
+        });
       });
 
       // Inject perfectly above the like button
-      actionsContainer.insertBefore(wrapper, likeElement);
-    });
-  });
+      actionsContainer.insertBefore(wrapper, targetAnchor);
+    }
 
-  observer.observe(document.body, { childList: true, subtree: true });
+    // YouTube SPA swiping reuses the active renderer but changes the URL.
+    // So if the URL changes, reset the button state and check if it's saved.
+    if (location.href !== currentShortUrl) {
+      currentShortUrl = location.href;
+      
+      // Reset state immediately on swipe
+      wrapper.dqSetSaved(false);
+      
+      // Check background for saved status
+      chrome.runtime.sendMessage({ type: 'CHECK_SAVED_URL', url: currentShortUrl }, (res) => {
+        if (!chrome.runtime.lastError && res?.saved) {
+          // Verify we're still on the same URL we checked (user didn't swipe again quickly)
+          if (location.href === currentShortUrl) {
+            wrapper.dqSetSaved(true);
+          }
+        }
+      });
+    }
+  }
+
+  // Poll for active renderer changes (handles SPA swiping)
+  setInterval(attemptInjection, 500);
 }

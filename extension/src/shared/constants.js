@@ -15,6 +15,7 @@ export const STORAGE_KEYS = {
   POMODORO: 'dq_pomodoro',
   URL_CHANNELS: 'dq_url_channels',
   TIMER_HISTORY: 'dq_timer_history',
+  FLOW_BREAKER_LOG: 'dq_flow_breaker_log',
 };
 
 // Cap on the eviction-proof url->channel map used for the whitelist
