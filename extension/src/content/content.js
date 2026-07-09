@@ -417,11 +417,31 @@ async function scrapeAll() {
   }
 
   const url = location.href;
-  const genre = scrapeCategory();
-  const channel = scrapeChannel();
-
   const videoId = extractVideoId(url);
-  if (!videoId) return { url, genre, channel, transcript: null };
+
+  // Live title from DOM (handles YouTube SPA navigation instantly)
+  let title = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, ytd-watch-metadata #title h1, h1.title')?.textContent?.trim();
+  if (!title && document.title && document.title !== 'YouTube') {
+    title = document.title.replace(/\s*-\s*YouTube$/i, '').trim();
+  }
+  if (!title) title = 'YouTube Video';
+
+  // Live channel / author from DOM
+  let channel = document.querySelector('#channel-name a, ytd-video-owner-renderer #channel-name a, ytd-channel-name a')?.textContent?.trim();
+  if (!channel) {
+    channel = scrapeChannel();
+  }
+
+  // Author profile URL
+  let authorUrl = document.querySelector('#channel-name a, ytd-video-owner-renderer #channel-name a')?.href || null;
+  if (!authorUrl && channel) {
+    authorUrl = `https://www.youtube.com/@${channel.replace(/^@/, '')}`;
+  }
+
+  // Deterministic thumbnail from video ID so it never shows a previous video's thumbnail
+  const thumbnail = videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null;
+
+  const genre = scrapeCategory();
 
   const racePromise = Promise.any([
     mustFindTranscript(strategyD_livePlayerAPI(videoId)),
@@ -436,7 +456,118 @@ async function scrapeAll() {
 
   const transcript = await Promise.race([racePromise, timeoutPromise]);
 
-  return { url, genre, channel, transcript: transcript || null };
+  return {
+    url,
+    title,
+    thumbnail,
+    author: channel,
+    authorUrl,
+    genre,
+    channel,
+    contentType: 'video',
+    platform: 'YouTube',
+    transcript: transcript || null
+  };
+}
+
+/** Fast metadata-only scrape — NO transcript fetching, returns instantly */
+function scrapeMetadataOnly() {
+  if (!location.hostname.includes('youtube.com')) {
+    const url = location.href;
+    const host = location.hostname.toLowerCase();
+
+    let platform = 'Social Media';
+    if (host.includes('instagram.com')) platform = 'Instagram';
+    else if (host.includes('tiktok.com')) platform = 'TikTok';
+    else if (host.includes('twitter.com') || host.includes('x.com')) platform = 'X / Twitter';
+    else if (host.includes('linkedin.com')) platform = 'LinkedIn';
+    else if (host.includes('reddit.com')) platform = 'Reddit';
+    else if (host.includes('facebook.com')) platform = 'Facebook';
+
+    const isReel = /\/(reel|reels|shorts|video)\//i.test(url);
+    const contentType = isReel ? 'reel' : 'post';
+
+    let rawImgUrl = null;
+    const ogImg = document.querySelector('meta[property="og:image"]');
+    if (ogImg?.content) rawImgUrl = ogImg.content;
+    if (!rawImgUrl) {
+      const videoPoster = document.querySelector('video[poster]');
+      if (videoPoster?.poster) rawImgUrl = videoPoster.poster;
+    }
+    if (!rawImgUrl) {
+      const twitterImg = document.querySelector('meta[name="twitter:image"]');
+      if (twitterImg?.content) rawImgUrl = twitterImg.content;
+    }
+
+    let title = document.title || `${platform} Item`;
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    if (ogTitle?.content) title = ogTitle.content;
+    else {
+      const twitterTitle = document.querySelector('meta[name="twitter:title"]');
+      if (twitterTitle?.content) title = twitterTitle.content;
+    }
+
+    let author = null;
+    const ogDesc = document.querySelector('meta[property="og:description"]');
+    if (ogDesc?.content) {
+      const match = ogDesc.content.match(/(@[\w.-]+)/);
+      if (match) author = match[1];
+    }
+    if (!author) {
+      const twitterCreator = document.querySelector('meta[name="twitter:creator"]');
+      if (twitterCreator?.content) author = twitterCreator.content;
+    }
+    if (!author) {
+      const authorLink = document.querySelector('header a[href*="/"]');
+      if (authorLink) {
+        const href = authorLink.getAttribute('href') || '';
+        const handle = href.replace(/^\/|\/$/g, '');
+        if (handle && !['explore', 'reels', 'home', 'status'].includes(handle.toLowerCase())) {
+          author = handle.startsWith('@') ? handle : '@' + handle;
+        }
+      }
+    }
+
+    let authorUrl = null;
+    if (author) {
+      const cleanHandle = author.replace(/^@/, '');
+      if (platform === 'Instagram') authorUrl = `https://www.instagram.com/${cleanHandle}/`;
+      else if (platform === 'TikTok') authorUrl = `https://www.tiktok.com/@${cleanHandle}`;
+      else if (platform === 'X / Twitter') authorUrl = `https://x.com/${cleanHandle}`;
+      else authorUrl = location.origin;
+    }
+
+    return {
+      url, title, thumbnail: rawImgUrl, author, authorUrl,
+      genre: contentType, channel: author, contentType, platform, transcript: null
+    };
+  }
+
+  // YouTube — instant DOM scrape, no transcript
+  const url = location.href;
+  const videoId = extractVideoId(url);
+
+  let title = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, ytd-watch-metadata #title h1, h1.title')?.textContent?.trim();
+  if (!title && document.title && document.title !== 'YouTube') {
+    title = document.title.replace(/\s*-\s*YouTube$/i, '').trim();
+  }
+  if (!title) title = 'YouTube Video';
+
+  let channel = document.querySelector('#channel-name a, ytd-video-owner-renderer #channel-name a, ytd-channel-name a')?.textContent?.trim();
+  if (!channel) channel = scrapeChannel();
+
+  let authorUrl = document.querySelector('#channel-name a, ytd-video-owner-renderer #channel-name a')?.href || null;
+  if (!authorUrl && channel) {
+    authorUrl = `https://www.youtube.com/@${channel.replace(/^@/, '')}`;
+  }
+
+  const thumbnail = videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null;
+  const genre = scrapeCategory();
+
+  return {
+    url, title, thumbnail, author: channel, authorUrl,
+    genre, channel, contentType: 'video', platform: 'YouTube', transcript: null
+  };
 }
 
 async function sendScrapeResult() {
@@ -451,14 +582,19 @@ async function sendScrapeResult() {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'SCRAPE_NOW') {
+    // Respond INSTANTLY with live DOM metadata — never wait for transcript
+    const metadata = scrapeMetadataOnly();
+    sendResponse(metadata);
+
+    // Fire-and-forget: send full scrape (with transcript) to background
     (async () => {
-      const result = await scrapeAll();
       try {
-        chrome.runtime.sendMessage({ type: 'GENRE_SCRAPED', ...result });
+        const full = await scrapeAll();
+        chrome.runtime.sendMessage({ type: 'GENRE_SCRAPED', ...full });
       } catch (e) {}
-      sendResponse(result);
     })();
-    return true;
+
+    return false; // synchronous response already sent
   }
 });
 

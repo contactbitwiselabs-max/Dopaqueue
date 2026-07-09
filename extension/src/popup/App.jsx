@@ -66,8 +66,10 @@ function usePopupData() {
           if (tab.id) {
             chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (res) => {
               if (res) {
+                const liveUrl = res.url || tab.url;
                 setPageInfo((prev) => prev ? {
                   ...prev,
+                  url: liveUrl,
                   title: res.title || prev.title,
                   thumbnail: res.thumbnail || prev.thumbnail,
                   author: res.author || res.channel || prev.author,
@@ -75,6 +77,16 @@ function usePopupData() {
                   contentType: res.contentType || prev.contentType,
                   platform: res.platform || prev.platform,
                 } : null);
+
+                const queue = getQueue();
+                const liveVideoId = extractYouTubeVideoId(liveUrl);
+                const isSavedLive = queue.some((i) => {
+                  if (i.deleted) return false;
+                  if (i.url === liveUrl) return true;
+                  if (liveVideoId && extractYouTubeVideoId(i.url) === liveVideoId) return true;
+                  return false;
+                });
+                setAlreadySaved(isSavedLive);
               }
             });
           }
@@ -218,20 +230,39 @@ export default function PopupApp() {
 
   const isChannel = pageInfo ? isChannelUrl(pageInfo.url) : false;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!pageInfo || saved || alreadySaved) return;
     setSaveError(null);
     try {
-      // If this URL was saved before and later soft-deleted (deleted
-      // items stay in the queue so the sync engine can propagate the
-      // removal), resurrect that entry instead of adding a duplicate
-      // row that would pile up on every delete-then-resave cycle.
-      // Match by exact URL or by normalized video id (ignoring volatile
-      // tracking params) so re-saving the same video reuses the row.
-      const pageVideoId = extractYouTubeVideoId(pageInfo.url);
+      let liveInfo = { ...pageInfo };
+      if (typeof chrome !== 'undefined' && chrome.tabs) {
+        liveInfo = await new Promise((resolve) => {
+          chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+            if (!tab?.id) return resolve(liveInfo);
+            chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (res) => {
+              if (res && res.url) {
+                resolve({
+                  url: res.url,
+                  title: res.title || liveInfo.title,
+                  thumbnail: res.thumbnail || liveInfo.thumbnail,
+                  author: res.author || res.channel || liveInfo.author,
+                  authorUrl: res.authorUrl || liveInfo.authorUrl,
+                  contentType: res.contentType || liveInfo.contentType || 'video',
+                  platform: res.platform || liveInfo.platform
+                });
+              } else {
+                resolve(liveInfo);
+              }
+            });
+          });
+        });
+        setPageInfo(liveInfo);
+      }
+
+      const pageVideoId = extractYouTubeVideoId(liveInfo.url);
       const existing = getQueue().find((i) =>
         i.deleted && (
-          i.url === pageInfo.url ||
+          i.url === liveInfo.url ||
           (pageVideoId && extractYouTubeVideoId(i.url) === pageVideoId)
         )
       );
@@ -239,7 +270,7 @@ export default function PopupApp() {
       if (isChannel) {
         if (existing) {
           updateQueueItem(existing.id, {
-            title: extractChannelId(pageInfo.url) || pageInfo.title,
+            title: extractChannelId(liveInfo.url) || liveInfo.title,
             type: 'channel',
             savedAt: Date.now(),
             deleted: false,
@@ -247,8 +278,8 @@ export default function PopupApp() {
         } else {
           addToQueue({
             id: crypto.randomUUID(),
-            url: pageInfo.url,
-            title: extractChannelId(pageInfo.url) || pageInfo.title,
+            url: liveInfo.url,
+            title: extractChannelId(liveInfo.url) || liveInfo.title,
             type: 'channel',
             savedAt: Date.now(),
           });
@@ -256,11 +287,12 @@ export default function PopupApp() {
       } else {
         if (existing) {
           updateQueueItem(existing.id, {
-            title: pageInfo.title,
-            thumbnail: pageInfo.thumbnail || existing.thumbnail || null,
-            author: pageInfo.author || existing.author || null,
-            contentType: pageInfo.contentType || existing.contentType || 'video',
-            platform: pageInfo.platform || existing.platform || null,
+            url: liveInfo.url,
+            title: liveInfo.title,
+            thumbnail: liveInfo.thumbnail || existing.thumbnail || null,
+            author: liveInfo.author || existing.author || null,
+            contentType: liveInfo.contentType || existing.contentType || 'video',
+            platform: liveInfo.platform || existing.platform || null,
             type: 'video',
             savedAt: Date.now(),
             watched: false,
@@ -269,51 +301,25 @@ export default function PopupApp() {
         } else {
           addToQueue({
             id: crypto.randomUUID(),
-            url: pageInfo.url,
-            title: pageInfo.title,
-            thumbnail: pageInfo.thumbnail || null,
-            author: pageInfo.author || null,
-            contentType: pageInfo.contentType || 'video',
-            platform: pageInfo.platform || null,
+            url: liveInfo.url,
+            title: liveInfo.title,
+            thumbnail: liveInfo.thumbnail || null,
+            author: liveInfo.author || null,
+            contentType: liveInfo.contentType || 'video',
+            platform: liveInfo.platform || null,
             type: 'video',
             savedAt: Date.now(),
             watched: false,
           });
         }
 
-        if (pageInfo.author) {
-          ensureChannelSaved(pageInfo.author, pageInfo.authorUrl || '', pageInfo.platform || 'Social Media');
+        if (liveInfo.author) {
+          ensureChannelSaved(liveInfo.author, liveInfo.authorUrl || '', liveInfo.platform || 'Social Media');
         }
 
-        // Instant enterprise-grade save: update UI immediately
         setSaved(true);
         setAlreadySaved(true);
         setFetchingTranscript(false);
-
-        // Opportunistically trigger background metadata/tag scrape
-        if (typeof chrome !== 'undefined' && chrome.tabs) {
-          chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-            if (tab?.id) {
-              chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (res) => {
-                if (res && (res.thumbnail || res.author || res.channel || res.contentType)) {
-                  const authorName = res.author || res.channel;
-                  if (authorName) {
-                    ensureChannelSaved(authorName, '', res.platform || 'Social Media');
-                  }
-                  const queue = getQueue();
-                  const target = queue.find(i => i.url === pageInfo.url);
-                  if (target) {
-                    updateQueueItem(target.id, {
-                      thumbnail: res.thumbnail || target.thumbnail || null,
-                      author: authorName || target.author || null,
-                      contentType: res.contentType || target.contentType || null,
-                    });
-                  }
-                }
-              });
-            }
-          });
-        }
       }
     } catch (err) {
       console.error('DopaQueue: failed to save item', err);
