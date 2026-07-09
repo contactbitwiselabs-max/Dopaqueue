@@ -16,19 +16,59 @@
 import { createClient } from '@supabase/supabase-js';
 import { getTranscript } from 'youtube-transcript-api';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://orietzrziyrwnjqljvmv.supabase.co';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
-const WORKER_INTERVAL_MS = process.env.WORKER_INTERVAL_MS || 30000;
-const MAX_BATCH_SIZE = 5;
+// Configuration - ALL values must come from environment variables
+// NO hardcoded credentials allowed
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const WORKER_INTERVAL_MS = parseInt(process.env.WORKER_INTERVAL_MS || '30000');
+const MAX_BATCH_SIZE = parseInt(process.env.MAX_BATCH_SIZE || '5');
+const MAX_RETRIES = parseInt(process.env.MAX_RETRIES || '3');
+const RETRY_DELAY_MS = parseInt(process.env.RETRY_DELAY_MS || '5000');
 
-if (!SUPABASE_SERVICE_KEY) {
-  throw new Error('SUPABASE_SERVICE_KEY environment variable is required');
+// Validate required environment variables
+function validateEnvironment() {
+  const errors = [];
+  
+  if (!SUPABASE_URL) {
+    errors.push('SUPABASE_URL');
+  }
+  
+  if (!SUPABASE_SERVICE_KEY) {
+    errors.push('SUPABASE_SERVICE_KEY');
+  }
+  
+  if (errors.length > 0) {
+    console.error(`[DopaQueue Worker] Missing required environment variables: ${errors.join(', ')}`);
+    console.error('Please set these environment variables before starting the worker.');
+    console.error('Example:');
+    console.error('  export SUPABASE_URL="https://your-project.supabase.co"');
+    console.error('  export SUPABASE_SERVICE_KEY="your-service-key"');
+    process.exit(1);
+  }
+  
+  return true;
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+// Initialize Supabase client
+function createSupabaseClient() {
+  validateEnvironment();
+  
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+  
+  return supabase;
+}
+
+const supabase = createSupabaseClient();
 
 /**
  * Extract video ID from YouTube URL.
+ * @param {string} url - YouTube URL
+ * @returns {string|null} Video ID or null
  */
 function extractVideoId(url) {
   try {
@@ -43,8 +83,11 @@ function extractVideoId(url) {
 /**
  * Fetch transcript for a single video ID using youtube-transcript-api.
  * Returns { transcript: string, language: string } or null if unavailable.
+ * @param {string} videoId - YouTube video ID
+ * @param {number} retryCount - Current retry attempt
+ * @returns {Promise<{transcript: string, language: string}|null>}
  */
-async function fetchTranscriptForVideoId(videoId) {
+async function fetchTranscriptForVideoId(videoId, retryCount = 0) {
   try {
     const transcripts = await getTranscript(videoId, { lang: 'en' });
     if (!transcripts || transcripts.length === 0) return null;
@@ -52,27 +95,59 @@ async function fetchTranscriptForVideoId(videoId) {
     const transcript = transcripts.map((t) => t.text).join(' ');
     return { transcript, language: 'en' };
   } catch (err) {
-    console.warn(`Failed to fetch transcript for ${videoId}:`, err.message);
+    console.warn(`[Worker] Failed to fetch transcript for ${videoId} (attempt ${retryCount + 1}):`, err.message);
+    
+    // Retry with exponential backoff
+    if (retryCount < MAX_RETRIES) {
+      const delay = RETRY_DELAY_MS * Math.pow(2, retryCount);
+      console.log(`[Worker] Retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return fetchTranscriptForVideoId(videoId, retryCount + 1);
+    }
+    
+    console.error(`[Worker] Max retries (${MAX_RETRIES}) exceeded for ${videoId}`);
     return null;
   }
 }
 
 /**
  * Process a single pending transcript queue entry.
+ * @param {Object} entry - Queue entry from Supabase
+ * @param {Object} supabase - Supabase client
+ * @returns {Promise<boolean>} Success status
  */
 async function processQueueEntry(entry) {
-  const { id, user_id, url } = entry;
+  const { id, user_id, url, created_at } = entry;
+  
+  // Validate entry has required fields
+  if (!id || !user_id || !url) {
+    console.error(`[Worker] Invalid queue entry: missing required fields`, { id, user_id, url });
+    return false;
+  }
+  
   try {
     const videoId = extractVideoId(url);
     if (!videoId) {
-      throw new Error('Could not extract video ID from URL');
+      console.error(`[Worker] [${id}] Could not extract video ID from URL: ${url}`);
+      
+      // Mark as failed
+      await supabase
+        .from('transcript_queue')
+        .update({
+          status: 'failed',
+          error_message: 'Could not extract video ID from URL',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+      
+      return false;
     }
 
-    console.log(`[${id}] Fetching transcript for ${videoId}...`);
+    console.log(`[Worker] [${id}] Fetching transcript for ${videoId}...`);
     const result = await fetchTranscriptForVideoId(videoId);
 
     if (result) {
-      console.log(`[${id}] Success! Transcript length: ${result.transcript.length}`);
+      console.log(`[Worker] [${id}] Success! Transcript length: ${result.transcript.length}`);
 
       // Update scrape_cache with the transcript
       const { error: cacheError } = await supabase
@@ -81,94 +156,180 @@ async function processQueueEntry(entry) {
           {
             user_id,
             url,
+            video_id: videoId,
             transcript: result.transcript,
             language: result.language,
             scrapedAt: new Date().toISOString(),
+            source: 'server_worker',
           },
           { onConflict: 'user_id,url' }
         );
 
-      if (cacheError) throw cacheError;
+      if (cacheError) {
+        console.error(`[Worker] [${id}] Failed to update scrape_cache:`, cacheError);
+        throw cacheError;
+      }
 
       // Mark queue entry as done
       const { error: queueError } = await supabase
         .from('transcript_queue')
-        .update({ status: 'done', updated_at: new Date().toISOString() })
+        .update({
+          status: 'done',
+          processed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
         .eq('id', id);
 
-      if (queueError) throw queueError;
+      if (queueError) {
+        console.error(`[Worker] [${id}] Failed to update queue:`, queueError);
+        throw queueError;
+      }
+      
+      return true;
     } else {
-      throw new Error('Transcript not available (no captions or error fetching)');
+      console.warn(`[Worker] [${id}] No transcript found for ${videoId}`);
+      
+      // Mark as failed
+      await supabase
+        .from('transcript_queue')
+        .update({
+          status: 'failed',
+          error_message: 'No transcript available for video',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+      
+      return false;
     }
   } catch (err) {
-    console.error(`[${id}] Error:`, err.message);
-
-    // Mark queue entry as failed with error message
-    const { error: queueError } = await supabase
+    console.error(`[Worker] [${id}] Error processing entry:`, err);
+    
+    // Mark as failed with error message
+    await supabase
       .from('transcript_queue')
       .update({
         status: 'failed',
-        error_message: String(err.message),
-        updated_at: new Date().toISOString(),
+        error_message: err.message,
+        updated_at: new Date().toISOString()
       })
       .eq('id', id);
-
-    if (queueError) console.error('Failed to update queue entry:', queueError.message);
+    
+    return false;
   }
 }
 
 /**
- * Poll and process pending queue entries in batches.
+ * Process a batch of pending queue entries.
+ * @param {Object[]} entries - Array of queue entries
+ * @returns {Promise<{success: number, failed: number}>}
  */
-async function processPendingQueue() {
-  try {
-    console.log(`[worker] Polling for pending transcript requests...`);
+async function processBatch(entries) {
+  const results = {
+    success: 0,
+    failed: 0,
+  };
+  
+  // Process in parallel with limit
+  const batchSize = Math.min(entries.length, MAX_BATCH_SIZE);
+  console.log(`[Worker] Processing batch of ${batchSize} entries...`);
+  
+  for (let i = 0; i < batchSize; i++) {
+    const entry = entries[i];
+    const success = await processQueueEntry(entry);
+    if (success) {
+      results.success++;
+    } else {
+      results.failed++;
+    }
+  }
+  
+  return results;
+}
 
-    // Fetch pending entries
-    const { data: entries, error } = await supabase
+/**
+ * Poll the transcript queue for pending entries.
+ * @returns {Promise<Object>} Polling results
+ */
+async function pollQueue() {
+  try {
+    // Get pending entries, ordered by creation time
+    const { data: pendingEntries, error } = await supabase
       .from('transcript_queue')
       .select('*')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
       .limit(MAX_BATCH_SIZE);
-
-    if (error) throw error;
-
-    if (!entries || entries.length === 0) {
-      console.log('[worker] No pending entries.');
-      return;
+    
+    if (error) {
+      console.error('[Worker] Error fetching pending entries:', error);
+      return { success: 0, failed: 0, error: error.message };
     }
-
-    console.log(`[worker] Processing ${entries.length} pending request(s)...`);
-
-    // Process each entry sequentially to avoid rate limits
-    for (const entry of entries) {
-      await processQueueEntry(entry);
+    
+    if (!pendingEntries || pendingEntries.length === 0) {
+      console.log('[Worker] No pending entries in queue.');
+      return { success: 0, failed: 0, error: null };
     }
-
-    console.log(`[worker] Batch complete.`);
+    
+    console.log(`[Worker] Found ${pendingEntries.length} pending entries.`);
+    
+    // Process batch
+    const results = await processBatch(pendingEntries);
+    
+    return {
+      ...results,
+      error: null,
+      processed: pendingEntries.length,
+    };
   } catch (err) {
-    console.error('[worker] Fatal error:', err.message);
+    console.error('[Worker] Error polling queue:', err);
+    return { success: 0, failed: 0, error: err.message };
   }
 }
 
 /**
- * Start the worker loop.
+ * Main worker loop.
  */
-function startWorker() {
-  console.log(`DopaQueue Transcript Fallback Worker started.`);
-  console.log(`Interval: ${WORKER_INTERVAL_MS}ms, Batch size: ${MAX_BATCH_SIZE}`);
-
-  // Process immediately on start
-  processPendingQueue();
-
-  // Then run on interval
-  setInterval(processPendingQueue, WORKER_INTERVAL_MS);
+async function runWorker() {
+  console.log('[Worker] Starting DopaQueue Transcript Worker...');
+  console.log(`[Worker] Environment: ${process.env.NODE_ENV || 'production'}`);
+  console.log(`[Worker] Polling interval: ${WORKER_INTERVAL_MS}ms`);
+  console.log(`[Worker] Max batch size: ${MAX_BATCH_SIZE}`);
+  
+  // Validate environment on startup
+  validateEnvironment();
+  
+  // Initial poll
+  const initialResults = await pollQueue();
+  console.log(`[Worker] Initial poll results:`, initialResults);
+  
+  // Set up periodic polling
+  setInterval(async () => {
+    try {
+      const results = await pollQueue();
+      if (results.processed > 0) {
+        console.log(`[Worker] Poll results: ${results.success} success, ${results.failed} failed`);
+      }
+    } catch (err) {
+      console.error('[Worker] Error in polling loop:', err);
+    }
+  }, WORKER_INTERVAL_MS);
+  
+  // Handle graceful shutdown
+  process.on('SIGINT', async () => {
+    console.log('[Worker] Shutting down gracefully...');
+    process.exit(0);
+  });
+  
+  process.on('SIGTERM', async () => {
+    console.log('[Worker] Received SIGTERM, shutting down...');
+    process.exit(0);
+  });
 }
 
-// Start if run directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  startWorker();
-}
+// Start the worker
+runWorker().catch((err) => {
+  console.error('[Worker] Fatal error:', err);
+  process.exit(1);
+});
 
-export { processPendingQueue };
+export { extractVideoId, fetchTranscriptForVideoId, processQueueEntry, pollQueue, runWorker };

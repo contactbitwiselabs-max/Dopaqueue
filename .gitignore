@@ -1,8 +1,93 @@
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
 dist/
+build/
+*.crx
+*.zip
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+
+# Linux
+*~ 
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
 .env
 .env.local
-.vercel
-.next
+.env.development
+.env.test
+.env.production
+.env.*.local
+
+# Environment variables in shell history
+.npm
+.yarnrc
+
+# Supabase
+.supabase/
+
+# Vite
+.vite/
+
+# Next.js
+.next/
+out/
+
+# Testing
+.coverage
+.nyc_output/
+
+# OS generated files
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Editor directories and files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Secret files - NEVER commit these
+*.key
+*.pem
+*.crt
+*.pfx
+*.p12
+*.jks
+*.keystore
+secrets/
+credentials/
+
+# DopaQueue specific
+*.env
+!.env.example

@@ -1,27 +1,41 @@
 {
   "name": "dopaqueue-transcript-worker",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Server-side transcript fetcher for DopaQueue extension using youtube-transcript-api",
   "type": "module",
   "main": "transcript-worker.js",
   "scripts": {
     "start": "node transcript-worker.js",
-    "dev": "NODE_ENV=development node transcript-worker.js",
-    "test:db": "node -e \"import('./transcript-worker.js').then(() => console.log('✓ DB connection ok')).catch(e => console.error('✗', e.message))\"",
-    "test": "echo 'Run npm run test:db to verify Supabase connection'"
+    "start:production": "NODE_ENV=production node transcript-worker.js",
+    "start:development": "NODE_ENV=development node transcript-worker.js",
+    "dev": "NODE_ENV=development node --watch transcript-worker.js",
+    "test": "node test/worker.test.js",
+    "test:db": "node -e \"import('./transcript-worker.js').then(() => console.log('✓ DB connection ok')).catch(e => { console.error('✗', e.message); process.exit(1); })\"",
+    "lint": "echo 'Add linting later'"
   },
   "keywords": [
     "youtube",
     "transcript",
     "dopamine",
     "wellbeing",
-    "supabase"
+    "supabase",
+    "worker"
   ],
-  "author": "",
+  "author": "DopaQueue Team",
   "license": "MIT",
   "dependencies": {
     "@supabase/supabase-js": "^2.38.0",
     "youtube-transcript-api": "^0.0.7"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "homepage": "https://github.com/contactbitwiselabs-max/Dopaqueue",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/contactbitwiselabs-max/Dopaqueue"
+  }
 }

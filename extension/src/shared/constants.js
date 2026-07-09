@@ -5,6 +5,10 @@
 // content scripts don't support ES module imports, so any constant it
 // needs is duplicated inline there.
 
+import { getValidatedConfig } from './config.js';
+
+const config = getValidatedConfig();
+
 export const STORAGE_KEYS = {
   QUEUE: 'dq_queue',
   GAME: 'dq_game',
@@ -16,6 +20,8 @@ export const STORAGE_KEYS = {
   URL_CHANNELS: 'dq_url_channels',
   TIMER_HISTORY: 'dq_timer_history',
   FLOW_BREAKER_LOG: 'dq_flow_breaker_log',
+  AI_CONFIG: 'dq_ai_config',
+  CONFIG: 'dq_config',
 };
 
 // Cap on the eviction-proof url->channel map used for the whitelist
@@ -27,27 +33,30 @@ export const MAX_URL_CHANNEL_ENTRIES = 200;
 // Point this at the deployed landing app (e.g. https://dopaqueue.com)
 // before release. Never use window.location.origin inside the extension:
 // that yields an unusable chrome-extension:// link.
-export const SHARE_BASE_URL = 'http://localhost:3000';
+export const SHARE_BASE_URL = config.SHARE_BASE_URL || 'http://localhost:3000';
 
 // Cap on cached scrape results (genre/channel/transcript per URL), kept
 // small since transcripts can be large. Shared between storage.js
 // (local writes) and sync.js (post-merge trim) so both enforce the
 // same limit.
-export const MAX_SCRAPE_CACHE_ENTRIES = 20;
+export const MAX_SCRAPE_CACHE_ENTRIES = config.MAX_SCRAPE_CACHE_ENTRIES || 20;
+
+// Default daily budget in minutes
+export const DEFAULT_DAILY_BUDGET = config.DEFAULT_DAILY_BUDGET || 60;
 
 export const DEFAULT_GAME_STATE = {
   plant: 'thriving',
   coins: 0,
-  budgetMinutesTotal: 60,
+  budgetMinutesTotal: DEFAULT_DAILY_BUDGET,
   budgetMinutesUsed: 0,
   lastReset: null, // set on first read to today's local date string
   notifiedZeroToday: false,
 };
 
 export const DEFAULT_SETTINGS = {
-  dailyBudgetMinutes: 60,
+  dailyBudgetMinutes: DEFAULT_DAILY_BUDGET,
   reminderHours: 48,
-  aiProvider: 'gemini',
+  aiProvider: 'local', // 'local', 'gemini', 'openai'
   aiApiKey: '',
   notificationsEnabled: true,
   webhookUrl: '',
@@ -152,4 +161,34 @@ export function extractChannelId(url) {
     }
   }
   return null;
+}
+
+// Validation utilities
+export function isValidUrl(url) {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function sanitizeString(str, maxLength = 10000) {
+  if (!str) return '';
+  if (typeof str !== 'string') return String(str);
+  return str.trim().slice(0, maxLength);
+}
+
+export function sanitizeUrl(url) {
+  if (!isValidUrl(url)) return null;
+  try {
+    const parsed = new URL(url);
+    // Remove tracking parameters
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }

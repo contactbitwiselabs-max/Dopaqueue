@@ -1,7 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
+import { getValidatedConfig, getConfigUnvalidated } from './config.js';
 
-const SUPABASE_URL = 'https://orietzrziyrwnjqljvmv.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9yaWV0enJ6aXlyd25qcWxqdm12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzMzYyMzcsImV4cCI6MjA5ODkxMjIzN30.4HgI_HR0_6Dhl5g4KlmsL4nFOl3vPLMwzikksDXxEIs';
+// Get configuration
+const config = getConfigUnvalidated();
+
+// Validate we have required Supabase credentials
+if (!config.SUPABASE_URL) {
+  throw new Error('DopaQueue: SUPABASE_URL is not configured. Please set VITE_SUPABASE_URL in your environment.');
+}
+
+if (!config.SUPABASE_ANON_KEY) {
+  throw new Error('DopaQueue: SUPABASE_ANON_KEY is not configured. Please set VITE_SUPABASE_ANON_KEY in your environment.');
+}
 
 // Use chrome.storage.local as the auth session store so sessions persist correctly
 // across extension contexts, falling back to localStorage for non-extension environments.
@@ -38,7 +48,8 @@ const storageAdapter =
       }
     : globalThis.localStorage;
 
-export const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+// Create Supabase client with configuration from environment
+const supabaseClient = createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY, {
   auth: {
     storage: storageAdapter,
     autoRefreshToken: true,
@@ -46,3 +57,8 @@ export const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     detectSessionInUrl: true,
   },
 });
+
+// Export client and config for convenience
+export { supabaseClient, config };
+
+export default supabaseClient;
