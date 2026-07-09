@@ -325,19 +325,34 @@ async function getPermanentThumbnail(imageUrl) {
 }
 
 function getActiveContainer() {
-  const elements = Array.from(document.querySelectorAll('article, main, [data-testid="post-container"]'));
   const h = window.innerHeight;
+  const videos = Array.from(document.querySelectorAll('video'));
+  for (const v of videos) {
+    const rect = v.getBoundingClientRect();
+    if (rect.top <= h / 2 && rect.bottom >= h / 2) {
+      // Start from the video and go up until we find something that holds the caption
+      let el = v.parentElement;
+      while (el && el !== document.body) {
+        if (el.querySelector('h1, span[dir="auto"]')) return el;
+        el = el.parentElement;
+      }
+      // Absolute last resort: use the video's immediate parent
+      return v.parentElement || v;
+    }
+  }
+  
+  // Strategy 2: Fallback to large block-level wrappers if no video is present
+  const elements = Array.from(document.querySelectorAll('article, main, [data-testid="post-container"]'));
   for (const el of elements) {
     const rect = el.getBoundingClientRect();
-    // If the element covers the vertical center of the screen, it's the active one
     if (rect.top <= h / 2 && rect.bottom >= h / 2) {
       return el;
     }
   }
-  return document;
+  return null;
 }
 
-async function universalScrapeAll(targetUrl) {
+async function universalScrapeAll(targetUrl, containerEl = null) {
   const url = targetUrl || location.href;
   const host = location.hostname.toLowerCase();
 
@@ -353,7 +368,7 @@ async function universalScrapeAll(targetUrl) {
   const isReel = /\/(reel|reels|shorts|video)\//i.test(url);
   const contentType = isReel ? 'reel' : 'post';
 
-  const container = getActiveContainer();
+  const container = containerEl || getActiveContainer() || document;
 
   let rawImgUrl = null;
   const localVideo = container.querySelector('video');
@@ -508,7 +523,7 @@ function scrapeMetadataOnly() {
     const isReel = /\/(reel|reels|shorts|video)\//i.test(url);
     const contentType = isReel ? 'reel' : 'post';
 
-    const container = getActiveContainer();
+    const container = getActiveContainer() || document;
 
     let rawImgUrl = null;
     const localVideo = container.querySelector('video');
@@ -742,8 +757,19 @@ function initInstagramButtons() {
       wrapper.appendChild(iconBox);
       wrapper.appendChild(label);
 
+      // Lock onto specific post container for context-aware URL & metadata
+      const postContainer = actionItem.closest('article, [data-testid="post-container"]') || parentContainer;
+
+      // Extract specific post permalink (Instagram uses /p/ or /reel/ paths inside article anchors)
+      let postUrl = location.href;
+      const permalinkEl = postContainer.querySelector('a[href^="/p/"], a[href^="/reel/"], a[href^="/reels/"]');
+      if (permalinkEl) {
+        const href = permalinkEl.getAttribute('href');
+        postUrl = new URL(href, location.origin).href;
+      }
+
       let isSaved = false;
-      chrome.runtime.sendMessage({ type: 'CHECK_SAVED_URL', url: location.href }, (res) => {
+      chrome.runtime.sendMessage({ type: 'CHECK_SAVED_URL', url: postUrl }, (res) => {
         if (!chrome.runtime.lastError && res?.saved) {
           isSaved = true;
           iconBox.style.background = 'rgba(34, 197, 94, 0.28)';
@@ -769,7 +795,7 @@ function initInstagramButtons() {
 
         if (!isSaved) {
           label.textContent = 'Saving...';
-          const scraped = await universalScrapeAll(location.href);
+          const scraped = await universalScrapeAll(postUrl, postContainer);
           chrome.runtime.sendMessage({
             type: 'SAVE_INSTAGRAM_ITEM',
             ...scraped,
@@ -967,3 +993,181 @@ function checkMindfulFlowBreaker() {
     setTimeout(() => overlay.remove(), 300);
   });
 }
+
+// ─── Scroll Timer Heartbeat ───────────────────────────────────────────────────
+// Classic script (no ES module imports). URL matchers are inlined.
+function isScrollTimerPage() {
+  const url = location.href;
+  return (
+    /^https?:\/\/(www\.)?youtube\.com\/shorts\//i.test(url) ||
+    /^https?:\/\/(www\.)?instagram\.com\/reels?\//i.test(url)
+  );
+}
+
+function formatScrollTime(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const m = Math.floor(totalSeconds / 60);
+  const s = String(totalSeconds % 60).padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function initScrollTimer() {
+  if (!isScrollTimerPage()) return;
+
+  let accumulatedTime = 0;
+  let scrollCount = 1;
+  let lastUpdate = Date.now();
+  let lastStorageSync = Date.now();
+  let tabId = null;
+  let currentUrl = location.href;
+
+  // 1. Inject the Widget
+  const widget = document.createElement('div');
+  widget.id = 'dq-scroll-timer-widget';
+  widget.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(9, 9, 11, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 100px;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 2147483647;
+    color: #e4e4e7;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    pointer-events: none;
+    transition: all 0.5s ease;
+  `;
+
+  widget.innerHTML = `
+    <span id="dq-st-time" style="color: #a3e635; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 6px;">
+      <span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: dq-pulse 2s infinite;"></span>
+      <span id="dq-st-time-val">00:00</span>
+    </span>
+    <span style="opacity: 0.3;">•</span>
+    <span id="dq-st-count">1 scrolled</span>
+    <span style="opacity: 0.3;">•</span>
+    <span id="dq-st-spm" style="color: #a1a1aa; font-weight: 500;">0.0 / min</span>
+  `;
+
+  if (!document.getElementById('dq-pulse-style')) {
+    const style = document.createElement('style');
+    style.id = 'dq-pulse-style';
+    style.innerHTML = `@keyframes dq-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }`;
+    document.head.appendChild(style);
+  }
+
+  document.body.appendChild(widget);
+
+  const timeEl = document.getElementById('dq-st-time-val');
+  const timeContainer = document.getElementById('dq-st-time');
+  const countEl = document.getElementById('dq-st-count');
+  const spmEl = document.getElementById('dq-st-spm');
+
+  function updateDOM() {
+    timeEl.textContent = formatScrollTime(accumulatedTime);
+    countEl.textContent = `${scrollCount} scrolled`;
+    
+    const minutes = accumulatedTime / 60000;
+    const spm = minutes > 0 ? (scrollCount / minutes).toFixed(1) : '0.0';
+    spmEl.textContent = `${spm} / min`;
+
+    // Dynamic coloring based on time (Green < 10m, Amber < 20m, Red > 20m)
+    if (accumulatedTime > 20 * 60 * 1000) {
+      timeContainer.style.color = '#f87171'; // Red
+      widget.style.borderColor = 'rgba(248, 113, 113, 0.3)';
+    } else if (accumulatedTime > 10 * 60 * 1000) {
+      timeContainer.style.color = '#fbbf24'; // Amber
+      widget.style.borderColor = 'rgba(251, 191, 36, 0.3)';
+    } else {
+      timeContainer.style.color = '#a3e635'; // Lime
+      widget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+    }
+  }
+
+  // 2. High-Frequency Local Tick (Every 1 second)
+  function tickTime() {
+    if (document.visibilityState !== 'visible') {
+      lastUpdate = Date.now();
+      return;
+    }
+    if (!isScrollTimerPage()) {
+      widget.style.display = 'none';
+      return;
+    } else {
+      widget.style.display = 'flex';
+    }
+
+    const now = Date.now();
+    accumulatedTime += (now - lastUpdate);
+    lastUpdate = now;
+
+    updateDOM();
+
+    // 3. Low-Frequency Storage Sync (Every 5 seconds)
+    if (now - lastStorageSync >= 5000) {
+      if (tabId !== null) {
+        try {
+          chrome.storage.local.set({
+            [`activeTimer_${tabId}`]: { accumulatedTime, scrollCount, lastUpdate: now },
+          });
+        } catch (e) { /* context invalidated */ }
+      }
+      lastStorageSync = now;
+    }
+  }
+
+  // 4. URL Change Detection (Scroll Tracking)
+  function checkUrlChange() {
+    if (location.href !== currentUrl) {
+      currentUrl = location.href;
+      if (isScrollTimerPage()) {
+        scrollCount += 1;
+        updateDOM();
+      }
+    }
+  }
+
+  function urgentSave() {
+    tickTime();
+  }
+
+  // Ask background for tabId + any existing session (survives page refresh)
+  try {
+    chrome.runtime.sendMessage({ type: 'GET_TIMER_STATE' }, (res) => {
+      if (chrome.runtime.lastError || !res) return;
+      tabId = res.tabId;
+      // Resume accumulated time & count if a session already exists (refresh case)
+      if (res.activeSession) {
+        if (typeof res.activeSession.accumulatedTime === 'number') {
+          accumulatedTime = res.activeSession.accumulatedTime;
+        }
+        if (typeof res.activeSession.scrollCount === 'number') {
+          scrollCount = res.activeSession.scrollCount;
+        }
+      }
+      lastUpdate = Date.now();
+      lastStorageSync = Date.now();
+      
+      // Start intervals
+      setInterval(tickTime, 1000);
+      setInterval(checkUrlChange, 500);
+      updateDOM();
+    });
+  } catch (e) { /* context invalidated */ }
+
+  // Urgent saves on tab hide or page unload
+  document.addEventListener('visibilitychange', urgentSave);
+  window.addEventListener('pagehide', urgentSave);
+}
+
+// Kick off the timer
+initScrollTimer();

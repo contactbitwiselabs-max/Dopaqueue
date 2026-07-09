@@ -4,7 +4,7 @@
 // queue, so there's a single writer for the time-based decay logic.
 
 import { supabaseClient } from '../shared/supabase.js';
-import { isMindlessScrollUrl } from '../shared/constants.js';
+import { isMindlessScrollUrl, isScrollTimerUrl, STORAGE_KEYS, todayLocalDateString } from '../shared/constants.js';
 import {
   initStorage,
   checkDailyReset,
@@ -74,15 +74,94 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   await handleTabChange(tab);
 });
 
-chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.url || changeInfo.status === 'complete') {
     await handleTabChange(tab);
+    if (changeInfo.url) {
+      await handleTimerOnTabChange(tabId, changeInfo.url);
+    }
   }
+});
+
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  await finaliseTimerSession(tabId);
 });
 
 async function getActiveFocusedTab() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   return tab || null;
+}
+
+// ─── Scroll Timer Session Lifecycle ──────────────────────────────────────────
+
+function timerKey(tabId) {
+  return `activeTimer_${tabId}`;
+}
+
+async function getActiveSession(tabId) {
+  const key = timerKey(tabId);
+  const data = await chrome.storage.local.get(key);
+  return data[key] || null;
+}
+
+async function handleTimerOnTabChange(tabId, url) {
+  const isTimer = isScrollTimerUrl(url);
+  const existing = await getActiveSession(tabId);
+
+  if (isTimer && !existing) {
+    // Create a new session
+    const pageType = /youtube\.com\/shorts/i.test(url) ? 'shorts' : 'reels';
+    const session = {
+      startTime: Date.now(),
+      accumulatedTime: 0,
+      scrollCount: 1,
+      pageType,
+      date: todayLocalDateString(),
+    };
+    await chrome.storage.local.set({ [timerKey(tabId)]: session });
+    console.info('DopaQueue: scroll timer session started', { tabId, pageType });
+  } else if (!isTimer && existing) {
+    // User navigated away — finalise the session
+    await finaliseTimerSession(tabId, existing);
+  }
+}
+
+async function finaliseTimerSession(tabId, session = null) {
+  const key = timerKey(tabId);
+  const s = session || await getActiveSession(tabId);
+  if (!s) return;
+
+  // Read latest accumulatedTime written by content script (may be fresher)
+  const freshData = await chrome.storage.local.get(key);
+  const fresh = freshData[key] || s;
+
+  const endTime = Date.now();
+  const duration = (fresh.accumulatedTime || 0) + (endTime - (fresh.startTime || s.startTime));
+
+  if (duration < 1000) {
+    // Ignore sub-second sessions (e.g. accidental clicks)
+    await chrome.storage.local.remove(key);
+    return;
+  }
+
+  const historyEntry = {
+    startTime: s.startTime,
+    endTime,
+    duration,
+    scrollCount: fresh.scrollCount || s.scrollCount || 1,
+    pageType: s.pageType,
+    date: s.date || todayLocalDateString(),
+  };
+
+  const existing = await chrome.storage.local.get(STORAGE_KEYS.TIMER_HISTORY);
+  const history = existing[STORAGE_KEYS.TIMER_HISTORY] || [];
+  history.push(historyEntry);
+  // Keep last 200 sessions (~2-3 months of daily use)
+  const trimmed = history.slice(-200);
+  await chrome.storage.local.set({ [STORAGE_KEYS.TIMER_HISTORY]: trimmed });
+  await chrome.storage.local.remove(key);
+
+  console.info('DopaQueue: scroll timer session finalised', { tabId, durationMs: duration, pageType: s.pageType });
 }
 
 async function notifyGardenWilted() {
@@ -142,7 +221,43 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'GET_TIMER_STATE') {
+    const tabId = sender?.tab?.id || null;
+    const key = tabId ? timerKey(tabId) : null;
+    if (!key) { sendResponse({ tabId: null, activeSession: null, todayTotal: 0 }); return false; }
+
+    chrome.storage.local.get([key, STORAGE_KEYS.TIMER_HISTORY]).then((data) => {
+      const activeSession = data[key] || null;
+      const history = data[STORAGE_KEYS.TIMER_HISTORY] || [];
+      const today = todayLocalDateString();
+      const todayTotal = history
+        .filter(h => h.date === today)
+        .reduce((sum, h) => sum + (h.duration || 0), 0);
+      sendResponse({ tabId, activeSession, todayTotal });
+    });
+    return true; // async
+  }
+
+  // GET_POPUP_TIMER_STATE: called from the popup (no sender.tab.id).
+  // The popup supplies the active tab's ID explicitly.
+  if (message?.type === 'GET_POPUP_TIMER_STATE') {
+    const tabId = message.tabId;
+    const key = tabId ? timerKey(tabId) : null;
+    if (!key) { sendResponse({ tabId: null, activeSession: null, todayTotal: 0 }); return false; }
+
+    chrome.storage.local.get([key, STORAGE_KEYS.TIMER_HISTORY]).then((data) => {
+      const activeSession = data[key] || null;
+      const history = data[STORAGE_KEYS.TIMER_HISTORY] || [];
+      const today = todayLocalDateString();
+      const todayTotal = history
+        .filter(h => h.date === today)
+        .reduce((sum, h) => sum + (h.duration || 0), 0);
+      sendResponse({ tabId, activeSession, todayTotal });
+    });
+    return true; // async
+  }
+
   if (message?.type === 'GENRE_SCRAPED') {
     initStorage().then(() => {
       cacheScrapeResult(message.url, {

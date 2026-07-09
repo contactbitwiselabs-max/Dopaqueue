@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { PlayCircle, LayoutDashboard, Save, Check, Hash, AlertCircle, Cloud, LogIn, Tag, Plus, ExternalLink, Sparkles, Clock, Film } from 'lucide-react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { PlayCircle, LayoutDashboard, Save, Check, Hash, AlertCircle, Cloud, LogIn, Tag, Plus, ExternalLink, Sparkles, Clock, Film, Timer } from 'lucide-react';
 import { ShimmerButton } from '../components/ui/shimmer-button';
 import { Meteors } from '../components/ui/meteors';
 import {
@@ -183,8 +183,52 @@ function usePopupData() {
 }
 
 
+// ─── Scroll Timer Hook ───────────────────────────────────────────────────────
+
+function formatDuration(ms) {
+  if (!ms || ms <= 0) return '0m';
+  const totalSeconds = Math.floor(ms / 1000);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function useScrollTimer() {
+  const [timerState, setTimerState] = useState({ todayTotal: 0, activeSession: null, tabId: null });
+  const intervalRef = useRef(null);
+
+  const fetchState = useCallback(() => {
+    if (typeof chrome === 'undefined' || !chrome.tabs) return;
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs?.[0];
+      if (!tab) return;
+      // Ask the content script for the timer state via background
+      chrome.runtime.sendMessage({ type: 'GET_POPUP_TIMER_STATE', tabId: tab.id }, (res) => {
+        if (chrome.runtime.lastError || !res) return;
+        setTimerState({
+          todayTotal: res.todayTotal || 0,
+          activeSession: res.activeSession || null,
+          tabId: res.tabId || null,
+        });
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    fetchState();
+    intervalRef.current = setInterval(fetchState, 5000);
+    return () => clearInterval(intervalRef.current);
+  }, [fetchState]);
+
+  return timerState;
+}
+
 export default function PopupApp() {
   const { ready, pageInfo, setPageInfo, game, alreadySaved, setAlreadySaved, tabError, refreshFromTab } = usePopupData();
+  const scrollTimer = useScrollTimer();
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [fetchingTranscript, setFetchingTranscript] = useState(false);
@@ -515,6 +559,36 @@ export default function PopupApp() {
           />
         </div>
       </div>
+
+      {/* Scroll Time Card — only visible on Shorts/Reels tabs or if today has data */}
+      {(scrollTimer.todayTotal > 0 || scrollTimer.activeSession) && (() => {
+        const totalMs = scrollTimer.todayTotal +
+          (scrollTimer.activeSession ? (scrollTimer.activeSession.accumulatedTime || 0) : 0);
+        const isRecording = !!scrollTimer.activeSession;
+        const thresholdColor =
+          totalMs < 20 * 60 * 1000 ? 'text-emerald-400 border-emerald-400/20 bg-emerald-400/8'
+          : totalMs < 45 * 60 * 1000 ? 'text-amber-400 border-amber-400/20 bg-amber-400/8'
+          : 'text-red-400 border-red-400/20 bg-red-400/8';
+        return (
+          <div className="z-10 px-4 pb-2">
+            <div className={`flex items-center justify-between px-3 py-2 rounded-xl border ${thresholdColor}`}>
+              <span className="flex items-center gap-1.5 text-xs font-semibold">
+                <Timer className="w-3.5 h-3.5" />
+                Today's Scroll Time
+              </span>
+              <span className="flex items-center gap-2 text-xs font-mono font-bold">
+                {formatDuration(totalMs)}
+                {isRecording && (
+                  <span className="flex items-center gap-1 text-[10px] font-semibold text-red-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                    live
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Speed Bump Banner when budget is 0 */}
       {remaining === 0 && savedVideos.length > 0 && (

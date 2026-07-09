@@ -14,6 +14,7 @@ export const STORAGE_KEYS = {
   WHITELIST: 'dq_whitelist',
   POMODORO: 'dq_pomodoro',
   URL_CHANNELS: 'dq_url_channels',
+  TIMER_HISTORY: 'dq_timer_history',
 };
 
 // Cap on the eviction-proof url->channel map used for the whitelist
@@ -81,6 +82,11 @@ export function isMindlessScrollUrl(url) {
   if (!url) return false;
   return MINDLESS_URL_PATTERNS.some((re) => re.test(url));
 }
+
+// isScrollTimerUrl — same surfaces as mindless scroll, used by the timer system.
+// Intentionally a separate export so callers can be explicit about which
+// check they need (budget vs. timer).
+export const isScrollTimerUrl = isMindlessScrollUrl;
 
 // Extracts a YouTube video ID from watch/shorts/short-link URLs, or
 // null if the URL isn't a recognizable YouTube video URL.
