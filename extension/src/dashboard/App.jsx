@@ -794,128 +794,209 @@ function NavItem({ active, onClick, icon, label, count }) {
 
 function ArticleModal({ video, onClose }) {
   const scrape = getScrapeResult(video.url) || {};
-  const rawTranscript = scrape.transcript || 'No transcript available for this video.';
-  const [activeModalTab, setActiveModalTab] = useState('read'); // 'read' | 'ai'
-  const [aiData, setAiData] = useState(null);
-  const [loadingAi, setLoadingAi] = useState(false);
-  
-  // Format transcript into paragraphs (every ~5 sentences)
-  const paragraphs = rawTranscript.split(/(?<=\.)\s+/).reduce((acc, sentence, idx) => {
-    const pIdx = Math.floor(idx / 5);
-    acc[pIdx] = (acc[pIdx] || '') + ' ' + sentence;
-    return acc;
-  }, []);
+  const [activeModalTab, setActiveModalTab] = useState('notes'); // 'notes' | 'transcript'
+  const [userNotes, setUserNotes] = useState(video.userNotes || video.description || '');
+  const [manualTranscript, setManualTranscript] = useState(video.manualTranscript || scrape.transcript || '');
+  const [isEditingTranscript, setIsEditingTranscript] = useState(false);
+  const [savedFeedback, setSavedFeedback] = useState(false);
+  const [newTag, setNewTag] = useState('');
+  const [tags, setTags] = useState(video.tags || []);
 
-  const handleGenerateAI = async () => {
-    setLoadingAi(true);
-    try {
-      const result = await generateActionChecklist(video, rawTranscript);
-      setAiData(result);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingAi(false);
+  const handleSaveNotes = () => {
+    updateQueueItem(video.id, {
+      userNotes,
+      description: userNotes,
+      manualTranscript,
+      tags,
+    });
+    setSavedFeedback(true);
+    setTimeout(() => setSavedFeedback(false), 2500);
+  };
+
+  const handleAddTag = (e) => {
+    e.preventDefault();
+    if (!newTag.trim()) return;
+    const clean = newTag.trim().replace(/^#/, '');
+    if (!tags.includes(clean)) {
+      const nextTags = [...tags, clean];
+      setTags(nextTags);
+      updateQueueItem(video.id, { tags: nextTags });
     }
+    setNewTag('');
   };
 
-  const toggleChecklist = (idx) => {
-    if (!aiData) return;
-    const updated = {
-      ...aiData,
-      checklist: aiData.checklist.map((item, i) => i === idx ? { ...item, done: !item.done } : item)
-    };
-    setAiData(updated);
+  const handleRemoveTag = (tagToRemove) => {
+    const nextTags = tags.filter(t => t !== tagToRemove);
+    setTags(nextTags);
+    updateQueueItem(video.id, { tags: nextTags });
   };
+
+  const activeTranscriptText = manualTranscript || scrape.transcript || '';
+  const paragraphs = activeTranscriptText
+    ? activeTranscriptText.split(/(?<=\.)\s+/).reduce((acc, sentence, idx) => {
+        const pIdx = Math.floor(idx / 5);
+        acc[pIdx] = (acc[pIdx] || '') + ' ' + sentence;
+        return acc;
+      }, [])
+    : [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="bg-zinc-900 border border-white/10 rounded-3xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="p-6 border-b border-white/10 flex items-center justify-between bg-zinc-900/80 sticky top-0 z-10">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
+      <div className="bg-zinc-900/95 border border-white/10 rounded-3xl max-w-4xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden">
+        {/* Modal Header */}
+        <div className="p-6 border-b border-white/10 flex items-center justify-between bg-zinc-900/90 sticky top-0 z-10">
+          <div className="min-w-0 pr-4">
+            <div className="flex items-center gap-2 mb-2.5">
               <button
-                onClick={() => setActiveModalTab('read')}
-                className={`text-xs font-semibold px-3 py-1 rounded-full transition-all border ${activeModalTab === 'read' ? 'bg-lime-500/20 text-lime-300 border-lime-500/30' : 'bg-zinc-800 text-zinc-400 border-transparent hover:text-white'}`}
+                onClick={() => setActiveModalTab('notes')}
+                className={`text-xs font-semibold px-3.5 py-1.5 rounded-full transition-all border flex items-center gap-1.5 ${
+                  activeModalTab === 'notes'
+                    ? 'bg-lime-500/20 text-lime-300 border-lime-500/30 shadow-sm'
+                    : 'bg-zinc-800 text-zinc-400 border-transparent hover:text-white'
+                }`}
               >
-                📖 Article View
+                <FileText className="w-3.5 h-3.5 text-lime-400" /> Notes & Organization
               </button>
               <button
-                onClick={() => { setActiveModalTab('ai'); if (!aiData) handleGenerateAI(); }}
-                className={`text-xs font-semibold px-3 py-1 rounded-full transition-all border flex items-center gap-1 ${activeModalTab === 'ai' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-zinc-800 text-zinc-400 border-transparent hover:text-white'}`}
+                onClick={() => setActiveModalTab('transcript')}
+                className={`text-xs font-semibold px-3.5 py-1.5 rounded-full transition-all border flex items-center gap-1.5 ${
+                  activeModalTab === 'transcript'
+                    ? 'bg-blue-500/20 text-blue-300 border-blue-500/30 shadow-sm'
+                    : 'bg-zinc-800 text-zinc-400 border-transparent hover:text-white'
+                }`}
               >
-                <Sparkles className="w-3.5 h-3.5" /> AI Action Plan
+                <FileText className="w-3.5 h-3.5 text-blue-400" /> Transcript & Text
               </button>
             </div>
-            <h2 className="text-xl font-bold text-white line-clamp-1">{video.title}</h2>
-            <p className="text-xs text-zinc-400 mt-1">{scrape.channel || 'YouTube Video'} · {formatDateTime(video.savedAt)}</p>
+            <h2 className="text-xl font-bold text-white leading-tight line-clamp-1">{video.title}</h2>
+            <p className="text-xs text-zinc-400 mt-1 flex items-center gap-2">
+              <span>{scrape.channel || video.channel || 'Video Queue Item'}</span>
+              <span>·</span>
+              <span>Saved {formatDateTime(video.savedAt)}</span>
+            </p>
           </div>
-          <button onClick={onClose} className="p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-full transition-colors">
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            {savedFeedback && (
+              <span className="text-xs font-semibold text-lime-400 bg-lime-400/10 px-3 py-1 rounded-full border border-lime-400/20 flex items-center gap-1">
+                <CheckCircle className="w-3.5 h-3.5" /> Saved
+              </span>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2.5 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-full transition-colors border border-white/5"
+              title="Close modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        {/* Body */}
-        <div className="p-8 overflow-y-auto flex-1">
-          {activeModalTab === 'read' ? (
-            <div className="space-y-6 text-zinc-300 leading-relaxed font-serif text-lg selection:bg-lime-500/30">
-              {paragraphs.length > 0 && paragraphs[0].trim() ? (
-                paragraphs.map((para, idx) => (
-                  <p key={idx} className="mb-4">{para.trim()}</p>
-                ))
-              ) : (
-                <p className="text-zinc-500 italic">No spoken text was extracted from this video.</p>
-              )}
+        {/* Modal Body */}
+        <div className="p-7 overflow-y-auto flex-1">
+          {activeModalTab === 'notes' ? (
+            <div className="space-y-6">
+              {/* Custom Tags Section */}
+              <div className="bg-zinc-950/60 border border-white/10 rounded-2xl p-5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">
+                  Categorize & Tag Item
+                </label>
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  {tags.map(t => (
+                    <span
+                      key={t}
+                      className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-lime-500/15 text-lime-300 border border-lime-500/30 shadow-sm"
+                    >
+                      #{t}
+                      <button
+                        onClick={() => handleRemoveTag(t)}
+                        className="hover:text-white font-bold ml-1 text-xs"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+
+                  <form onSubmit={handleAddTag} className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newTag}
+                      onChange={e => setNewTag(e.target.value)}
+                      placeholder="Add tag (e.g. tutorial, priority)..."
+                      className="bg-zinc-900 border border-white/10 text-xs text-white rounded-xl px-3 py-1.5 w-52 focus:outline-none focus:border-lime-400 transition-colors"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors border border-white/5"
+                    >
+                      + Add Tag
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* Personal Notes / Action Items Section */}
+              <div className="bg-zinc-950/60 border border-white/10 rounded-2xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                    Personal Notes, Takeaways & Timestamps
+                  </label>
+                  <button
+                    onClick={handleSaveNotes}
+                    className="px-4 py-1.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-zinc-950 text-xs font-bold transition-all shadow-md shadow-lime-500/10"
+                  >
+                    Save Notes
+                  </button>
+                </div>
+                <textarea
+                  value={userNotes}
+                  onChange={e => setUserNotes(e.target.value)}
+                  placeholder="Write notes, summarize key points, or record important timestamps here..."
+                  className="w-full h-52 bg-zinc-900/80 border border-white/10 rounded-xl p-4 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-lime-400/50 transition-colors leading-relaxed resize-y font-mono"
+                />
+              </div>
             </div>
           ) : (
             <div className="space-y-6">
-              {loadingAi ? (
-                <div className="flex flex-col items-center justify-center py-16 text-zinc-400 space-y-3">
-                  <div className="w-8 h-8 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
-                  <p className="text-sm">Synthesizing key takeaways and actionable checklist...</p>
+              <div className="flex items-center justify-between bg-zinc-950/60 border border-white/10 rounded-2xl p-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Spoken Transcript & Captions</h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    {isEditingTranscript ? 'Paste or edit manual transcript text below.' : 'View or export video transcript text.'}
+                  </p>
                 </div>
-              ) : aiData ? (
-                <div className="space-y-8 animate-in fade-in duration-300">
-                  {/* Summary Takeaways */}
-                  <div className="bg-zinc-950/60 border border-amber-500/20 rounded-2xl p-6">
-                    <h3 className="text-sm font-semibold text-amber-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <Sparkles className="w-4 h-4" /> 3 Key Takeaways
-                    </h3>
-                    <ul className="space-y-2.5">
-                      {aiData.summary.map((point, i) => (
-                        <li key={i} className="text-sm text-zinc-200 flex items-start gap-2.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-2 shrink-0" />
-                          <span>{point}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                <button
+                  onClick={() => {
+                    if (isEditingTranscript) handleSaveNotes();
+                    setIsEditingTranscript(!isEditingTranscript);
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors border border-white/10"
+                >
+                  {isEditingTranscript ? 'Done Editing' : 'Edit / Paste Manual Transcript'}
+                </button>
+              </div>
 
-                  {/* Action Checklist */}
-                  <div className="bg-zinc-950/60 border border-lime-500/20 rounded-2xl p-6">
-                    <h3 className="text-sm font-semibold text-lime-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                      <CheckSquare className="w-4 h-4" /> Actionable Checklist
-                    </h3>
-                    <div className="space-y-2.5">
-                      {aiData.checklist.map((item, idx) => (
-                        <button
-                          key={item.id || idx}
-                          onClick={() => toggleChecklist(idx)}
-                          className={`w-full text-left p-3 rounded-xl border flex items-center gap-3 transition-all ${item.done ? 'bg-lime-500/10 border-lime-500/30 text-zinc-400 line-through' : 'bg-zinc-900/80 border-white/5 text-white hover:border-white/20'}`}
-                        >
-                          <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${item.done ? 'bg-lime-400 border-lime-300 text-zinc-950' : 'border-zinc-600'}`}>
-                            {item.done && <CheckCircle className="w-3.5 h-3.5" />}
-                          </div>
-                          <span className="text-sm">{item.text}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+              {isEditingTranscript ? (
+                <textarea
+                  value={manualTranscript}
+                  onChange={e => setManualTranscript(e.target.value)}
+                  placeholder="Paste video transcript or captions here..."
+                  className="w-full h-80 bg-zinc-950 border border-white/10 rounded-2xl p-5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-blue-400/50 leading-relaxed font-mono resize-y"
+                />
+              ) : paragraphs.length > 0 && paragraphs[0].trim() ? (
+                <div className="space-y-4 text-zinc-300 leading-relaxed font-serif text-base selection:bg-lime-500/30 bg-zinc-950/40 p-6 rounded-2xl border border-white/5">
+                  {paragraphs.map((para, idx) => (
+                    <p key={idx} className="mb-3">{para.trim()}</p>
+                  ))}
                 </div>
               ) : (
-                <div className="text-center py-12">
-                  <button onClick={handleGenerateAI} className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-black font-semibold text-sm rounded-xl">
-                    Extract AI Action Plan
+                <div className="text-center py-16 bg-zinc-950/40 border border-white/5 rounded-2xl">
+                  <p className="text-zinc-500 text-sm mb-4">No automatic transcript was fetched for this item.</p>
+                  <button
+                    onClick={() => setIsEditingTranscript(true)}
+                    className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs font-semibold rounded-xl border border-blue-500/30 transition-colors"
+                  >
+                    + Paste Manual Transcript
                   </button>
                 </div>
               )}
@@ -923,14 +1004,30 @@ function ArticleModal({ video, onClose }) {
           )}
         </div>
 
-        {/* Footer */}
-        <div className="p-6 border-t border-white/10 bg-zinc-950 flex items-center justify-between">
-          <a href={video.url} target="_blank" rel="noreferrer" className="px-5 py-2.5 bg-lime-400 hover:bg-lime-300 text-zinc-950 font-medium text-sm rounded-xl transition-all shadow-lg shadow-lime-500/20">
-            Open Video on YouTube
+        {/* Modal Footer */}
+        <div className="p-5 border-t border-white/10 bg-zinc-950 flex items-center justify-between">
+          <a
+            href={video.url}
+            target="_blank"
+            rel="noreferrer"
+            className="px-5 py-2.5 bg-lime-400 hover:bg-lime-300 text-zinc-950 font-bold text-sm rounded-xl transition-all shadow-lg shadow-lime-500/10"
+          >
+            Open Video on YouTube ↗
           </a>
-          <button onClick={onClose} className="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium text-sm rounded-xl transition-all">
-            Close Modal
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSaveNotes}
+              className="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-sm rounded-xl transition-all border border-white/10"
+            >
+              Save All Changes
+            </button>
+            <button
+              onClick={onClose}
+              className="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white font-medium text-sm rounded-xl transition-all"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1038,52 +1135,70 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
   };
 
   return (
-    <div className="group bg-zinc-900/50 border border-white/5 rounded-2xl overflow-hidden hover:border-white/20 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-lime-500/10 flex flex-col">
-      <div className="h-40 bg-zinc-800 relative overflow-hidden shrink-0">
+    <div className="group bg-zinc-900/80 border border-white/10 rounded-2xl overflow-hidden hover:border-white/25 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-lime-500/10 flex flex-col">
+      {/* Card Thumbnail Deck */}
+      <div className="h-44 bg-zinc-950 relative overflow-hidden shrink-0">
         {thumbUrl ? (
-          <img src={thumbUrl} alt="" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+          <img
+            src={thumbUrl}
+            alt=""
+            className="w-full h-full object-cover opacity-85 group-hover:scale-105 group-hover:opacity-100 transition-all duration-500"
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center opacity-30">
-            <PlayCircle className="w-12 h-12" />
+            <PlayCircle className="w-12 h-12 text-zinc-500" />
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-900/90 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-transparent to-black/40 pointer-events-none" />
 
-        {/* Type badge */}
-        <div className={`absolute top-3 left-3 flex items-center gap-1 text-xs px-2 py-1 rounded-md border backdrop-blur-md ${typeInfo.color}`}>
-          <TypeIcon className="w-3 h-3" /> {typeInfo.label}
+        {/* Content Type Badge */}
+        <div className={`absolute top-3 left-3 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border backdrop-blur-md shadow-md ${typeInfo.color}`}>
+          <TypeIcon className="w-3.5 h-3.5" /> {typeInfo.label}
         </div>
 
-        {/* Urgency Revisit Badge */}
-        <div className="absolute top-3 right-3 flex items-center gap-1.5">
+        {/* Urgency Review Deck Selector */}
+        <div className="absolute top-3 right-3">
           <button
             onClick={handleCycleUrgency}
-            className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border backdrop-blur-md transition-all flex items-center gap-1 ${currentUrgency ? urgencyColor[currentUrgency] : 'bg-zinc-900/80 text-zinc-400 border-white/10 hover:text-white'}`}
+            className={`text-xs font-semibold px-3 py-1 rounded-full border backdrop-blur-md transition-all flex items-center gap-1.5 shadow-sm ${
+              currentUrgency
+                ? urgencyColor[currentUrgency]
+                : 'bg-zinc-900/80 text-zinc-400 border-white/10 hover:text-white hover:border-white/20'
+            }`}
             title="Click to cycle review urgency (Tomorrow -> Weekend -> Reference)"
           >
-            <Clock className="w-3 h-3" /> {currentUrgency || 'Set Urgency'}
+            <Clock className="w-3.5 h-3.5" /> {currentUrgency || 'Set Priority'}
           </button>
         </div>
       </div>
 
-      <div className="p-5 flex-1 flex flex-col justify-between">
-        <div>
-          <h3 className="font-semibold text-white leading-tight mb-2 line-clamp-2" title={video.title}>
+      {/* Card Body */}
+      <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+        <div className="space-y-3">
+          <h3 className="font-bold text-white text-base leading-snug line-clamp-2 group-hover:text-lime-300 transition-colors" title={video.title}>
             {video.title}
           </h3>
 
-          {/* Date + Time */}
-          <div className="flex items-center gap-2 text-xs text-zinc-500 mb-2">
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
             <Calendar className="w-3.5 h-3.5" />
-            <span>{formatDateTime(video.savedAt)}</span>
+            <span>Saved {formatDateTime(video.savedAt)}</span>
           </div>
 
-          {/* Custom Tags Section */}
-          <div className="flex flex-wrap items-center gap-1.5 mb-3">
+          {/* Interactive Tags Section */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
             {(video.tags || []).map(tag => (
-              <span key={tag} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-lime-500/10 text-lime-300 border border-lime-500/20">
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-lime-400/15 text-lime-300 border border-lime-400/30 shadow-sm"
+              >
                 #{tag}
-                <button onClick={() => handleRemoveTag(tag)} className="hover:text-white font-bold ml-0.5">×</button>
+                <button
+                  onClick={() => handleRemoveTag(tag)}
+                  className="hover:text-white font-extrabold ml-1"
+                  aria-label="Remove tag"
+                >
+                  ×
+                </button>
               </span>
             ))}
             {showTagInput ? (
@@ -1092,95 +1207,66 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
                   type="text"
                   value={newTag}
                   onChange={e => setNewTag(e.target.value)}
-                  placeholder="tag..."
+                  placeholder="tag name..."
                   autoFocus
                   onBlur={() => setShowTagInput(false)}
-                  className="bg-zinc-950 border border-lime-400 text-xs text-white rounded-full px-2 py-0.5 w-20 focus:outline-none"
+                  className="bg-zinc-950 border border-lime-400 text-xs text-white rounded-full px-2.5 py-0.5 w-24 focus:outline-none"
                 />
               </form>
             ) : (
-              <button onClick={() => setShowTagInput(true)} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 border border-white/5 transition-colors">
+              <button
+                onClick={() => setShowTagInput(true)}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 border border-white/5 transition-colors"
+              >
                 <Plus className="w-3 h-3" /> Tag
               </button>
             )}
-            <button
-              onClick={handleAutoTag}
-              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-lime-500/10 text-lime-400 hover:bg-lime-500/20 border border-lime-500/30 transition-colors"
-              title="Automatically tag based on AI keywords"
-            >
-              <Sparkles className="w-3 h-3" /> Auto-Tag
-            </button>
           </div>
 
-          {/* Description if any */}
-          {video.description && (
-            <p className="text-xs text-zinc-600 line-clamp-2 mb-3">{video.description}</p>
+          {/* Custom Notes / Description snippet if existing */}
+          {(video.userNotes || video.description) && (
+            <p className="text-xs text-zinc-400 line-clamp-2 bg-zinc-950/50 p-2.5 rounded-xl border border-white/5 font-sans leading-relaxed">
+              <span className="font-semibold text-zinc-300">Note: </span>
+              {video.userNotes || video.description}
+            </p>
           )}
         </div>
 
-        <div className="flex items-center gap-2 mt-4 relative pt-3 border-t border-white/5">
+        {/* Enterprise Actions Footer */}
+        <div className="flex items-center gap-2 pt-3 border-t border-white/10">
           <a
-            href={video.url} target="_blank" rel="noreferrer"
-            className="flex-1 bg-white text-black text-sm font-medium py-2 rounded-xl text-center hover:bg-zinc-200 transition-colors"
+            href={video.url}
+            target="_blank"
+            rel="noreferrer"
+            className="flex-1 bg-lime-400 hover:bg-lime-300 text-zinc-950 text-xs font-bold py-2.5 rounded-xl text-center transition-all shadow-md shadow-lime-500/10 flex items-center justify-center gap-1.5"
           >
-            Watch
+            <span>Watch</span>
+            <ExternalLink className="w-3.5 h-3.5" />
           </a>
 
           <button
-            onClick={handleShareCard}
-            className="p-2 text-blue-400 hover:text-white bg-blue-500/10 hover:bg-blue-600 rounded-xl transition-colors border border-blue-500/20"
-            title="Copy Shareable Link to Clipboard"
+            onClick={() => onReadArticle(video)}
+            className="px-3.5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-xl transition-all text-xs font-semibold border border-white/10 flex items-center gap-1.5"
+            title="Manage Notes, Tags & Transcript"
           >
-            <Share2 className="w-5 h-5" />
+            <FileText className="w-3.5 h-3.5 text-lime-400" />
+            <span>Manage & Notes</span>
           </button>
 
           <button
-            onClick={handlePushVault}
-            disabled={pushingVault}
-            className="p-2 text-indigo-400 hover:text-white bg-indigo-500/10 hover:bg-indigo-600 rounded-xl transition-colors border border-indigo-500/20 disabled:opacity-50"
-            title="Push note to Vault Webhook"
+            onClick={handleShareCard}
+            className="p-2.5 text-blue-400 hover:text-white bg-blue-500/10 hover:bg-blue-600 rounded-xl transition-colors border border-blue-500/20"
+            title="Copy Shareable Review Link"
           >
-            <Send className="w-5 h-5" />
+            <Share2 className="w-4 h-4" />
           </button>
-
-          {scrapeResult?.transcript ? (
-            <>
-              <button
-                onClick={() => onReadArticle(video)}
-                className="p-2 text-lime-400 hover:text-zinc-950 bg-lime-400/10 hover:bg-lime-400 rounded-xl transition-colors flex items-center gap-1.5 px-3 text-xs font-medium border border-lime-400/20"
-                title="Read Article & AI Action Plan"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Insights
-              </button>
-
-              <div className="relative">
-                <button
-                  onClick={() => setShowExport(!showExport)}
-                  className="p-2 text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-colors"
-                  title="Export Transcript"
-                >
-                  <Download className="w-5 h-5" />
-                </button>
-                {showExport && (
-                  <div className="absolute bottom-full right-0 mb-2 w-40 bg-zinc-800 border border-white/10 rounded-xl shadow-xl overflow-hidden z-20">
-                    <button onClick={() => { onExport(video, 'markdown'); setShowExport(false); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-700 flex items-center gap-2"><FileText className="w-4 h-4" /> Markdown</button>
-                    <button onClick={() => { onExport(video, 'csv'); setShowExport(false); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-700 flex items-center gap-2"><FileSpreadsheet className="w-4 h-4" /> CSV</button>
-                  </div>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="px-2 py-2 text-[10px] uppercase tracking-wider font-semibold text-zinc-500 bg-zinc-800/50 rounded-xl flex items-center text-center leading-none">
-              No<br/>Transcript
-            </div>
-          )}
 
           <button
             onClick={onRemove}
-            className="p-2 text-red-400 hover:text-white hover:bg-red-500/20 bg-zinc-800 rounded-xl transition-colors"
-            title="Delete"
+            className="p-2.5 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 bg-zinc-800/80 rounded-xl transition-colors border border-white/5"
+            title="Delete from Queue"
           >
-            <Trash2 className="w-5 h-5" />
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </div>
