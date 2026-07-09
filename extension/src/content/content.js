@@ -1075,6 +1075,21 @@ function initScrollTimer() {
   let lastStorageSync = Date.now();
   let tabId = null;
   let currentUrl = location.href;
+  let timerPaused = false;
+  let tickInterval = null;
+  let urlInterval = null;
+
+  function getActiveVideo() {
+    const h = window.innerHeight;
+    const videos = Array.from(document.querySelectorAll('video'));
+    for (const v of videos) {
+      const rect = v.getBoundingClientRect();
+      if (rect.top <= h / 2 && rect.bottom >= h / 2) {
+        return v;
+      }
+    }
+    return null;
+  }
 
   // 1. Inject the Widget
   const widget = document.createElement('div');
@@ -1126,6 +1141,7 @@ function initScrollTimer() {
   const timeContainer = document.getElementById('dq-st-time');
   const countEl = document.getElementById('dq-st-count');
   const spmEl = document.getElementById('dq-st-spm');
+  const dotEl = timeContainer.firstElementChild;
 
   function updateDOM() {
     timeEl.textContent = formatScrollTime(accumulatedTime);
@@ -1135,16 +1151,25 @@ function initScrollTimer() {
     const spm = minutes > 0 ? (scrollCount / minutes).toFixed(1) : '0.0';
     spmEl.textContent = `${spm} / min`;
 
-    // Dynamic coloring based on time (Green < 10m, Amber < 20m, Red > 20m)
-    if (accumulatedTime > 20 * 60 * 1000) {
-      timeContainer.style.color = '#f87171'; // Red
-      widget.style.borderColor = 'rgba(248, 113, 113, 0.3)';
-    } else if (accumulatedTime > 10 * 60 * 1000) {
-      timeContainer.style.color = '#fbbf24'; // Amber
-      widget.style.borderColor = 'rgba(251, 191, 36, 0.3)';
-    } else {
-      timeContainer.style.color = '#a3e635'; // Lime
+    if (timerPaused) {
+      dotEl.style.animation = 'none';
+      dotEl.style.background = '#71717a';
+      timeContainer.style.color = '#71717a';
       widget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+    } else {
+      dotEl.style.animation = 'dq-pulse 2s infinite';
+      dotEl.style.background = 'currentColor';
+      // Dynamic coloring based on time (Green < 10m, Amber < 20m, Red > 20m)
+      if (accumulatedTime > 20 * 60 * 1000) {
+        timeContainer.style.color = '#f87171'; // Red
+        widget.style.borderColor = 'rgba(248, 113, 113, 0.3)';
+      } else if (accumulatedTime > 10 * 60 * 1000) {
+        timeContainer.style.color = '#fbbf24'; // Amber
+        widget.style.borderColor = 'rgba(251, 191, 36, 0.3)';
+      } else {
+        timeContainer.style.color = '#a3e635'; // Lime
+        widget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+      }
     }
   }
 
@@ -1152,6 +1177,10 @@ function initScrollTimer() {
   function tickTime() {
     if (document.visibilityState !== 'visible') {
       lastUpdate = Date.now();
+      if (!timerPaused) {
+        timerPaused = true;
+        updateDOM();
+      }
       return;
     }
     if (!isScrollTimerPage()) {
@@ -1161,9 +1190,15 @@ function initScrollTimer() {
       widget.style.display = 'flex';
     }
 
+    const video = getActiveVideo();
+    const isCurrentlyPaused = !video || video.paused;
     const now = Date.now();
-    accumulatedTime += (now - lastUpdate);
+
+    if (!isCurrentlyPaused) {
+      accumulatedTime += (now - lastUpdate);
+    }
     lastUpdate = now;
+    timerPaused = isCurrentlyPaused;
 
     updateDOM();
 
@@ -1193,6 +1228,8 @@ function initScrollTimer() {
 
   function urgentSave() {
     tickTime();
+    if (tickInterval) clearInterval(tickInterval);
+    if (urlInterval) clearInterval(urlInterval);
   }
 
   // Ask background for tabId + any existing session (survives page refresh)
@@ -1213,14 +1250,16 @@ function initScrollTimer() {
       lastStorageSync = Date.now();
       
       // Start intervals
-      setInterval(tickTime, 1000);
-      setInterval(checkUrlChange, 500);
+      tickInterval = setInterval(tickTime, 1000);
+      urlInterval = setInterval(checkUrlChange, 500);
       updateDOM();
     });
   } catch (e) { /* context invalidated */ }
 
   // Urgent saves on tab hide or page unload
-  document.addEventListener('visibilitychange', urgentSave);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') urgentSave();
+  });
   window.addEventListener('pagehide', urgentSave);
 }
 
