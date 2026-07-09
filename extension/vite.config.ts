@@ -7,9 +7,8 @@ import tailwindcss from '@tailwindcss/vite';
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  // Load environment variables based on mode
   const env = loadEnv(mode, process.cwd(), '');
-  
+
   return {
     plugins: [
       react(),
@@ -22,7 +21,6 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
-      // Define global constants for the extension
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL || ''),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY || ''),
       'import.meta.env.VITE_SHARE_BASE_URL': JSON.stringify(env.VITE_SHARE_BASE_URL || 'http://localhost:3000'),
@@ -33,15 +31,12 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           popup: 'index.html',
-          dashboard: 'dashboard.html'
-        }
+          dashboard: 'dashboard.html',
+        },
       },
-      // Generate source maps for debugging in production
       sourcemap: mode === 'development' ? 'inline' : false,
-      // Minify in production
       minify: mode === 'production',
     },
-    // Server configuration for development
     server: {
       port: 5173,
       strictPort: true,
