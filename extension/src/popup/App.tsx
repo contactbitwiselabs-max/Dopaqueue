@@ -171,8 +171,9 @@ export default function App() {
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button size="icon" variant="ghost" className="h-7 w-7 mr-1" onClick={() => chrome?.tabs?.create({ url: chrome.runtime.getURL('dashboard.html') })}>
+                <Button variant="ghost" size="sm" className="h-7 px-2 flex items-center gap-1.5" onClick={() => chrome?.tabs?.create({ url: chrome.runtime.getURL('dashboard.html') })}>
                   <LayoutDashboard className="w-4 h-4 text-[var(--dq-text-muted)]" />
+                  <span className="text-xs text-[var(--dq-text-muted)] font-medium">Dashboard</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Open Dashboard</TooltipContent>
@@ -318,7 +319,7 @@ export default function App() {
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: 10 }}
                       transition={{ delay: i * 0.05 }}
-                      className="flex items-center gap-2.5 p-2 rounded-xl bg-[var(--dq-surface)]/50 border border-[var(--dq-border)]/50 hover:border-zinc-700/50 transition-colors group"
+                      className="flex items-center gap-2.5 p-2 rounded-xl bg-[var(--dq-surface)]/50 border border-[var(--dq-border)]/50 hover:border-[var(--dq-lime-border)] hover:bg-[var(--dq-surface)] transition-colors group"
                     >
                       {item.thumbnail ? (
                         <img src={item.thumbnail} alt="" className="w-9 h-6 rounded object-cover shrink-0 bg-[var(--dq-surface)]" />
@@ -329,14 +330,14 @@ export default function App() {
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="text-[11px] font-medium text-[var(--dq-text-subtle)] truncate">{item.title}</p>
-                        <p className="text-[9px] text-zinc-700">{formatTimeAgo(item.savedAt)}</p>
+                        <p className="text-[9px] text-[var(--dq-text-muted)]">{formatTimeAgo(item.savedAt)}</p>
                       </div>
-                      <ExternalLinkIcon size={12} className="text-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => chrome.tabs?.create({ url: item.url })} />
+                      <ExternalLinkIcon size={12} className="text-[var(--dq-text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => chrome.tabs?.create({ url: item.url })} />
                     </motion.div>
                   ))}
                 </AnimatePresence>
                 {queue.length === 0 && (
-                  <div className="text-center py-4 text-zinc-700 text-xs">
+                  <div className="text-center py-4 text-[var(--dq-text-muted)] text-xs">
                     No videos saved yet
                   </div>
                 )}
@@ -359,9 +360,6 @@ export default function App() {
               </button>
             )}
           </div>
-          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => chrome?.tabs?.create({ url: chrome.runtime.getURL('dashboard.html') })}>
-            <LayoutDashboard className="w-3.5 h-3.5 text-[var(--dq-text-muted)]" />
-          </Button>
         </div>
       </div>
     </TooltipProvider>

@@ -13,16 +13,16 @@ const buttonVariants = cva(
         destructive:
           'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20',
         outline:
-          'border border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-white',
+          'border border-[var(--dq-border)] bg-transparent text-[var(--dq-text-subtle)] hover:bg-black/5 dark:hover:bg-white/5 hover:text-[var(--dq-text)]',
         secondary:
-          'bg-zinc-800 text-zinc-100 hover:bg-zinc-700',
+          'bg-[var(--dq-surface)] text-[var(--dq-text)] border border-[var(--dq-border)] hover:bg-black/5 dark:hover:bg-white/10',
         ghost:
-          'text-zinc-400 hover:bg-zinc-800 hover:text-white',
-        link: 'text-lime-400 underline-offset-4 hover:underline p-0 h-auto',
+          'text-[var(--dq-text-muted)] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--dq-text)]',
+        link: 'text-[var(--dq-lime)] underline-offset-4 hover:underline p-0 h-auto',
         premium:
           'bg-gradient-to-r from-lime-400 to-emerald-400 text-zinc-950 shadow-lg shadow-lime-500/25 hover:shadow-lime-500/40 hover:scale-[1.02]',
         glass:
-          'bg-white/5 border border-white/10 text-zinc-300 hover:bg-white/10 backdrop-blur-md',
+          'bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-[var(--dq-text-subtle)] hover:bg-black/10 dark:hover:bg-white/10 backdrop-blur-md',
       },
       size: {
         default: 'h-10 px-4 py-2',

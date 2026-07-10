@@ -19,7 +19,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           <input
             type={type}
             className={cn(
-              'flex h-10 w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white ring-offset-background placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-500/50 focus-visible:border-lime-500 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200',
+              'flex h-10 w-full rounded-xl border border-[var(--dq-border)] bg-[var(--dq-surface)] px-3 py-2 text-sm text-[var(--dq-text)] ring-offset-background placeholder:text-[var(--dq-text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dq-lime-border)] focus-visible:border-[var(--dq-lime)] disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200',
               leftIcon && 'pl-9',
               rightIcon && 'pr-9',
               className
@@ -40,7 +40,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       <input
         type={type}
         className={cn(
-          'flex h-10 w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white ring-offset-background placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-500/50 focus-visible:border-lime-500 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200',
+          'flex h-10 w-full rounded-xl border border-[var(--dq-border)] bg-[var(--dq-surface)] px-3 py-2 text-sm text-[var(--dq-text)] ring-offset-background placeholder:text-[var(--dq-text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dq-lime-border)] focus-visible:border-[var(--dq-lime)] disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200',
           className
         )}
         ref={ref}
