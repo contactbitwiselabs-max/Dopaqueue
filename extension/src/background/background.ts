@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 // DopaQueue background service worker.
 // Owns the daily Dopamine Budget: the only place that decrements
 // budgetMinutesUsed. Popup only reads game state and appends to the
@@ -424,12 +424,13 @@ async function fetchBase64Image(url) {
     const arrayBuffer = await res.arrayBuffer();
     const contentType = res.headers.get('content-type') || 'image/jpeg';
     const bytes = new Uint8Array(arrayBuffer);
-    if (bytes.byteLength > 2500000) return null;
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    if (bytes.byteLength > 5000000) return null;
+    const chunkSize = 0x8000;
+    const chunks = [];
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize)));
     }
-    const base64 = btoa(binary);
+    const base64 = btoa(chunks.join(''));
     return `data:${contentType};base64,${base64}`;
   } catch (err) {
     console.error('DopaQueue background: fetchBase64Image error', err);

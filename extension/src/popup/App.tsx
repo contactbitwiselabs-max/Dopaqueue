@@ -11,7 +11,7 @@ import {
 } from '../shared/storage.js';
 import {
   isChannelUrl, extractChannelId, extractYouTubeVideoId,
-  STORAGE_KEYS, getPlantStatus, PLANT_THRESHOLDS
+  STORAGE_KEYS, getPlantStatus, PLANT_THRESHOLDS, resolveThumbnailUrl
 } from '../shared/constants.js';
 import { validateUrl, validateQueueItem } from '../shared/validation.js';
 import { supabaseClient } from '../shared/supabase.js';
@@ -258,9 +258,9 @@ export default function App() {
           {/* Current page preview */}
           <ScaleIn>
             <div className="glass-card overflow-hidden">
-              {currentThumbnail && (
+              {resolveThumbnailUrl(currentUrl, currentThumbnail) && (
                 <div className="relative h-28 overflow-hidden">
-                  <img src={currentThumbnail} alt={currentTitle} className="w-full h-full object-cover" />
+                  <img src={resolveThumbnailUrl(currentUrl, currentThumbnail)!} alt={currentTitle} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/90 via-transparent to-transparent" />
                   <div className="absolute bottom-2 left-2">
                     <Badge variant={contentType as any} className="text-[10px]">{CONTENT_TYPE_LABEL[contentType]}</Badge>
@@ -405,8 +405,8 @@ export default function App() {
                       transition={{ delay: i * 0.05 }}
                       className="flex items-center gap-2.5 p-2 rounded-xl bg-[var(--dq-surface)]/50 border border-[var(--dq-border)]/50 hover:border-[var(--dq-lime-border)] hover:bg-[var(--dq-surface)] transition-colors group"
                     >
-                      {item.thumbnail ? (
-                        <img src={item.thumbnail} alt="" className="w-9 h-6 rounded object-cover shrink-0 bg-[var(--dq-surface)]" />
+                      {resolveThumbnailUrl(item.url, item.thumbnail) ? (
+                        <img src={resolveThumbnailUrl(item.url, item.thumbnail)!} alt="" referrerPolicy="no-referrer" className="w-9 h-6 rounded object-cover shrink-0 bg-[var(--dq-surface)]" />
                       ) : (
                         <div className="w-9 h-6 rounded bg-[var(--dq-surface)] shrink-0 flex items-center justify-center text-[var(--dq-text-muted)] text-[8px]">
                           {detectContentType(item.url).slice(0, 1).toUpperCase()}

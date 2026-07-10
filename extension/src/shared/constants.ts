@@ -124,12 +124,26 @@ export function extractYouTubeVideoId(url: string | null | undefined): string | 
     if (u.pathname === '/watch') {
       return u.searchParams.get('v');
     }
-    const shortsMatch = u.pathname.match(/^\/shorts\/([^/?]+)/);
-    if (shortsMatch) return shortsMatch[1];
+    const shortsOrEmbed = u.pathname.match(/^\/(shorts|embed|v)\/([^/?]+)/);
+    if (shortsOrEmbed) return shortsOrEmbed[2];
     return null;
   } catch {
     return null;
   }
+}
+
+export function resolveThumbnailUrl(url: string | null | undefined, existingThumbnail?: string | null): string | null {
+  if (existingThumbnail && existingThumbnail.startsWith('data:')) {
+    return existingThumbnail;
+  }
+  const videoId = extractYouTubeVideoId(url);
+  if (videoId) {
+    return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+  }
+  if (existingThumbnail && (existingThumbnail.startsWith('http://') || existingThumbnail.startsWith('https://'))) {
+    return existingThumbnail;
+  }
+  return null;
 }
 
 export function todayLocalDateString(): string {

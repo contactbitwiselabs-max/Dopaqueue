@@ -21,7 +21,7 @@ import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFi
 import { generateActionChecklist, autoTagItem } from '../shared/ai.js';
 import { generateSharePayload, encodeShareLink } from '../shared/share.js';
 import { getMyCircle, createCircle, joinCircleByCode, getWeeklyMirrorReport } from '../shared/circles.js';
-import { SHARE_BASE_URL } from '../shared/constants.js';
+import { SHARE_BASE_URL, resolveThumbnailUrl } from '../shared/constants.js';
 
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -260,6 +260,33 @@ function PomodoroBar() {
   );
 }
 
+// ─── Smart Thumbnail ────────────────────────────────────────────────
+function SmartThumbnail({ video, typeCfg }: { video: QueueItem; typeCfg: any }) {
+  const [imgError, setImgError] = useState(false);
+  const resolvedUrl = resolveThumbnailUrl(video.url, video.thumbnail);
+
+  if (!resolvedUrl || imgError) {
+    return (
+      <div className="w-full h-full flex items-center justify-center text-[var(--dq-text-subtle)]">
+        <typeCfg.icon className="w-8 h-8" />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <img
+        src={resolvedUrl}
+        alt={video.title}
+        referrerPolicy="no-referrer"
+        onError={() => setImgError(true)}
+        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+    </>
+  );
+}
+
 // ─── Video Card ───────────────────────────────────────────────────
 interface VideoCardProps {
   video: QueueItem;
@@ -296,34 +323,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
     <HoverCard className="glass-card group flex flex-col h-full border border-[var(--dq-border)] hover:border-lime-500/20 transition-colors duration-300">
       {/* Thumbnail */}
       <div className="relative h-36 bg-[var(--dq-surface)] rounded-t-2xl overflow-hidden">
-        {video.thumbnail ? (
-          <>
-            <img
-              src={video.thumbnail}
-              alt={video.title}
-              referrerPolicy="no-referrer"
-              onError={(e) => {
-                const target = e.currentTarget;
-                if (video.url && video.url.includes('youtube.com') && !target.dataset.retried) {
-                  const m = video.url.match(/([?&]v=|\/shorts\/|\/embed\/|youtu\.be\/)([A-Za-z0-9_-]{11})/);
-                  const vid = m ? m[2] : null;
-                  if (vid) {
-                    target.dataset.retried = '1';
-                    target.src = `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`;
-                    return;
-                  }
-                }
-                target.style.display = 'none';
-              }}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-          </>
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-[var(--dq-text-subtle)]">
-            <typeCfg.icon className="w-8 h-8" />
-          </div>
-        )}
+        <SmartThumbnail video={video} typeCfg={typeCfg} />
         <div className="absolute bottom-2 left-2">
           <Badge variant={typeCfg.variant}>{typeCfg.label}</Badge>
         </div>
