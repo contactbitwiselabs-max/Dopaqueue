@@ -519,6 +519,7 @@ export default function App() {
   const [videos, setVideos] = useState<QueueItem[]>([]);
   const [channels, setChannels] = useState<any[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null);
   const [user, setUser] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [showAuth, setShowAuth] = useState(() => {
@@ -568,6 +569,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(['dq_terms_accepted'], (res) => {
+        setTermsAccepted(Boolean(res?.dq_terms_accepted));
+      });
+    } else {
+      setTermsAccepted(true);
+    }
     initStorage().then(() => { refreshData(); setAuthChecked(true); });
     const unsubQueue = subscribe('dq_queue', refreshData);
     supabaseClient.auth.getSession().then(({ data: { session } }) => {
@@ -668,6 +676,51 @@ export default function App() {
     return (
       <div className="flex h-screen items-center justify-center bg-[var(--dq-bg)]">
         <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-8 h-8 rounded-full border-2 border-lime-400 border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (termsAccepted === false) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[var(--dq-bg)] p-6 text-[var(--dq-text)] overflow-hidden">
+        <div className="max-w-xl w-full bg-[var(--dq-surface)] border border-[var(--dq-border)] rounded-2xl p-8 shadow-2xl backdrop-blur-2xl flex flex-col gap-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-lime-500/20 flex items-center justify-center text-lime-400 shrink-0">
+              <Leaf className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold">Welcome to DopaQueue</h1>
+              <p className="text-xs text-[var(--dq-text-muted)]">Terms & Conditions, Privacy Policy & Data Consent</p>
+            </div>
+          </div>
+
+          <div className="bg-black/20 rounded-xl p-4 text-xs text-[var(--dq-text-muted)] space-y-3 max-h-64 overflow-y-auto border border-[var(--dq-border)]">
+            <p className="font-semibold text-[var(--dq-text)]">1. Consent to Content & Metadata Analysis</p>
+            <p>By using DopaQueue, you explicitly consent to allowing the extension to inspect active tab metadata (page URLs, titles, timestamps, and estimated consumption durations) on supported media platforms solely for dopamine budgeting, media categorization, and watch analytics.</p>
+
+            <p className="font-semibold text-[var(--dq-text)]">2. Local-First & Zero Data Selling</p>
+            <p>Your queue and watch data stay locally on your device unless you actively enable Google Cloud Sync. We never sell, share, or broker your personal data or browsing history to advertisers.</p>
+
+            <p className="font-semibold text-[var(--dq-text)]">3. Limitation of Liability ("AS IS")</p>
+            <p>DopaQueue is provided "AS IS" without warranties of any kind. You agree that the developer and publisher shall not be held liable for any direct or indirect damages, cloud sync interruptions, or data security incidents related to third-party infrastructure (e.g. Supabase, Google OAuth).</p>
+          </div>
+
+          <Button
+            variant="premium"
+            className="w-full py-6 font-bold text-sm"
+            onClick={() => {
+              if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                chrome.storage.local.set({ dq_terms_accepted: true }, () => {
+                  setTermsAccepted(true);
+                });
+              } else {
+                setTermsAccepted(true);
+              }
+            }}
+          >
+            I Agree to Terms & Privacy Policy — Continue
+          </Button>
+        </div>
       </div>
     );
   }

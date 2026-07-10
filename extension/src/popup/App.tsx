@@ -65,6 +65,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [tagInput, setTagInput] = useState('');
   const [pendingTags, setPendingTags] = useState<string[]>([]);
+  const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null);
   const [contentType, setContentType] = useState<ContentType>('video');
 
   useEffect(() => {
@@ -74,6 +75,14 @@ export default function App() {
       const gs = getGameState();
       setGameState(gs);
       setBudgetInput(gs?.budgetMinutesTotal?.toString() || '60');
+
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.get(['dq_terms_accepted'], (res) => {
+          setTermsAccepted(Boolean(res?.dq_terms_accepted));
+        });
+      } else {
+        setTermsAccepted(true);
+      }
 
       const { data: { session } } = await supabaseClient.auth.getSession();
       setUser(session?.user || null);
@@ -159,6 +168,42 @@ export default function App() {
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-10 w-full" />
         <Skeleton className="h-10 w-full" />
+      </div>
+    );
+  }
+
+  if (termsAccepted === false) {
+    return (
+      <div className="w-[380px] min-h-[480px] bg-[var(--dq-bg)] text-[var(--dq-text)] p-6 flex flex-col justify-between font-sans">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <Leaf className="w-6 h-6 text-lime-400" />
+            <span className="font-bold text-base">DopaQueue Consent</span>
+          </div>
+          <p className="text-xs text-[var(--dq-text-muted)] leading-relaxed">
+            By continuing, you explicitly agree to our Terms & Privacy Policy and consent to local metadata analysis of active tabs for media categorization and dopamine budgeting.
+          </p>
+          <div className="bg-black/20 p-3 rounded-lg border border-[var(--dq-border)] text-[11px] text-[var(--dq-text-muted)] space-y-1.5">
+            <p>• Data stays local or encrypted in your private cloud.</p>
+            <p>• Zero data selling or third-party ads.</p>
+            <p>• Provided "AS IS" without liability for external service issues.</p>
+          </div>
+        </div>
+        <Button
+          variant="premium"
+          className="w-full font-bold text-xs py-5"
+          onClick={() => {
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+              chrome.storage.local.set({ dq_terms_accepted: true }, () => {
+                setTermsAccepted(true);
+              });
+            } else {
+              setTermsAccepted(true);
+            }
+          }}
+        >
+          I Agree & Continue
+        </Button>
       </div>
     );
   }
