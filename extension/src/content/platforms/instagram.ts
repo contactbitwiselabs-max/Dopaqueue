@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { getActiveContainer, getPermanentThumbnail } from '../utils.js';
 
 export async function universalScrapeAll(targetUrl, containerEl = null) {
@@ -85,12 +85,15 @@ export async function universalScrapeAll(targetUrl, containerEl = null) {
     else authorUrl = location.origin;
   }
 
+  let authorImage = container.querySelector<HTMLImageElement>('header img, a[role="link"] img, img[data-testid="user-avatar"]')?.src || document.querySelector<HTMLImageElement>('header img, img[alt*="profile picture"]')?.src || null;
+
   return {
     url,
     title,
     thumbnail,
     author,
     authorUrl,
+    authorImage,
     genre: contentType,
     channel: author,
     contentType,
@@ -182,8 +185,10 @@ export function scrapeMetadataOnly() {
     else authorUrl = location.origin;
   }
 
+  let authorImage = container.querySelector<HTMLImageElement>('header img, a[role="link"] img, img[data-testid="user-avatar"]')?.src || document.querySelector<HTMLImageElement>('header img, img[alt*="profile picture"]')?.src || null;
+
   return {
-    url, title, thumbnail: rawImgUrl, author, authorUrl,
+    url, title, thumbnail: rawImgUrl, author, authorUrl, authorImage,
     genre: contentType, channel: author, contentType, platform, transcript: null
   };
 }

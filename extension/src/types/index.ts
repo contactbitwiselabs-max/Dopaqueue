@@ -54,6 +54,8 @@ export interface ScrapeData {
   channel?: string;
   author?: string;
   authorUrl?: string;
+  authorImage?: string;
+  platform?: string;
   thumbnail?: string;
   title?: string;
   scrapedAt?: number;

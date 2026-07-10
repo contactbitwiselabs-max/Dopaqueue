@@ -123,7 +123,10 @@ export function computeVulnerabilityHeatmap(sessions: ScrollSession[]) {
 export function computePlatformSplit(sessions: ScrollSession[]) {
   const platforms: Record<string, any> = {};
   sessions.forEach(s => {
-    const p = s.pageType || 'unknown';
+    // Default legacy unknown sessions to 'shorts' since YouTube was the original supported platform
+    const rawP = s.pageType || 'shorts';
+    const p = (rawP === 'youtube' || rawP === 'unknown') ? 'shorts' : rawP;
+    
     if (!platforms[p]) platforms[p] = { platform: p, totalMinutes: 0, totalScrolls: 0, sessionCount: 0 };
     platforms[p].totalMinutes += (s.duration || 0) / 60000;
     platforms[p].totalScrolls += (s.scrollCount || 1);
@@ -135,7 +138,7 @@ export function computePlatformSplit(sessions: ScrollSession[]) {
     totalMinutes: +p.totalMinutes.toFixed(1),
     avgSessionMinutes: p.sessionCount > 0 ? +(p.totalMinutes / p.sessionCount).toFixed(1) : 0,
     label: p.platform === 'shorts' ? 'YouTube Shorts' : p.platform === 'reels' ? 'Instagram Reels' : 'Other',
-    color: p.platform === 'shorts' ? '#f87171' : '#e879f9',
+    color: p.platform === 'shorts' ? '#f87171' : p.platform === 'reels' ? '#e879f9' : '#9ca3af',
   }));
 }
 
@@ -222,9 +225,9 @@ export function computeFlowBreakerStats(flowBreakerLog: any[]) {
     breakdown[r] = (breakdown[r] || 0) + 1;
   });
 
-  const totalShown = flowBreakerLog.length;
   const divertedCount = (breakdown['library_opened'] || 0) + (breakdown['saved_and_left'] || 0);
   const unblockedCount = breakdown['unblocked'] || 0;
+  const totalShown = divertedCount + unblockedCount || flowBreakerLog.length;
   const divertedRate = totalShown > 0 ? +((divertedCount / totalShown) * 100).toFixed(0) : 0;
 
   return { totalShown, divertedCount, divertedRate, unblockedCount, breakdown };
@@ -256,30 +259,44 @@ export function computeStreakTracker(sessions: ScrollSession[], dailyBudget: num
 
   // Current streak: count consecutive days backwards from today that are "clean"
   let currentStreak = 0;
-  const d = new Date(today);
-  while (true) {
-    const ds = d.toISOString().split('T')[0];
-    const scrolledMs = dailyScrollTime.get(ds) || 0;
-    if (scrolledMs > maxAllowedMs) break; // Streak broken!
-    currentStreak++;
-    d.setDate(d.getDate() - 1);
-    if (currentStreak > 365) break; // safety cap
-  }
-
-  // Longest streak: scan the entire date range
   let longestStreak = 0;
-  let tempStreak = 0;
+
   if (sessions.length > 0) {
     const allDates = sessions.map(s => s.date || new Date(s.startTime).toISOString().split('T')[0]);
     const minDate = new Date(Math.min(...allDates.map(dateStr => new Date(dateStr).getTime())));
+    minDate.setHours(0, 0, 0, 0);
+
+    const d = new Date(today);
+    while (d >= minDate) {
+      const ds = d.toISOString().split('T')[0];
+      const scrolledMs = dailyScrollTime.get(ds) || 0;
+      
+      if (scrolledMs > maxAllowedMs) {
+        break; // Streak broken!
+      }
+      
+      // Only count today towards the streak if they actually scrolled and stayed under budget.
+      // For past days, 0 minutes is considered a successful clean day.
+      if (ds !== today.toISOString().split('T')[0] || dailyScrollTime.has(ds)) {
+        currentStreak++;
+      }
+      
+      d.setDate(d.getDate() - 1);
+      if (currentStreak > 365) break; // safety cap
+    }
+
+    // Longest streak: scan the entire date range
+    let tempStreak = 0;
     const maxDate = new Date(today);
     const iter = new Date(minDate);
     while (iter <= maxDate) {
       const ds = iter.toISOString().split('T')[0];
       const scrolledMs = dailyScrollTime.get(ds) || 0;
       if (scrolledMs <= maxAllowedMs) {
-        tempStreak++;
-        longestStreak = Math.max(longestStreak, tempStreak);
+        if (ds !== today.toISOString().split('T')[0] || dailyScrollTime.has(ds)) {
+          tempStreak++;
+          longestStreak = Math.max(longestStreak, tempStreak);
+        }
       } else {
         tempStreak = 0;
       }
@@ -349,6 +366,14 @@ export function filterSessionsByRange(sessions: ScrollSession[], range: string) 
  * Build chart data grouped by appropriate interval for the selected range.
  * Returns: [{ displayDate, minutes, scrolls }]
  */
+// Local date string helper (YYYY-MM-DD in local timezone)
+function localDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export function buildChartData(sessions: ScrollSession[], range: string) {
   const now = new Date();
 
@@ -374,15 +399,17 @@ export function buildChartData(sessions: ScrollSession[], range: string) {
   }
 
   if (range === 'day') {
-    // Group by hour (24 buckets)
+    // Group by hour (24 buckets) for today
     const buckets: any[] = [];
     const dayStart = new Date(now);
     dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(now);
+    dayEnd.setHours(23, 59, 59, 999);
     for (let h = 0; h < 24; h++) {
       const label = `${h === 0 ? '12' : h > 12 ? h - 12 : h}${h < 12 ? 'am' : 'pm'}`;
       const matching = sessions.filter(s => {
         const d = new Date(s.startTime);
-        return d >= dayStart && d.getHours() === h;
+        return d >= dayStart && d <= dayEnd && d.getHours() === h;
       });
       buckets.push({
         displayDate: label,
@@ -396,14 +423,16 @@ export function buildChartData(sessions: ScrollSession[], range: string) {
   if (range === 'yesterday') {
     // Group by hour (24 buckets) for yesterday
     const buckets: any[] = [];
-    const dayStart = new Date(now);
-    dayStart.setDate(dayStart.getDate() - 1);
-    dayStart.setHours(0, 0, 0, 0);
+    const yStart = new Date(now);
+    yStart.setDate(yStart.getDate() - 1);
+    yStart.setHours(0, 0, 0, 0);
+    const yEnd = new Date(yStart);
+    yEnd.setHours(23, 59, 59, 999);
     for (let h = 0; h < 24; h++) {
       const label = `${h === 0 ? '12' : h > 12 ? h - 12 : h}${h < 12 ? 'am' : 'pm'}`;
       const matching = sessions.filter(s => {
         const d = new Date(s.startTime);
-        return d >= dayStart && d.getHours() === h;
+        return d >= yStart && d <= yEnd && d.getHours() === h;
       });
       buckets.push({
         displayDate: label,
@@ -415,7 +444,7 @@ export function buildChartData(sessions: ScrollSession[], range: string) {
   }
 
   if (range === 'week') {
-    // Group by day (7 buckets)
+    // Group by day (7 buckets) — use local date strings to avoid UTC shift
     const buckets: any[] = [];
     const weekStart = new Date(now);
     weekStart.setDate(weekStart.getDate() - 6);
@@ -423,9 +452,12 @@ export function buildChartData(sessions: ScrollSession[], range: string) {
     for (let i = 0; i < 7; i++) {
       const day = new Date(weekStart);
       day.setDate(day.getDate() + i);
-      const ds = day.toISOString().split('T')[0];
+      const ds = localDateStr(day);
       const label = day.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' });
-      const matching = sessions.filter(s => (s.date || new Date(s.startTime).toISOString().split('T')[0]) === ds);
+      const matching = sessions.filter(s => {
+        const sd = s.date || localDateStr(new Date(s.startTime));
+        return sd === ds;
+      });
       buckets.push({
         displayDate: label,
         minutes: +matching.reduce((sum, s) => sum + (s.duration || 0) / 60000, 0).toFixed(1),
@@ -444,9 +476,12 @@ export function buildChartData(sessions: ScrollSession[], range: string) {
     for (let i = 0; i < 30; i++) {
       const day = new Date(monthStart);
       day.setDate(day.getDate() + i);
-      const ds = day.toISOString().split('T')[0];
+      const ds = localDateStr(day);
       const label = day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      const matching = sessions.filter(s => (s.date || new Date(s.startTime).toISOString().split('T')[0]) === ds);
+      const matching = sessions.filter(s => {
+        const sd = s.date || localDateStr(new Date(s.startTime));
+        return sd === ds;
+      });
       buckets.push({
         displayDate: label,
         minutes: +matching.reduce((sum, s) => sum + (s.duration || 0) / 60000, 0).toFixed(1),

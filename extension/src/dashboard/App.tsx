@@ -511,7 +511,7 @@ function ArticleModal({ video, onClose }: { video: QueueItem; onClose: () => voi
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('videos');
   const [videos, setVideos] = useState<QueueItem[]>([]);
-  const [channels, setChannels] = useState<Channel[]>([]);
+  const [channels, setChannels] = useState<any[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -520,12 +520,43 @@ export default function App() {
   const [filterType, setFilterType] = useState<ContentType | 'all'>('all');
   const [filterUrgency, setFilterUrgency] = useState<UrgencyLevel | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [readingVideo, setReadingVideo] = useState<QueueItem | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const refreshData = useCallback(() => {
-    setVideos(getSavedVideos());
-    setChannels(getSavedChannels());
+    const savedVideos = getSavedVideos();
+    setVideos(savedVideos);
+
+    // Derive unique channels from saved videos via scrape cache
+    const channelMap = new Map<string, { name: string; url: string; videoCount: number; savedAt: number; authorImage: string | null; platform: string | null }>();
+    savedVideos.forEach(v => {
+      const scrape = getScrapeResult(v.url) || {} as any;
+      const name = scrape.channel || v.channel || v.channelName || v.author || null;
+      const authorUrl = scrape.authorUrl || v.authorUrl || '';
+      const authorImage = scrape.authorImage || null;
+      const platform = scrape.platform || v.platform || detectContentType(v.url) || null;
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (channelMap.has(key)) {
+        const existing = channelMap.get(key)!;
+        existing.videoCount++;
+        if ((v.savedAt as number) > existing.savedAt) existing.savedAt = v.savedAt as number;
+        if (!existing.authorImage && authorImage) existing.authorImage = authorImage;
+      } else {
+        channelMap.set(key, { name, url: authorUrl, videoCount: 1, savedAt: v.savedAt as number, authorImage, platform });
+      }
+    });
+    const derivedChannels: Channel[] = Array.from(channelMap.entries()).map(([key, val]) => ({
+      id: key,
+      name: val.name,
+      url: val.url,
+      savedAt: val.savedAt,
+      videoCount: val.videoCount,
+      authorImage: val.authorImage,
+      platform: val.platform
+    } as any));
+    setChannels(derivedChannels.sort((a: any, b: any) => b.videoCount - a.videoCount));
   }, []);
 
   useEffect(() => {
@@ -593,8 +624,33 @@ export default function App() {
     if (filterUrgency !== 'all' && (v.urgency || 'Unscheduled') !== filterUrgency) return false;
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
+    const queryTerms = q.split(/\s+/).filter(Boolean);
     const scrape = getScrapeResult(v.url) || {} as any;
-    return (v.title || '').toLowerCase().includes(q) || (v.tags || []).some(t => t.toLowerCase().includes(q)) || (scrape.transcript || '').toLowerCase().includes(q) || (scrape.channel || '').toLowerCase().includes(q);
+    
+    return queryTerms.every(term => {
+      if (term.startsWith('#') && term.length > 1) {
+        const tagQuery = term.slice(1);
+        return (v.tags || []).some(t => t.toLowerCase().includes(tagQuery));
+      }
+
+      const searchTarget = [
+        v.title,
+        ...(v.tags || []),
+        scrape.transcript,
+        scrape.channel,
+        v.channel,
+        v.channelName,
+        v.author,
+        v.note,
+        v.notes
+      ].filter(Boolean).join(' ').toLowerCase();
+      
+      return searchTarget.includes(term);
+    });
+  }).sort((a, b) => {
+    const ta = typeof a.savedAt === 'string' ? new Date(a.savedAt).getTime() : (a.savedAt || 0);
+    const tb = typeof b.savedAt === 'string' ? new Date(b.savedAt).getTime() : (b.savedAt || 0);
+    return sortOrder === 'newest' ? tb - ta : ta - tb;
   });
 
   const typeCounts = videos.reduce((acc, v) => { const t = detectContentType(v.url); acc[t] = (acc[t] || 0) + 1; return acc; }, {} as Record<string, number>);
@@ -705,7 +761,17 @@ export default function App() {
                           )}
                         </AnimatePresence>
                       </div>
-                      <Badge variant="secondary" className="shrink-0">{filteredVideos.length} items</Badge>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setSortOrder(s => s === 'newest' ? 'oldest' : 'newest')}
+                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[var(--dq-border)] text-[var(--dq-text-muted)] hover:text-[var(--dq-text)] hover:border-[var(--dq-text-muted)] transition-colors"
+                          title="Toggle sort order"
+                        >
+                          <ChevronDown className={`w-3 h-3 transition-transform ${sortOrder === 'oldest' ? 'rotate-180' : ''}`} />
+                          {sortOrder === 'newest' ? 'Newest first' : 'Oldest first'}
+                        </button>
+                        <Badge variant="secondary" className="shrink-0">{filteredVideos.length} items</Badge>
+                      </div>
                     </div>
                   </div>
 
@@ -730,8 +796,8 @@ export default function App() {
                       <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}>
                         <PlayCircle className="w-12 h-12 mx-auto mb-4 opacity-40" />
                       </motion.div>
-                      <p className="font-medium">{videos.length === 0 ? 'No videos saved yet.' : 'No items match your filters.'}</p>
-                      <p className="text-sm mt-1 text-[var(--dq-text-subtle)]">{videos.length === 0 ? 'Save a video using the extension!' : 'Try adjusting your search or filters.'}</p>
+                      <p className="font-medium">No videos found.</p>
+                      <p className="text-sm mt-1 text-[var(--dq-text-subtle)]">Save a video using the extension to get started.</p>
                     </FadeIn>
                   ) : (
                     <StaggerList className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -752,33 +818,55 @@ export default function App() {
                 </div>
               )}
 
-              {/* â”€â”€â”€ Channels Tab â”€â”€â”€ */}
+              {/* ─── Channels Tab ─── */}
               {activeTab === 'channels' && (
                 <div>
                   <SlideUp><h2 className="text-3xl font-bold mb-6">Saved Channels</h2></SlideUp>
                   {channels.length === 0 ? (
                     <FadeIn className="text-center py-24 text-[var(--dq-text-muted)] border border-dashed border-[var(--dq-border)] rounded-2xl">
                       <Hash className="w-12 h-12 mx-auto mb-4 opacity-40" />
-                      <p className="font-medium">No channels saved yet.</p>
-                      <p className="text-sm mt-1 text-[var(--dq-text-subtle)]">Save a channel from YouTube.</p>
+                      <p className="font-medium">No channels detected yet.</p>
+                      <p className="text-sm mt-1 text-[var(--dq-text-subtle)]">Save some videos — channels will appear here automatically.</p>
                     </FadeIn>
                   ) : (
                     <StaggerList className="grid gap-3">
                       {channels.map(ch => (
                         <StaggerItem key={ch.id}>
-                          <HoverCard className="glass-card p-4 flex items-center justify-between">
+                          <HoverCard className="glass-card p-4 flex items-center justify-between group">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-[var(--dq-surface)] flex items-center justify-center text-lime-400 font-bold">
-                                {ch.name?.[0]?.toUpperCase() || '?'}
+                              <div className="w-11 h-11 rounded-full bg-lime-500/10 border border-lime-500/20 flex items-center justify-center text-lime-400 font-bold text-lg overflow-hidden shrink-0">
+                                {ch.authorImage ? (
+                                  <img src={ch.authorImage} alt={ch.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  ch.name?.[0]?.toUpperCase() || '?'
+                                )}
                               </div>
                               <div>
-                                <a href={ch.url} target="_blank" rel="noreferrer" className="font-semibold text-sm hover:text-lime-300 transition-colors">{ch.name}</a>
-                                <p className="text-xs text-[var(--dq-text-muted)]">{formatDateTime(ch.savedAt)}</p>
+                                {ch.url ? (
+                                  <a href={ch.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="font-semibold text-sm hover:text-lime-300 transition-colors flex items-center gap-1">
+                                    {ch.name} <ExternalLink className="w-3 h-3 opacity-60" />
+                                  </a>
+                                ) : (
+                                  <p className="font-semibold text-sm text-[var(--dq-text)]">{ch.name}</p>
+                                )}
+                                <div className="text-xs text-[var(--dq-text-muted)] mt-1 flex items-center gap-2">
+                                  <span>{ch.videoCount ?? 1} saved video{(ch.videoCount ?? 1) !== 1 ? 's' : ''}</span>
+                                  {ch.platform && (
+                                    <>
+                                      <span className="w-1 h-1 rounded-full bg-[var(--dq-border)]" />
+                                      <span className="opacity-80">{ch.platform}</span>
+                                    </>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              {ch.group && <Badge variant="secondary">{ch.group}</Badge>}
-                              <DeleteIcon size={14} className="text-[var(--dq-text-muted)]" onClick={() => handleDelete(ch.id)} />
+                            <div className="flex items-center gap-2 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => { setSearchQuery(ch.name); setActiveTab('videos'); }}
+                                className="text-xs px-3 py-1.5 rounded-lg border border-[var(--dq-border)] bg-[var(--dq-bg)] hover:bg-lime-500/10 hover:text-lime-400 transition-colors"
+                              >
+                                View Queue
+                              </button>
                             </div>
                           </HoverCard>
                         </StaggerItem>

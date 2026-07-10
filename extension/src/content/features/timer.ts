@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { formatScrollTime } from '../utils.js';
 
 function isScrollTimerPage() {
@@ -22,6 +22,8 @@ export function initScrollTimer() {
   let timerPaused = false;
   let tickInterval = null;
   let urlInterval = null;
+  let sessionStartTime = Date.now();
+  let sessionPageType = /youtube\.com\/shorts/i.test(location.href) ? 'shorts' : 'reels';
 
   function getActiveVideo() {
     const h = window.innerHeight;
@@ -148,7 +150,7 @@ export function initScrollTimer() {
       if (tabId !== null) {
         try {
           chrome.storage.local.set({
-            [`activeTimer_${tabId}`]: { accumulatedTime, scrollCount, scrollTimestamps, lastUpdate: now },
+            [`activeTimer_${tabId}`]: { accumulatedTime, scrollCount, scrollTimestamps, lastUpdate: now, pageType: sessionPageType, startTime: sessionStartTime },
           });
         } catch (e) { }
       }
@@ -189,6 +191,12 @@ export function initScrollTimer() {
         }
         if (typeof res.activeSession.scrollCount === 'number') {
           scrollCount = res.activeSession.scrollCount;
+        }
+        if (res.activeSession.startTime) {
+          sessionStartTime = res.activeSession.startTime;
+        }
+        if (res.activeSession.pageType) {
+          sessionPageType = res.activeSession.pageType;
         }
       }
       lastUpdate = Date.now();

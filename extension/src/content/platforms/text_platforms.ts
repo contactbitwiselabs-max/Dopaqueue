@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 // DopaQueue Text Platforms Scraper & Injector (X, Reddit, LinkedIn)
 
 let lastUrl = location.href;
@@ -97,12 +97,14 @@ function scrapeAndSaveX(tweetNode) {
   
   const urlPath = tweetNode.querySelector('a[href*="/status/"]')?.getAttribute('href') || location.pathname;
   const fullUrl = 'https://x.com' + urlPath;
+  const authorImage = tweetNode.querySelector<HTMLImageElement>('[data-testid="Tweet-User-Avatar"] img')?.src || null;
 
   const metadata = {
     id: 'x_' + Date.now(),
     url: fullUrl,
     title: textNode ? textNode.textContent.slice(0, 50) + '...' : 'X Post',
     channel: authorNode ? authorNode.textContent.split('@')[1] || 'Unknown' : 'Unknown',
+    authorImage,
     contentType: 'post',
     platform: 'X / Twitter',
     postTextHtml: cleanHtml
@@ -127,6 +129,7 @@ function scrapeAndSaveReddit(postNode) {
   const title = postNode.getAttribute('post-title') || 'Reddit Post';
   const url = 'https://reddit.com' + (postNode.getAttribute('permalink') || location.pathname);
   const channel = postNode.getAttribute('author') || 'Unknown';
+  const authorImage = postNode.querySelector('shreddit-async-loader shreddit-post-author')?.getAttribute('avatar-url') || null;
   
   // Try to find the rich text body
   const bodyNode = postNode.querySelector('#post-rtjson-content, [data-click-id="text_content"]');
@@ -137,6 +140,7 @@ function scrapeAndSaveReddit(postNode) {
     url: url,
     title: title,
     channel: channel,
+    authorImage,
     contentType: 'post',
     platform: 'Reddit',
     postTextHtml: cleanHtml
@@ -167,12 +171,14 @@ function scrapeAndSaveLinkedIn(postNode) {
   const cleanHtml = sanitizeHtml(rawHtml);
   
   const url = linkNode ? linkNode.href : location.href;
+  const authorImage = postNode.querySelector<HTMLImageElement>('.update-components-actor__avatar img, .ivm-image-view-model__circular-img')?.src || null;
 
   const metadata = {
     id: 'li_' + Date.now(),
     url: url,
     title: textNode ? textNode.textContent.trim().slice(0, 50) + '...' : 'LinkedIn Post',
     channel: authorNode ? authorNode.textContent.trim() : 'Unknown',
+    authorImage,
     contentType: 'post',
     platform: 'LinkedIn',
     postTextHtml: cleanHtml

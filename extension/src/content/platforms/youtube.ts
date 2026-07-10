@@ -244,6 +244,9 @@ export function scrapeYouTubeMetadataOnly() {
     authorUrl = `https://www.youtube.com/@${channel.replace(/^@/, '')}`;
   }
 
+  let authorImage = (document.querySelector('#avatar img, ytd-video-owner-renderer img, ytd-reel-channel-bar-renderer img') as HTMLImageElement)?.src || null;
+  if (authorImage && authorImage.startsWith('//')) authorImage = 'https:' + authorImage;
+
   const thumbnail = videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null;
   const genre = scrapeCategory();
 
@@ -253,6 +256,7 @@ export function scrapeYouTubeMetadataOnly() {
     thumbnail,
     author: channel,
     authorUrl,
+    authorImage,
     genre,
     channel,
     contentType: 'video',
