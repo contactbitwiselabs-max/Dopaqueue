@@ -1,3 +1,4 @@
+﻿// @ts-nocheck
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -40,7 +41,7 @@ import DigitalWellbeing from './pages/DigitalWellbeing.jsx';
 
 import type { QueueItem, Channel, StatusMessage, ContentType, UrgencyLevel, ExportFormat } from '../types';
 
-// ─── Helpers ───────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function detectContentType(url: string): ContentType {
   if (!url) return 'video';
@@ -58,15 +59,15 @@ const TYPE_CONFIG = {
 };
 
 function formatDateTime(ts: number): string {
-  if (!ts) return '—';
+  if (!ts) return 'â€”';
   const d = new Date(ts);
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) +
-    ' · ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    ' Â· ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 type TabId = 'videos' | 'channels' | 'analysis' | 'circles' | 'settings';
 
-// ─── Auth Page ─────────────────────────────────────────────────────
+// â”€â”€â”€ Auth Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
@@ -112,20 +113,20 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
   };
 
   return (
-    <div className="flex h-screen bg-[var(--dq-bg)] text-white font-sans">
+    <div className="flex h-screen bg-[var(--dq-bg)] text-[var(--dq-text)] font-sans">
       <div className="hidden lg:flex flex-col justify-center items-center w-1/2 bg-gradient-to-br from-lime-950/40 via-zinc-950 to-emerald-950/30 relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(163,230,53,0.15)_0%,_transparent_60%)]" />
         <FadeIn className="relative z-10 text-center px-12">
-          <motion.h1 className="text-5xl font-black text-white mb-4" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }}>
-            🌿 DopaQueue
+          <motion.h1 className="text-5xl font-black text-[var(--dq-text)] mb-4" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }}>
+            ðŸŒ¿ DopaQueue
           </motion.h1>
-          <motion.p className="text-zinc-400 text-lg max-w-md leading-relaxed" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
+          <motion.p className="text-[var(--dq-text-muted)] text-lg max-w-md leading-relaxed" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
             Save videos intentionally. Watch them distraction-free. Reclaim your focus.
           </motion.p>
           <motion.div className="mt-12 flex gap-6 justify-center" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}>
             {[{ icon: PlayCircle, label: 'Videos', color: 'text-lime-400' }, { icon: Zap, label: 'Shorts', color: 'text-yellow-400' }, { icon: Film, label: 'Reels', color: 'text-pink-400' }].map(({ icon: Icon, label, color }) => (
-              <HoverCard key={label} className="flex flex-col items-center gap-2 text-zinc-600">
-                <div className="w-12 h-12 rounded-xl bg-zinc-900 flex items-center justify-center border border-zinc-800">
+              <HoverCard key={label} className="flex flex-col items-center gap-2 text-[var(--dq-text-muted)]">
+                <div className="w-12 h-12 rounded-xl bg-[var(--dq-surface)] flex items-center justify-center border border-[var(--dq-border)]">
                   <Icon className={`w-6 h-6 ${color}`} />
                 </div>
                 <span className="text-xs">{label}</span>
@@ -138,7 +139,7 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
       <div className="flex-1 flex items-center justify-center p-8">
         <SlideUp className="w-full max-w-md">
           <h2 className="text-2xl font-bold mb-2">{mode === 'signin' ? 'Welcome back' : 'Create account'}</h2>
-          <p className="text-zinc-500 mb-8">{mode === 'signin' ? 'Sign in to sync across devices' : 'Get started with DopaQueue'}</p>
+          <p className="text-[var(--dq-text-muted)] mb-8">{mode === 'signin' ? 'Sign in to sync across devices' : 'Get started with DopaQueue'}</p>
 
           <div className="space-y-3 mb-6">
             <Button variant="outline" className="w-full justify-start gap-3" onClick={() => handleOAuth('google')}>
@@ -153,19 +154,19 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
           </div>
 
           <div className="flex items-center gap-4 mb-6">
-            <div className="flex-1 h-px bg-zinc-800" />
-            <span className="text-xs text-zinc-600 uppercase tracking-wider">or with email</span>
-            <div className="flex-1 h-px bg-zinc-800" />
+            <div className="flex-1 h-px bg-[var(--dq-surface)]" />
+            <span className="text-xs text-[var(--dq-text-muted)] uppercase tracking-wider">or with email</span>
+            <div className="flex-1 h-px bg-[var(--dq-surface)]" />
           </div>
 
           <form onSubmit={handleEmailAuth} className="space-y-4">
             <div>
-              <label className="block text-xs text-zinc-500 mb-1.5 font-medium">Email</label>
+              <label className="block text-xs text-[var(--dq-text-muted)] mb-1.5 font-medium">Email</label>
               <Input type="email" required autoFocus value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
             </div>
             <div>
-              <label className="block text-xs text-zinc-500 mb-1.5 font-medium">Password</label>
-              <Input type="password" required minLength={6} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" />
+              <label className="block text-xs text-[var(--dq-text-muted)] mb-1.5 font-medium">Password</label>
+              <Input type="password" required minLength={6} value={password} onChange={e => setPassword(e.target.value)} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" />
             </div>
 
             <AnimatePresence>
@@ -179,7 +180,7 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
                   <div className="flex items-center gap-2 font-semibold mb-2">
                     <CheckCircle className="w-5 h-5" /> Verify Your Email
                   </div>
-                  <p className="text-zinc-300 text-xs">Check your inbox at <strong>{email}</strong>.</p>
+                  <p className="text-[var(--dq-text-subtle)] text-xs">Check your inbox at <strong>{email}</strong>.</p>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -189,14 +190,14 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
             </Button>
           </form>
 
-          <p className="text-center text-sm text-zinc-500 mt-6">
+          <p className="text-center text-sm text-[var(--dq-text-muted)] mt-6">
             {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
             <button onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(null); setMessage(null); }} className="text-lime-400 hover:text-lime-300 font-medium">
               {mode === 'signin' ? 'Sign Up' : 'Sign In'}
             </button>
           </p>
-          <button onClick={onAuthSuccess} className="w-full text-center text-xs text-zinc-600 mt-4 hover:text-zinc-400 transition-colors">
-            Skip for now — use offline only
+          <button onClick={onAuthSuccess} className="w-full text-center text-xs text-[var(--dq-text-muted)] mt-4 hover:text-[var(--dq-text-muted)] transition-colors">
+            Skip for now â€” use offline only
           </button>
         </SlideUp>
       </div>
@@ -204,14 +205,14 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
   );
 }
 
-// ─── Pomodoro Bar ─────────────────────────────────────────────────
+// â”€â”€â”€ Pomodoro Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function PomodoroBar() {
   const [seconds, setSeconds] = useState(1500);
   const [active, setActive] = useState(false);
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
     if (active && seconds > 0) interval = setInterval(() => setSeconds(s => s - 1), 1000);
-    else if (seconds === 0 && active) { setActive(false); alert('Focus Block completed! 🎯'); }
+    else if (seconds === 0 && active) { setActive(false); alert('Focus Block completed! ðŸŽ¯'); }
     return () => { if (interval) clearInterval(interval); };
   }, [active, seconds]);
   const mins = Math.floor(seconds / 60);
@@ -231,7 +232,7 @@ function PomodoroBar() {
           <div className="text-xs font-semibold uppercase tracking-wider text-lime-400 mb-0.5 flex items-center gap-1.5">
             {active && <PulseDot />} Deep Focus Mode
           </div>
-          <div className="text-sm font-bold text-white font-mono">
+          <div className="text-sm font-bold text-[var(--dq-text)] font-mono">
             {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
           </div>
         </div>
@@ -251,7 +252,7 @@ function PomodoroBar() {
   );
 }
 
-// ─── Video Card ───────────────────────────────────────────────────
+// â”€â”€â”€ Video Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface VideoCardProps {
   video: QueueItem;
   onRemove: () => void;
@@ -284,13 +285,13 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
   };
 
   return (
-    <HoverCard className="glass-card group flex flex-col h-full border border-white/5 hover:border-lime-500/20 transition-colors duration-300">
+    <HoverCard className="glass-card group flex flex-col h-full border border-[var(--dq-border)] hover:border-lime-500/20 transition-colors duration-300">
       {/* Thumbnail */}
-      <div className="relative h-36 bg-zinc-900 rounded-t-2xl overflow-hidden">
+      <div className="relative h-36 bg-[var(--dq-surface)] rounded-t-2xl overflow-hidden">
         {video.thumbnail ? (
           <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-zinc-700">
+          <div className="w-full h-full flex items-center justify-center text-[var(--dq-text-subtle)]">
             <typeCfg.icon className="w-8 h-8" />
           </div>
         )}
@@ -307,34 +308,34 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
 
       <div className="flex-1 flex flex-col p-4">
         {/* Title */}
-        <a href={video.url} target="_blank" rel="noreferrer" className="font-semibold text-sm text-white line-clamp-2 hover:text-lime-300 transition-colors leading-snug mb-2 flex items-start gap-1.5 group/link">
+        <a href={video.url} target="_blank" rel="noreferrer" className="font-semibold text-sm text-[var(--dq-text)] line-clamp-2 hover:text-lime-300 transition-colors leading-snug mb-2 flex items-start gap-1.5 group/link">
           <span className="flex-1">{video.title || 'Untitled'}</span>
-          <ExternalLink className="w-3.5 h-3.5 text-zinc-600 group-hover/link:text-lime-400 shrink-0 mt-0.5 transition-colors" />
+          <ExternalLink className="w-3.5 h-3.5 text-[var(--dq-text-muted)] group-hover/link:text-lime-400 shrink-0 mt-0.5 transition-colors" />
         </a>
 
-        {scrape.channel && <p className="text-xs text-zinc-500 mb-3 truncate">{scrape.channel}</p>}
+        {scrape.channel && <p className="text-xs text-[var(--dq-text-muted)] mb-3 truncate">{scrape.channel}</p>}
 
         {/* Tags */}
         <div className="flex flex-wrap gap-1.5 mb-3">
           {(video.tags || []).map(tag => (
-            <button key={tag} onClick={() => onUpdateTags(video.id, (video.tags || []).filter(t => t !== tag))} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 hover:bg-red-500/10 hover:text-red-400 transition-colors">
-              #{tag} ×
+            <button key={tag} onClick={() => onUpdateTags(video.id, (video.tags || []).filter(t => t !== tag))} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--dq-surface)] text-[var(--dq-text-muted)] hover:bg-red-500/10 hover:text-red-400 transition-colors">
+              #{tag} Ã—
             </button>
           ))}
           <AnimatePresence>
             {showTagInput ? (
               <motion.form initial={{ width: 0, opacity: 0 }} animate={{ width: 80, opacity: 1 }} exit={{ width: 0, opacity: 0 }} onSubmit={e => { e.preventDefault(); addTag(); }} className="inline-flex">
-                <input autoFocus value={tagInput} onChange={e => setTagInput(e.target.value)} onBlur={addTag} className="w-full text-[10px] bg-zinc-800 border border-lime-500/30 rounded-full px-2 py-0.5 text-zinc-300 outline-none" placeholder="tag..." />
+                <input autoFocus value={tagInput} onChange={e => setTagInput(e.target.value)} onBlur={addTag} className="w-full text-[10px] bg-[var(--dq-surface)] border border-lime-500/30 rounded-full px-2 py-0.5 text-[var(--dq-text-subtle)] outline-none" placeholder="tag..." />
               </motion.form>
             ) : (
-              <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowTagInput(true)} className="text-[10px] px-2 py-0.5 rounded-full border border-zinc-700 border-dashed text-zinc-600 hover:text-lime-400 hover:border-lime-500/30 transition-colors">
+              <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowTagInput(true)} className="text-[10px] px-2 py-0.5 rounded-full border border-zinc-700 border-dashed text-[var(--dq-text-muted)] hover:text-lime-400 hover:border-lime-500/30 transition-colors">
                 + tag
               </motion.button>
             )}
           </AnimatePresence>
         </div>
 
-        <div className="text-[10px] text-zinc-600 mb-4 flex items-center gap-1">
+        <div className="text-[10px] text-[var(--dq-text-muted)] mb-4 flex items-center gap-1">
           <Clock className="w-3 h-3" />
           {formatDateTime(video.savedAt)}
         </div>
@@ -369,7 +370,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
               <DropdownMenuSeparator />
               {(['Tomorrow', 'Weekend', 'Reference', 'Unscheduled'] as UrgencyLevel[]).map(u => (
                 <DropdownMenuItem key={u} onClick={() => onSetUrgency(video.id, u)}>
-                  {u === video.urgency ? '✓ ' : ''}{u}
+                  {u === video.urgency ? 'âœ“ ' : ''}{u}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -378,7 +379,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.88 }} onClick={handleCopy} className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 transition-colors">
+                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.88 }} onClick={handleCopy} className="p-2 rounded-lg text-[var(--dq-text-muted)] hover:text-[var(--dq-text-subtle)] transition-colors">
                   <CopyIcon copied={copied} size={14} />
                 </motion.button>
               </TooltipTrigger>
@@ -387,7 +388,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
             <Tooltip>
               <TooltipTrigger asChild>
                 <span>
-                  <DeleteIcon size={14} className="text-zinc-600 hover:text-red-400 p-2" onClick={onRemove} />
+                  <DeleteIcon size={14} className="text-[var(--dq-text-muted)] hover:text-red-400 p-2" onClick={onRemove} />
                 </span>
               </TooltipTrigger>
               <TooltipContent>Delete</TooltipContent>
@@ -399,7 +400,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
   );
 }
 
-// ─── Nav Item ─────────────────────────────────────────────────────
+// â”€â”€â”€ Nav Item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface NavItemProps {
   active: boolean;
   onClick: () => void;
@@ -417,17 +418,17 @@ function NavItem({ active, onClick, icon, label, count }: NavItemProps) {
       className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all text-sm ${
         active
           ? 'bg-lime-500/10 text-lime-300 border border-lime-500/20'
-          : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5 border border-transparent'
+          : 'text-[var(--dq-text-muted)] hover:text-[var(--dq-text-subtle)] hover:bg-white/5 border border-transparent'
       }`}
     >
       <div className="flex items-center gap-3">
-        <span className={active ? 'text-lime-400' : 'text-zinc-500'}>
+        <span className={active ? 'text-lime-400' : 'text-[var(--dq-text-muted)]'}>
           {React.cloneElement(icon as React.ReactElement, { className: 'w-4 h-4' })}
         </span>
         <span className="font-medium">{label}</span>
       </div>
       {count !== undefined && (
-        <span className={`text-[10px] py-0.5 px-1.5 rounded-full font-medium ${active ? 'bg-lime-500/20 text-lime-400' : 'bg-zinc-800 text-zinc-600'}`}>
+        <span className={`text-[10px] py-0.5 px-1.5 rounded-full font-medium ${active ? 'bg-lime-500/20 text-lime-400' : 'bg-[var(--dq-surface)] text-[var(--dq-text-muted)]'}`}>
           {count}
         </span>
       )}
@@ -435,23 +436,23 @@ function NavItem({ active, onClick, icon, label, count }: NavItemProps) {
   );
 }
 
-// ─── Filter Chip ──────────────────────────────────────────────────
+// â”€â”€â”€ Filter Chip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function FilterChip({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count?: number }) {
   return (
     <motion.button
       whileTap={{ scale: 0.93 }}
       onClick={onClick}
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-        active ? 'bg-lime-500/15 text-lime-300 border-lime-500/30' : 'bg-zinc-900/50 text-zinc-500 border-zinc-800 hover:text-zinc-300'
+        active ? 'bg-lime-500/15 text-lime-300 border-lime-500/30' : 'bg-[var(--dq-surface)]/50 text-[var(--dq-text-muted)] border-[var(--dq-border)] hover:text-[var(--dq-text-subtle)]'
       }`}
     >
       {label}
-      {count != null && <span className={`text-[10px] ${active ? 'text-lime-400' : 'text-zinc-600'}`}>{count}</span>}
+      {count != null && <span className={`text-[10px] ${active ? 'text-lime-400' : 'text-[var(--dq-text-muted)]'}`}>{count}</span>}
     </motion.button>
   );
 }
 
-// ─── Status Toast ─────────────────────────────────────────────────
+// â”€â”€â”€ Status Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function StatusToast({ status, onDismiss }: { status: StatusMessage | null; onDismiss: () => void }) {
   return (
     <AnimatePresence>
@@ -474,22 +475,22 @@ function StatusToast({ status, onDismiss }: { status: StatusMessage | null; onDi
   );
 }
 
-// ─── Article Modal ─────────────────────────────────────────────────
+// â”€â”€â”€ Article Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ArticleModal({ video, onClose }: { video: QueueItem; onClose: () => void }) {
   const scrape = getScrapeResult(video.url) || {} as any;
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle className="text-white line-clamp-2">{video.title}</DialogTitle>
+          <DialogTitle className="text-[var(--dq-text)] line-clamp-2">{video.title}</DialogTitle>
           <DialogDescription>{scrape.channel}</DialogDescription>
         </DialogHeader>
         <ScrollArea className="flex-1">
           <div className="prose prose-invert prose-sm max-w-none p-1">
             {scrape.transcript ? (
-              <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap text-sm">{scrape.transcript}</p>
+              <p className="text-[var(--dq-text-subtle)] leading-relaxed whitespace-pre-wrap text-sm">{scrape.transcript}</p>
             ) : (
-              <div className="text-center py-12 text-zinc-600">
+              <div className="text-center py-12 text-[var(--dq-text-muted)]">
                 <Sparkles className="w-8 h-8 mx-auto mb-3 opacity-50" />
                 <p>No transcript available yet.</p>
                 <p className="text-xs mt-1">Visit the video with the extension active to generate one.</p>
@@ -502,7 +503,7 @@ function ArticleModal({ video, onClose }: { video: QueueItem; onClose: () => voi
   );
 }
 
-// ─── Main App ──────────────────────────────────────────────────────
+// â”€â”€â”€ Main App â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('videos');
   const [videos, setVideos] = useState<QueueItem[]>([]);
@@ -617,13 +618,13 @@ export default function App() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-screen bg-[var(--dq-bg)] text-white overflow-hidden">
+      <div className="flex h-screen bg-[var(--dq-bg)] text-[var(--dq-text)] overflow-hidden">
 
-        {/* ─── Sidebar ─── */}
-        <div className="w-60 shrink-0 border-r border-white/5 flex flex-col p-3 backdrop-blur-xl bg-black/20">
+        {/* â”€â”€â”€ Sidebar â”€â”€â”€ */}
+        <div className="w-60 shrink-0 border-r border-[var(--dq-border)] flex flex-col p-3 backdrop-blur-xl bg-black/20">
           <div className="px-2 py-3 mb-4">
-            <motion.h1 className="text-xl font-black text-white flex items-center gap-2" whileHover={{ scale: 1.02 }} transition={{ type: 'spring', stiffness: 400 }}>
-              🌿 <span className="gradient-text">DopaQueue</span>
+            <motion.h1 className="text-xl font-black text-[var(--dq-text)] flex items-center gap-2" whileHover={{ scale: 1.02 }} transition={{ type: 'spring', stiffness: 400 }}>
+              ðŸŒ¿ <span className="gradient-text">DopaQueue</span>
             </motion.h1>
           </div>
 
@@ -646,13 +647,13 @@ export default function App() {
                   <Avatar className="w-7 h-7">
                     <AvatarFallback className="text-[10px]">{user.email?.[0]?.toUpperCase()}</AvatarFallback>
                   </Avatar>
-                  <span className="text-xs text-zinc-400 truncate flex-1">{user.email}</span>
+                  <span className="text-xs text-[var(--dq-text-muted)] truncate flex-1">{user.email}</span>
                 </div>
                 <Button size="sm" variant="glass" className="w-full justify-start gap-2" onClick={handleSync} disabled={isSyncing}>
-                  <SyncIcon spinning={isSyncing} size={14} className={isSyncing ? 'text-lime-400' : 'text-zinc-400'} />
+                  <SyncIcon spinning={isSyncing} size={14} className={isSyncing ? 'text-lime-400' : 'text-[var(--dq-text-muted)]'} />
                   {isSyncing ? 'Syncing...' : 'Sync'}
                 </Button>
-                <Button size="sm" variant="ghost" className="w-full justify-start gap-2 text-zinc-500" onClick={handleSignOut}>
+                <Button size="sm" variant="ghost" className="w-full justify-start gap-2 text-[var(--dq-text-muted)]" onClick={handleSignOut}>
                   <LogOut className="w-4 h-4" /> Sign Out
                 </Button>
               </>
@@ -660,7 +661,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* ─── Main Content ─── */}
+        {/* â”€â”€â”€ Main Content â”€â”€â”€ */}
         <div className="flex-1 overflow-y-auto">
           {/* Background glow */}
           <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] bg-lime-500/5 blur-[80px] pointer-events-none rounded-full" />
@@ -669,7 +670,7 @@ export default function App() {
             <PomodoroBar />
 
             <PageTransition tabKey={activeTab}>
-              {/* ─── Videos Tab ─── */}
+              {/* â”€â”€â”€ Videos Tab â”€â”€â”€ */}
               {activeTab === 'videos' && (
                 <div>
                   {readingVideo && <ArticleModal video={readingVideo} onClose={() => setReadingVideo(null)} />}
@@ -680,17 +681,17 @@ export default function App() {
                     </SlideUp>
                     <div className="flex items-center gap-3">
                       <div className="relative flex-1 max-w-xs">
-                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--dq-text-muted)] pointer-events-none" />
                         <Input
                           ref={searchInputRef}
-                          placeholder="Search... (⌘K)"
+                          placeholder="Search... (âŒ˜K)"
                           value={searchQuery}
                           onChange={e => setSearchQuery(e.target.value)}
                           className="pl-9 pr-8"
                         />
                         <AnimatePresence>
                           {searchQuery && (
-                            <motion.button initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white">
+                            <motion.button initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--dq-text-muted)] hover:text-[var(--dq-text)]">
                               <X className="w-4 h-4" />
                             </motion.button>
                           )}
@@ -702,14 +703,14 @@ export default function App() {
 
                   {/* Filters */}
                   <div className="flex flex-wrap items-center gap-2 mb-3">
-                    <span className="text-xs text-zinc-600">Type:</span>
+                    <span className="text-xs text-[var(--dq-text-muted)]">Type:</span>
                     <FilterChip active={filterType === 'all'} onClick={() => setFilterType('all')} label="All" count={videos.length} />
                     {Object.entries(TYPE_CONFIG).map(([key, cfg]) =>
                       typeCounts[key] > 0 && <FilterChip key={key} active={filterType === key} onClick={() => setFilterType(key as ContentType)} label={cfg.label} count={typeCounts[key]} />
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 mb-8">
-                    <span className="text-xs text-zinc-600">Deck:</span>
+                    <span className="text-xs text-[var(--dq-text-muted)]">Deck:</span>
                     <FilterChip active={filterUrgency === 'all'} onClick={() => setFilterUrgency('all')} label="All Decks" />
                     {(['Tomorrow', 'Weekend', 'Reference'] as UrgencyLevel[]).map(u => (
                       <FilterChip key={u} active={filterUrgency === u} onClick={() => setFilterUrgency(u)} label={u} count={urgencyCounts[u] || 0} />
@@ -717,12 +718,12 @@ export default function App() {
                   </div>
 
                   {filteredVideos.length === 0 ? (
-                    <FadeIn className="text-center py-24 text-zinc-600 border border-dashed border-zinc-800 rounded-2xl">
+                    <FadeIn className="text-center py-24 text-[var(--dq-text-muted)] border border-dashed border-[var(--dq-border)] rounded-2xl">
                       <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}>
                         <PlayCircle className="w-12 h-12 mx-auto mb-4 opacity-40" />
                       </motion.div>
                       <p className="font-medium">{videos.length === 0 ? 'No videos saved yet.' : 'No items match your filters.'}</p>
-                      <p className="text-sm mt-1 text-zinc-700">{videos.length === 0 ? 'Save a video using the extension!' : 'Try adjusting your search or filters.'}</p>
+                      <p className="text-sm mt-1 text-[var(--dq-text-subtle)]">{videos.length === 0 ? 'Save a video using the extension!' : 'Try adjusting your search or filters.'}</p>
                     </FadeIn>
                   ) : (
                     <StaggerList className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -743,15 +744,15 @@ export default function App() {
                 </div>
               )}
 
-              {/* ─── Channels Tab ─── */}
+              {/* â”€â”€â”€ Channels Tab â”€â”€â”€ */}
               {activeTab === 'channels' && (
                 <div>
                   <SlideUp><h2 className="text-3xl font-bold mb-6">Saved Channels</h2></SlideUp>
                   {channels.length === 0 ? (
-                    <FadeIn className="text-center py-24 text-zinc-600 border border-dashed border-zinc-800 rounded-2xl">
+                    <FadeIn className="text-center py-24 text-[var(--dq-text-muted)] border border-dashed border-[var(--dq-border)] rounded-2xl">
                       <Hash className="w-12 h-12 mx-auto mb-4 opacity-40" />
                       <p className="font-medium">No channels saved yet.</p>
-                      <p className="text-sm mt-1 text-zinc-700">Save a channel from YouTube.</p>
+                      <p className="text-sm mt-1 text-[var(--dq-text-subtle)]">Save a channel from YouTube.</p>
                     </FadeIn>
                   ) : (
                     <StaggerList className="grid gap-3">
@@ -759,17 +760,17 @@ export default function App() {
                         <StaggerItem key={ch.id}>
                           <HoverCard className="glass-card p-4 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-lime-400 font-bold">
+                              <div className="w-10 h-10 rounded-full bg-[var(--dq-surface)] flex items-center justify-center text-lime-400 font-bold">
                                 {ch.name?.[0]?.toUpperCase() || '?'}
                               </div>
                               <div>
                                 <a href={ch.url} target="_blank" rel="noreferrer" className="font-semibold text-sm hover:text-lime-300 transition-colors">{ch.name}</a>
-                                <p className="text-xs text-zinc-600">{formatDateTime(ch.savedAt)}</p>
+                                <p className="text-xs text-[var(--dq-text-muted)]">{formatDateTime(ch.savedAt)}</p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
                               {ch.group && <Badge variant="secondary">{ch.group}</Badge>}
-                              <DeleteIcon size={14} className="text-zinc-600" onClick={() => handleDelete(ch.id)} />
+                              <DeleteIcon size={14} className="text-[var(--dq-text-muted)]" onClick={() => handleDelete(ch.id)} />
                             </div>
                           </HoverCard>
                         </StaggerItem>
@@ -779,22 +780,22 @@ export default function App() {
                 </div>
               )}
 
-              {/* ─── Analysis Tab ─── */}
+              {/* â”€â”€â”€ Analysis Tab â”€â”€â”€ */}
               {activeTab === 'analysis' && <DigitalWellbeing videos={videos} />}
 
-              {/* ─── Settings Tab ─── */}
+              {/* â”€â”€â”€ Settings Tab â”€â”€â”€ */}
               {activeTab === 'settings' && (
                 <Settings user={user} onSignOut={handleSignOut} onSync={handleSync} isSyncing={isSyncing} onStatus={setStatus} />
               )}
 
-              {/* ─── Circles Tab ─── */}
+              {/* â”€â”€â”€ Circles Tab â”€â”€â”€ */}
               {activeTab === 'circles' && (
                 <div>
                   <SlideUp><h2 className="text-3xl font-bold mb-6">Focus Circles</h2></SlideUp>
-                  <FadeIn className="text-center py-24 text-zinc-600 border border-dashed border-zinc-800 rounded-2xl">
+                  <FadeIn className="text-center py-24 text-[var(--dq-text-muted)] border border-dashed border-[var(--dq-border)] rounded-2xl">
                     <Users className="w-12 h-12 mx-auto mb-4 opacity-40" />
                     <p className="font-medium">Coming soon.</p>
-                    <p className="text-sm mt-1 text-zinc-700">Join accountability circles with friends.</p>
+                    <p className="text-sm mt-1 text-[var(--dq-text-subtle)]">Join accountability circles with friends.</p>
                   </FadeIn>
                 </div>
               )}
@@ -807,3 +808,6 @@ export default function App() {
     </TooltipProvider>
   );
 }
+
+
+

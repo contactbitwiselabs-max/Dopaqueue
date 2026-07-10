@@ -12,14 +12,26 @@ export interface QueueItem {
   url: string;
   title: string;
   thumbnail?: string;
-  savedAt: number;
-  type?: ContentType;
+  savedAt: string | number; // allow string or number to accommodate both
+  type?: ContentType | 'channel'; // Some logic uses 'channel' type
   tags?: string[];
   urgency?: UrgencyLevel;
   note?: string;
+  notes?: string;
   watched?: boolean;
   channelId?: string;
   channelName?: string;
+  channel?: string; // used widely as string
+  author?: string;
+  authorUrl?: string;
+  platform?: string;
+  contentType?: string;
+  transcript?: string;
+  description?: string;
+  deleted?: boolean;
+  group?: string;
+  fromContentScript?: boolean;
+  updatedAt?: number;
 }
 
 // ─── Channel ─────────────────────────────────────────────────────
@@ -35,15 +47,18 @@ export interface Channel {
 }
 
 // ─── Scrape Result ───────────────────────────────────────────────
-export interface ScrapeResult {
+export interface ScrapeData {
   url: string;
   transcript?: string;
   genre?: string;
   channel?: string;
+  author?: string;
+  authorUrl?: string;
   thumbnail?: string;
   title?: string;
   scrapedAt?: number;
 }
+export type ScrapeResult = ScrapeData;
 
 // ─── Game State (Plant system) ────────────────────────────────────
 export interface GameState {
@@ -54,6 +69,16 @@ export interface GameState {
   watchedToday: number;
   xp: number;
   level: number;
+  
+  // Game/Budget logic properties
+  budgetMinutesTotal: number;
+  budgetMinutesUsed: number;
+  lastResetDate?: string;
+  lastReset?: string;
+  notifiedZeroToday: boolean;
+  plant: string;
+  coins: number;
+  updatedAt?: number;
 }
 
 // ─── User / Auth ─────────────────────────────────────────────────
@@ -76,11 +101,15 @@ export interface Circle {
 }
 
 export interface CircleMember {
-  userId: string;
-  email: string;
+  id: string; // Used in circles.ts
+  userId?: string;
+  email?: string;
   name?: string;
-  joinedAt: number;
+  joinedAt?: number;
   weeklyCount?: number;
+  mindlessMinutesAvg?: number;
+  revisitRate?: number;
+  totalVideosScrolled?: number;
 }
 
 export interface WeeklyMirrorReport {
@@ -102,10 +131,12 @@ export interface SharePayload {
 
 // ─── Pomodoro ────────────────────────────────────────────────────
 export interface PomodoroState {
-  seconds: number;
+  seconds?: number; // legacy
+  remainingSeconds: number; // used in storage.ts
   active: boolean;
-  mode: 'focus' | 'break';
-  completedSessions: number;
+  mode?: 'focus' | 'break';
+  label?: string; // used in storage.ts
+  completedSessions?: number;
 }
 
 // ─── Export ──────────────────────────────────────────────────────
@@ -147,6 +178,24 @@ export interface ActionChecklist {
   actions: string[];
   summary: string;
   tags: string[];
+}
+
+export interface AIConfig {
+  provider: 'local' | 'gemini' | 'openai';
+  apiKey: string;
+}
+
+export interface AppSettings {
+  dailyBudgetMinutes: number;
+  reminderHours: number;
+  aiProvider: 'local' | 'gemini' | 'openai';
+  aiApiKey: string;
+  notificationsEnabled: boolean;
+  enableAnalytics: boolean;
+  autoSync: boolean;
+  webhookUrl: string | null;
+  exportTemplate: string;
+  updatedAt?: number;
 }
 
 // ─── Analytics ───────────────────────────────────────────────────
