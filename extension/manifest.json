@@ -3,7 +3,7 @@
   "name": "DopaQueue",
   "version": "0.1.0",
   "description": "Save videos intentionally, watch them distraction-free, and keep your daily scroll budget in check.",
-  "permissions": ["activeTab", "storage", "tabs", "alarms", "notifications"],
+  "permissions": ["activeTab", "storage", "tabs", "alarms", "notifications", "identity"],
   "host_permissions": [
     "<all_urls>"
   ],

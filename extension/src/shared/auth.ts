@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 // DopaQueue Auth Module
 // Handles Supabase authentication (Google, Email)
 // Stores session in chrome.storage for persistence across contexts
@@ -31,14 +31,65 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 export async function signInWithGoogle() {
-  const { data, error } = await supabaseClient.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: chrome.runtime.getURL('dashboard.html'),
-    },
-  });
-  if (error) throw error;
-  return data;
+  if (typeof chrome !== 'undefined' && chrome.identity) {
+    const redirectUrl = chrome.identity.getRedirectURL();
+    const { data, error } = await supabaseClient.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: true,
+      },
+    });
+
+    if (error) throw error;
+    if (!data?.url) throw new Error('No redirect URL returned from Supabase');
+
+    return new Promise((resolve, reject) => {
+      chrome.identity.launchWebAuthFlow(
+        {
+          url: data.url,
+          interactive: true,
+        },
+        async (callbackUrl) => {
+          if (chrome.runtime.lastError || !callbackUrl) {
+            console.error('Auth flow error:', chrome.runtime.lastError);
+            reject(chrome.runtime.lastError || new Error('Auth flow failed'));
+            return;
+          }
+
+          try {
+            const urlObj = new URL(callbackUrl);
+            const hashParams = new URLSearchParams(urlObj.hash.substring(1));
+            const access_token = hashParams.get('access_token');
+            const refresh_token = hashParams.get('refresh_token');
+
+            if (access_token && refresh_token) {
+              const { data: sessionData, error: sessionError } = await supabaseClient.auth.setSession({
+                access_token,
+                refresh_token,
+              });
+              if (sessionError) throw sessionError;
+              resolve(sessionData);
+            } else {
+              throw new Error('No access token found in auth callback');
+            }
+          } catch (err) {
+            reject(err);
+          }
+        }
+      );
+    });
+  } else {
+    // Fallback for non-extension environment
+    const { data, error } = await supabaseClient.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL ? chrome.runtime.getURL('dashboard.html') : undefined,
+      },
+    });
+    if (error) throw error;
+    return data;
+  }
 }
 
 export async function signInWithEmail(email: string, password: string) {
