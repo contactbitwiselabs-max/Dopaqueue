@@ -61,7 +61,7 @@ export function MagneticButton({
       <Tag
         className={`relative overflow-hidden ${className}`}
         onClick={onClick}
-        {...(linkProps as any)}
+        {...(linkProps as Record<string, unknown>)}
       >
         {/* Shimmer sweep on hover */}
         <span

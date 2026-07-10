@@ -30,7 +30,7 @@ export function SmoothScroll({ children }: { children: React.ReactNode }) {
 
     return () => {
       lenis.destroy();
-      gsap.ticker.remove(lenis.raf as any);
+      gsap.ticker.remove(lenis.raf as unknown as gsap.TickerCallback);
     };
   }, []);
 

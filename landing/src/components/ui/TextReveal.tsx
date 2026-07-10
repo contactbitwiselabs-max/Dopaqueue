@@ -76,7 +76,7 @@ export function TextReveal({
 
   return (
     <Tag
-      ref={containerRef as any}
+      ref={containerRef as React.Ref<HTMLElement>}
       className={`${className}`}
       style={{ perspective: "600px" }}
     >

@@ -17,7 +17,7 @@ export default async function SharedPlaylistPage({ params }: PageProps) {
     v: 1,
     title: 'Curated DopaQueue Watchlist',
     curator: 'Focused Mind',
-    createdAt: Date.now(),
+    createdAt: 1710000000000,
     items: [
       {
         title: 'Designing Data-Intensive Applications: Deep Dive',

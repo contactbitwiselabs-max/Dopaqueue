@@ -4,22 +4,23 @@ import { cn } from "@/lib/utils";
 import React, { useEffect, useState } from "react";
 
 export const Meteors = ({
-  number,
+  number = 20,
   className,
 }: {
   number?: number;
   className?: string;
 }) => {
-  const [meteors, setMeteors] = useState<number[]>([]);
-
-  useEffect(() => {
-    const meteorCount = number || 20;
-    setMeteors(new Array(meteorCount).fill(true));
-  }, [number]);
+  const [styles] = useState(() => {
+    return new Array(number).fill(0).map(() => ({
+      left: Math.floor(Math.random() * (400 - -400) + -400) + "px",
+      animationDelay: Math.random() * (0.8 - 0.2) + 0.2 + "s",
+      animationDuration: Math.floor(Math.random() * (10 - 2) + 2) + "s",
+    }));
+  });
 
   return (
     <>
-      {meteors.map((el, idx) => (
+      {styles.map((style, idx) => (
         <span
           key={"meteor" + idx}
           className={cn(
@@ -29,11 +30,11 @@ export const Meteors = ({
           )}
           style={{
             top: 0,
-            left: Math.floor(Math.random() * (400 - -400) + -400) + "px",
-            animationDelay: Math.random() * (0.8 - 0.2) + 0.2 + "s",
-            animationDuration: Math.floor(Math.random() * (10 - 2) + 2) + "s",
+            left: style.left,
+            animationDelay: style.animationDelay,
+            animationDuration: style.animationDuration,
           }}
-        ></span>
+        />
       ))}
     </>
   );

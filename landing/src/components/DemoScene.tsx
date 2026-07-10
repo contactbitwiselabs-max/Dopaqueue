@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useMemo } from "react";
+import React, { useRef, useMemo, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Float, Points, PointMaterial } from "@react-three/drei";
 import * as THREE from "three";
@@ -53,7 +53,7 @@ function WireframeGeo() {
 
 // ── Floating Particles ──
 function Particles({ count = 800 }) {
-  const positions = useMemo(() => {
+  const [positions] = useState(() => {
     const pos = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
       const theta = Math.random() * Math.PI * 2;
@@ -64,7 +64,7 @@ function Particles({ count = 800 }) {
       pos[i * 3 + 2] = r * Math.cos(phi);
     }
     return pos;
-  }, [count]);
+  });
 
   const pointsRef = useRef<THREE.Points>(null);
 
