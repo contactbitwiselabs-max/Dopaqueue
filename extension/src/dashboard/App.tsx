@@ -519,6 +519,8 @@ export default function App() {
   const [videos, setVideos] = useState<QueueItem[]>([]);
   const [channels, setChannels] = useState<any[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<'idle' | 'success' | 'error'>('idle');
+  const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
   const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null);
   const [user, setUser] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -609,12 +611,19 @@ export default function App() {
   const handleSync = async () => {
     if (!user) { setShowAuth(true); return; }
     setIsSyncing(true);
+    setSyncFeedback('idle');
     try {
       await syncWithCloud();
       refreshData();
-      setStatus({ type: 'success', message: 'Synced successfully!' });
+      setSyncFeedback('success');
+      const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setLastSyncedTime(nowStr);
+      setStatus({ type: 'success', message: 'Synced successfully with cloud!' });
+      setTimeout(() => setSyncFeedback('idle'), 4000);
     } catch (err: any) {
+      setSyncFeedback('error');
       setStatus({ type: 'error', message: `Sync failed: ${err.message}` });
+      setTimeout(() => setSyncFeedback('idle'), 4000);
     } finally {
       setIsSyncing(false);
     }
@@ -775,10 +784,43 @@ export default function App() {
                   </Avatar>
                   <span className="text-xs text-[var(--dq-text-muted)] truncate flex-1">{user.email}</span>
                 </div>
-                <Button size="sm" variant="glass" className="w-full justify-start gap-2" onClick={handleSync} disabled={isSyncing}>
-                  <SyncIcon spinning={isSyncing} size={14} className={isSyncing ? 'text-lime-400' : 'text-[var(--dq-text-muted)]'} />
-                  {isSyncing ? 'Syncing...' : 'Sync'}
+                <Button
+                  size="sm"
+                  variant={syncFeedback === 'success' ? 'premium' : syncFeedback === 'error' ? 'destructive' : 'glass'}
+                  className={`w-full justify-start gap-2 transition-all duration-300 ${
+                    syncFeedback === 'success' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 font-semibold' : ''
+                  }`}
+                  onClick={handleSync}
+                  disabled={isSyncing}
+                >
+                  {isSyncing ? (
+                    <>
+                      <SyncIcon spinning={true} size={14} className="text-lime-400" />
+                      <span>Syncing...</span>
+                    </>
+                  ) : syncFeedback === 'success' ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Synced ✓</span>
+                    </>
+                  ) : syncFeedback === 'error' ? (
+                    <>
+                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                      <span>Sync Failed</span>
+                    </>
+                  ) : (
+                    <>
+                      <SyncIcon spinning={false} size={14} className="text-[var(--dq-text-muted)]" />
+                      <span>Sync Cloud</span>
+                    </>
+                  )}
                 </Button>
+                {lastSyncedTime && (
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] text-emerald-400 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Last synced at {lastSyncedTime}
+                  </div>
+                )}
                 <Button size="sm" variant="ghost" className="w-full justify-start gap-2 text-[var(--dq-text-muted)]" onClick={handleSignOut}>
                   <LogOut className="w-4 h-4" /> Sign Out
                 </Button>

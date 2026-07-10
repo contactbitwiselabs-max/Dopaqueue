@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { crx } from '@crxjs/vite-plugin';
 import manifest from './manifest.json' assert { type: 'json' };
 import path from 'path';
+import fs from 'fs';
 import tailwindcss from '@tailwindcss/vite';
 
 // https://vite.dev/config/
@@ -14,6 +15,15 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       crx({ manifest }),
+      {
+        name: 'clean-vite-manifest',
+        closeBundle() {
+          const viteDir = path.resolve(__dirname, 'dist/.vite');
+          if (fs.existsSync(viteDir)) {
+            fs.rmSync(viteDir, { recursive: true, force: true });
+          }
+        },
+      },
     ],
     resolve: {
       alias: {
