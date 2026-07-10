@@ -16,6 +16,7 @@ import {
 import { ThemeToggle } from '../shared/theme.js';
 import { syncWithCloud } from '../shared/sync.js';
 import { supabaseClient } from '../shared/supabase.js';
+import { signInWithGoogle } from '../shared/auth.js';
 import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFile, buildExportFilename } from '../shared/export.js';
 import { generateActionChecklist, autoTagItem } from '../shared/ai.js';
 import { generateSharePayload, encodeShareLink } from '../shared/share.js';
@@ -30,7 +31,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { Avatar, AvatarFallback } from '../components/ui/avatar';
+import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 import { Progress } from '../components/ui/progress';
 import { Skeleton } from '../components/ui/skeleton';
 import { Separator } from '../components/ui/separator';
@@ -42,7 +43,7 @@ import DigitalWellbeing from './pages/DigitalWellbeing.jsx';
 
 import type { QueueItem, Channel, StatusMessage, ContentType, UrgencyLevel, ExportFormat } from '../types';
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers ──────────────────────────────────────────────────────â”€
 
 function detectContentType(url: string): ContentType {
   if (!url) return 'video';
@@ -69,7 +70,7 @@ function formatDateTime(ts: number): string {
 
 type TabId = 'videos' | 'channels' | 'analysis' | 'circles' | 'settings';
 
-// â”€â”€â”€ Auth Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Auth Page ───────────────────────────────────────────────────â”€â”€
 function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
@@ -104,11 +105,16 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
   const handleOAuth = async (provider: 'google') => {
     setError(null);
     try {
-      const { error } = await supabaseClient.auth.signInWithOAuth({
-        provider,
-        options: { redirectTo: chrome.runtime.getURL('dashboard.html') },
-      });
-      if (error) throw error;
+      if (provider === 'google') {
+        await signInWithGoogle();
+        onAuthSuccess?.();
+      } else {
+        const { error } = await supabaseClient.auth.signInWithOAuth({
+          provider,
+          options: { redirectTo: chrome.runtime.getURL('dashboard.html') },
+        });
+        if (error) throw error;
+      }
     } catch (err: any) {
       setError(err.message);
     }
@@ -120,7 +126,7 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(163,230,53,0.15)_0%,_transparent_60%)]" />
         <FadeIn className="relative z-10 text-center px-12">
           <motion.h1 className="text-5xl font-black text-[var(--dq-text)] mb-4" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }}>
-            ðŸŒ¿ DopaQueue
+            🌱 DopaQueue
           </motion.h1>
           <motion.p className="text-[var(--dq-text-muted)] text-lg max-w-md leading-relaxed" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
             Save videos intentionally. Watch them distraction-free. Reclaim your focus.
@@ -168,7 +174,7 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
             </div>
             <div>
               <label className="block text-xs text-[var(--dq-text-muted)] mb-1.5 font-medium">Password</label>
-              <Input type="password" required minLength={6} value={password} onChange={e => setPassword(e.target.value)} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" />
+              <Input type="password" required minLength={6} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" />
             </div>
 
             <AnimatePresence>
@@ -199,7 +205,7 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
             </button>
           </p>
           <button onClick={onAuthSuccess} className="w-full text-center text-xs text-[var(--dq-text-muted)] mt-4 hover:text-[var(--dq-text-muted)] transition-colors">
-            Skip for now â€” use offline only
+            Skip for now — use offline only
           </button>
         </SlideUp>
       </div>
@@ -207,14 +213,14 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
   );
 }
 
-// â”€â”€â”€ Pomodoro Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Pomodoro Bar ────────────────────────────────────────────────â”€
 function PomodoroBar() {
   const [seconds, setSeconds] = useState(1500);
   const [active, setActive] = useState(false);
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
     if (active && seconds > 0) interval = setInterval(() => setSeconds(s => s - 1), 1000);
-    else if (seconds === 0 && active) { setActive(false); alert('Focus Block completed! ðŸŽ¯'); }
+    else if (seconds === 0 && active) { setActive(false); alert('Focus Block completed! 🎯'); }
     return () => { if (interval) clearInterval(interval); };
   }, [active, seconds]);
   const mins = Math.floor(seconds / 60);
@@ -254,7 +260,7 @@ function PomodoroBar() {
   );
 }
 
-// â”€â”€â”€ Video Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Video Card ───────────────────────────────────────────────────
 interface VideoCardProps {
   video: QueueItem;
   onRemove: () => void;
@@ -374,7 +380,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
               <DropdownMenuSeparator />
               {(['Tomorrow', 'Weekend', 'Reference', 'Unscheduled'] as UrgencyLevel[]).map(u => (
                 <DropdownMenuItem key={u} onClick={() => onSetUrgency(video.id, u)}>
-                  {u === video.urgency ? 'âœ“ ' : ''}{u}
+                  {u === video.urgency ? '✓ ' : ''}{u}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -404,7 +410,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
   );
 }
 
-// â”€â”€â”€ Nav Item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Nav Item ───────────────────────────────────────────────────â”€â”€
 interface NavItemProps {
   active: boolean;
   onClick: () => void;
@@ -440,7 +446,7 @@ function NavItem({ active, onClick, icon, label, count }: NavItemProps) {
   );
 }
 
-// â”€â”€â”€ Filter Chip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Filter Chip ────────────────────────────────────────────────â”€â”€
 function FilterChip({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count?: number }) {
   return (
     <motion.button
@@ -456,7 +462,7 @@ function FilterChip({ active, onClick, label, count }: { active: boolean; onClic
   );
 }
 
-// â”€â”€â”€ Status Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Status Toast ────────────────────────────────────────────────â”€
 function StatusToast({ status, onDismiss }: { status: StatusMessage | null; onDismiss: () => void }) {
   return (
     <AnimatePresence>
@@ -479,7 +485,7 @@ function StatusToast({ status, onDismiss }: { status: StatusMessage | null; onDi
   );
 }
 
-// â”€â”€â”€ Article Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Article Modal ────────────────────────────────────────────────â”€
 function ArticleModal({ video, onClose }: { video: QueueItem; onClose: () => void }) {
   const scrape = getScrapeResult(video.url) || {} as any;
   return (
@@ -507,7 +513,7 @@ function ArticleModal({ video, onClose }: { video: QueueItem; onClose: () => voi
   );
 }
 
-// â”€â”€â”€ Main App â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Main App ──────────────────────────────────────────────────────
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('videos');
   const [videos, setVideos] = useState<QueueItem[]>([]);
@@ -515,7 +521,9 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [showAuth, setShowAuth] = useState(false);
+  const [showAuth, setShowAuth] = useState(() => {
+    return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('auth') === 'true';
+  });
   const [status, setStatus] = useState<StatusMessage | null>(null);
   const [filterType, setFilterType] = useState<ContentType | 'all'>('all');
   const [filterUrgency, setFilterUrgency] = useState<UrgencyLevel | 'all'>('all');
@@ -709,6 +717,7 @@ export default function App() {
               <>
                 <div className="flex items-center gap-2.5 px-2 py-2">
                   <Avatar className="w-7 h-7">
+                    <AvatarImage src={user.user_metadata?.avatar_url || user.user_metadata?.picture} alt={user.email} />
                     <AvatarFallback className="text-[10px]">{user.email?.[0]?.toUpperCase()}</AvatarFallback>
                   </Avatar>
                   <span className="text-xs text-[var(--dq-text-muted)] truncate flex-1">{user.email}</span>
@@ -725,7 +734,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* â”€â”€â”€ Main Content â”€â”€â”€ */}
+        {/* ─── Main Content ─── */}
         <div className="flex-1 overflow-y-auto">
           {/* Background glow */}
           <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] bg-lime-500/5 blur-[80px] pointer-events-none rounded-full" />
@@ -734,7 +743,7 @@ export default function App() {
             <PomodoroBar />
 
             <PageTransition tabKey={activeTab}>
-              {/* â”€â”€â”€ Videos Tab â”€â”€â”€ */}
+              {/* ─── Videos Tab ─── */}
               {activeTab === 'videos' && (
                 <div>
                   {readingVideo && <ArticleModal video={readingVideo} onClose={() => setReadingVideo(null)} />}
@@ -876,15 +885,15 @@ export default function App() {
                 </div>
               )}
 
-              {/* â”€â”€â”€ Analysis Tab â”€â”€â”€ */}
+              {/* ─── Analysis Tab ─── */}
               {activeTab === 'analysis' && <DigitalWellbeing videos={videos} />}
 
-              {/* â”€â”€â”€ Settings Tab â”€â”€â”€ */}
+              {/* ─── Settings Tab ─── */}
               {activeTab === 'settings' && (
                 <Settings user={user} onSignOut={handleSignOut} onSync={handleSync} isSyncing={isSyncing} onStatus={setStatus} />
               )}
 
-              {/* â”€â”€â”€ Circles Tab â”€â”€â”€ */}
+              {/* ─── Circles Tab ─── */}
               {activeTab === 'circles' && (
                 <div>
                   <SlideUp><h2 className="text-3xl font-bold mb-6">Focus Circles</h2></SlideUp>

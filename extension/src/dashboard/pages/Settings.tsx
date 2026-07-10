@@ -18,6 +18,7 @@ import { getChannelGroups, createChannelGroup, deleteChannelGroup } from '../../
 
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { Avatar, AvatarImage, AvatarFallback } from '../../components/ui/avatar';
 import { Switch } from '../../components/ui/switch';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../../components/ui/card';
 import { ExportFormat } from '../../types';
@@ -224,10 +225,16 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
         <CardContent>
           {isLoggedIn(user) ? (
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[var(--dq-text-muted)]">Logged in as</p>
-                <p className="text-lg font-medium text-[var(--dq-text)]">{getUserName(user)}</p>
-                <p className="text-sm text-[var(--dq-text-subtle)]">{getUserEmail(user)}</p>
+              <div className="flex items-center gap-3">
+                <Avatar className="w-11 h-11">
+                  <AvatarImage src={user?.user_metadata?.avatar_url || user?.user_metadata?.picture} alt={getUserName(user) || 'User'} />
+                  <AvatarFallback>{(getUserEmail(user)?.[0] || 'U').toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="text-sm text-[var(--dq-text-muted)]">Logged in as</p>
+                  <p className="text-lg font-medium text-[var(--dq-text)]">{getUserName(user)}</p>
+                  <p className="text-sm text-[var(--dq-text-subtle)]">{getUserEmail(user)}</p>
+                </div>
               </div>
               <Button variant="destructive" onClick={handleSignOut} className="gap-2">
                 <LogOut className="w-4 h-4" />
