@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import {
   initStorage, getGameState, getQueue, addToQueue, updateQueueItem,
-  subscribe, getSavedVideos, ensureChannelSaved
+  subscribe, getSavedVideos, ensureChannelSaved, updateGameState
 } from '../shared/storage.js';
 import {
   isChannelUrl, extractChannelId, extractYouTubeVideoId,
@@ -44,8 +44,9 @@ const CONTENT_TYPE_LABEL: Record<ContentType, string> = {
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 function formatTimeAgo(ts: number): string {
+  if (!ts) return 'just now';
   const diff = (Date.now() - ts) / 1000;
-  if (diff < 60) return 'just now';
+  if (isNaN(diff) || diff < 60) return 'just now';
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
@@ -59,6 +60,7 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState('');
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [budgetInput, setBudgetInput] = useState<string>('');
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [tagInput, setTagInput] = useState('');
@@ -69,7 +71,9 @@ export default function App() {
     const init = async () => {
       await initStorage();
       setQueue(getSavedVideos());
-      setGameState(getGameState());
+      const gs = getGameState();
+      setGameState(gs);
+      setBudgetInput(gs?.budgetMinutesTotal?.toString() || '60');
 
       const { data: { session } } = await supabaseClient.auth.getSession();
       setUser(session?.user || null);
@@ -93,9 +97,22 @@ export default function App() {
     };
 
     init();
-    const unsub = subscribe('dq_queue', () => { setQueue(getSavedVideos()); setGameState(getGameState()); });
+    const unsub = subscribe('dq_queue', () => { 
+      setQueue(getSavedVideos()); 
+      const gs = getGameState();
+      setGameState(gs); 
+      setBudgetInput(gs?.budgetMinutesTotal?.toString() || '60');
+    });
     return () => unsub();
   }, []);
+
+  const handleUpdateBudget = (val: string) => {
+    const num = parseInt(val, 10);
+    if (!isNaN(num) && num > 0) {
+      updateGameState({ budgetMinutesTotal: num });
+      setGameState(getGameState());
+    }
+  };
 
   const handleSave = async () => {
     if (!currentUrl) { setSaveStatus('error'); setErrorMsg('No URL detected.'); return; }
@@ -153,7 +170,7 @@ export default function App() {
         {/* Header */}
         <div className="px-4 pt-4 pb-3 border-b border-[var(--dq-border)] flex items-center justify-between">
           <motion.div className="flex items-center gap-2" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
-            <span className="text-xl">🌿</span>
+            <Leaf className="w-5 h-5 text-lime-500" />
             <span className="font-black text-base gradient-text">DopaQueue</span>
           </motion.div>
           <div className="flex items-center gap-1">
@@ -296,8 +313,20 @@ export default function App() {
                 <span className="text-xs text-[var(--dq-text-muted)]">{gameState?.streak ?? 0} day streak 🔥</span>
               </div>
               <Progress value={health} className="h-1.5" />
-              <div className="flex justify-between text-[10px] text-[var(--dq-text-subtle)]">
+              <div className="flex justify-between text-[10px] text-[var(--dq-text-subtle)] items-center">
                 <span>Saved today: {gameState?.savedToday ?? 0}</span>
+                <div className="flex items-center gap-1.5">
+                  <span>Limit (mins):</span>
+                  <Input 
+                    type="number" 
+                    value={budgetInput} 
+                    onChange={(e) => {
+                      setBudgetInput(e.target.value);
+                      handleUpdateBudget(e.target.value);
+                    }}
+                    className="h-5 w-12 text-[10px] px-1 py-0 text-center bg-[var(--dq-surface)]"
+                  />
+                </div>
                 <span>XP: {gameState?.xp ?? 0}</span>
               </div>
             </div>

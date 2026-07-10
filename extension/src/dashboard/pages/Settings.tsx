@@ -15,7 +15,6 @@ import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFi
 import { getSavedVideos, getSavedChannels, getGameState, updateGameState } from '../../shared/storage';
 import { DEFAULT_DAILY_BUDGET } from '../../shared/constants';
 import { getChannelGroups, createChannelGroup, deleteChannelGroup } from '../../shared/groups';
-import { ThemeToggle } from '../../shared/theme';
 
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -215,7 +214,6 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-3xl font-bold text-[var(--dq-text)]">Settings</h2>
-        <ThemeToggle />
       </div>
 
       <Card className="glass-card">

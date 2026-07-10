@@ -302,6 +302,7 @@ export function computeStreakTracker(sessions: ScrollSession[], dailyBudget: num
 export function filterSessionsByRange(sessions: ScrollSession[], range: string) {
   const now = new Date();
   let cutoff: Date;
+  let end: Date | null = null;
 
   switch (range) {
     case 'hour':
@@ -310,6 +311,13 @@ export function filterSessionsByRange(sessions: ScrollSession[], range: string) 
     case 'day':
       cutoff = new Date(now);
       cutoff.setHours(0, 0, 0, 0);
+      break;
+    case 'yesterday':
+      cutoff = new Date(now);
+      cutoff.setDate(cutoff.getDate() - 1);
+      cutoff.setHours(0, 0, 0, 0);
+      end = new Date(now);
+      end.setHours(0, 0, 0, 0);
       break;
     case 'week':
       cutoff = new Date(now);
@@ -330,7 +338,11 @@ export function filterSessionsByRange(sessions: ScrollSession[], range: string) 
       cutoff = new Date(0);
   }
 
-  return sessions.filter(s => new Date(s.startTime) >= cutoff);
+  return sessions.filter(s => {
+    const d = new Date(s.startTime);
+    if (end && d >= end) return false;
+    return d >= cutoff;
+  });
 }
 
 /**
@@ -366,6 +378,27 @@ export function buildChartData(sessions: ScrollSession[], range: string) {
     // Group by hour (24 buckets)
     const buckets: any[] = [];
     const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    for (let h = 0; h < 24; h++) {
+      const label = `${h === 0 ? '12' : h > 12 ? h - 12 : h}${h < 12 ? 'am' : 'pm'}`;
+      const matching = sessions.filter(s => {
+        const d = new Date(s.startTime);
+        return d >= dayStart && d.getHours() === h;
+      });
+      buckets.push({
+        displayDate: label,
+        minutes: +matching.reduce((sum, s) => sum + (s.duration || 0) / 60000, 0).toFixed(1),
+        scrolls: matching.reduce((sum, s) => sum + (s.scrollCount || 1), 0),
+      });
+    }
+    return buckets;
+  }
+
+  if (range === 'yesterday') {
+    // Group by hour (24 buckets) for yesterday
+    const buckets: any[] = [];
+    const dayStart = new Date(now);
+    dayStart.setDate(dayStart.getDate() - 1);
     dayStart.setHours(0, 0, 0, 0);
     for (let h = 0; h < 24; h++) {
       const label = `${h === 0 ? '12' : h > 12 ? h - 12 : h}${h < 12 ? 'am' : 'pm'}`;

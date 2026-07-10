@@ -15,7 +15,7 @@ import {
   generateNaturalLanguageInsights
 } from '../../shared/analytics';
 import { getGameState } from '../../shared/storage';
-import { DEFAULT_DAILY_BUDGET } from '../../shared/constants';
+import { DEFAULT_DAILY_BUDGET, todayLocalDateString } from '../../shared/constants';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -24,6 +24,7 @@ import { FadeIn, SlideUp, StaggerList, StaggerItem } from '../../components/moti
 const RANGE_OPTIONS = [
   { key: 'hour', label: 'Hour' },
   { key: 'day', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
   { key: 'week', label: 'Week' },
   { key: 'month', label: 'Month' },
   { key: 'year', label: 'Year' },
@@ -36,8 +37,27 @@ export default function DigitalWellbeing() {
 
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.get(['dq_timer_history', 'dq_flow_breaker_log'], (res) => {
-        setAllSessions(res['dq_timer_history'] || []);
+      chrome.storage.local.get(null, (res) => {
+        const history = res['dq_timer_history'] || [];
+        
+        // Find active sessions and merge them into history for real-time analytics
+        const activeSessions = Object.keys(res)
+          .filter(k => k.startsWith('activeTimer_'))
+          .map(k => {
+            const active = res[k];
+            const now = Date.now();
+            return {
+              startTime: active.startTime || (now - (active.accumulatedTime || 0)),
+              duration: active.accumulatedTime || 0,
+              scrollCount: active.scrollCount || 1,
+              scrollTimestamps: active.scrollTimestamps || [],
+              date: todayLocalDateString(),
+              hourOfDay: new Date().getHours()
+            };
+          })
+          .filter(s => s.duration > 0);
+
+        setAllSessions([...history, ...activeSessions]);
         setFlowLog(res['dq_flow_breaker_log'] || []);
       });
     }
@@ -102,7 +122,7 @@ export default function DigitalWellbeing() {
         </div>
       </SlideUp>
 
-      {/* â”€â”€â”€ Natural Language Insights Panel â”€â”€â”€ */}
+      {/* ─── Natural Language Insights Panel ─── */}
       {insights && insights.length > 0 && (
         <StaggerList className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {insights.map((insight: any, idx: number) => (
@@ -113,16 +133,14 @@ export default function DigitalWellbeing() {
                 'bg-blue-500/10 border-blue-500/20'
               }`}>
                 <CardContent className="p-4 flex flex-col gap-2">
-                  <h3 className={`font-bold flex items-center gap-2 ${
-                    insight.type === 'warning' ? 'text-red-400' :
-                    insight.type === 'success' ? 'text-lime-400' :
-                    'text-blue-400'
-                  }`}>
-                    {insight.type === 'warning' && 'âš ï¸'}
-                    {insight.type === 'success' && 'ðŸŒŸ'}
-                    {insight.type === 'info' && 'ðŸ’¡'}
-                    {insight.title}
-                  </h3>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-[var(--dq-text)] flex items-center gap-2">
+                      {insight.type === 'warning' && '⚠️'}
+                      {insight.type === 'success' && '🎉'}
+                      {insight.type === 'info' && '💡'}
+                      {insight.title}
+                    </h4>
+                  </div>
                   <p className="text-sm text-[var(--dq-text-subtle)] leading-relaxed">{insight.message}</p>
                 </CardContent>
               </Card>
@@ -131,7 +149,7 @@ export default function DigitalWellbeing() {
         </StaggerList>
       )}
 
-      {/* â”€â”€â”€ Scorecard Row â”€â”€â”€ */}
+      {/* ─── Scorecard Row ─── */}
       <StaggerList className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <ScoreCard
           label="Scroll Time"
@@ -164,7 +182,7 @@ export default function DigitalWellbeing() {
         />
       </StaggerList>
 
-      {/* â”€â”€â”€ Daily Scroll Trends Chart â”€â”€â”€ */}
+      {/* ─── Daily Scroll Trends Chart ─── */}
       <FadeIn delay={0.2}>
         <Card className="glass-card">
           <CardHeader className="pb-2">
@@ -203,7 +221,7 @@ export default function DigitalWellbeing() {
         </Card>
       </FadeIn>
 
-      {/* â”€â”€â”€ Two-Column Row: Attention Decay + Vulnerability Heatmap â”€â”€â”€ */}
+      {/* ─── Two-Column Row: Attention Decay + Vulnerability Heatmap ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Attention Decay */}
         <FadeIn delay={0.3}>
@@ -293,7 +311,7 @@ export default function DigitalWellbeing() {
         </FadeIn>
       </div>
 
-      {/* â”€â”€â”€ Two-Column Row: Platform Split + Session Distribution â”€â”€â”€ */}
+      {/* ─── Two-Column Row: Platform Split + Session Distribution ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Platform Breakdown */}
         <FadeIn delay={0.5}>
@@ -308,9 +326,13 @@ export default function DigitalWellbeing() {
                     const pct = totalMinutes > 0 ? (p.totalMinutes / totalMinutes * 100).toFixed(0) : 0;
                     return (
                       <div key={p.platform} className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium text-zinc-200">{p.label}</span>
-                          <span className="text-[var(--dq-text-muted)]">{p.totalMinutes.toFixed(0)}m Â· {p.totalScrolls} scrolls</span>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-[var(--dq-text)] font-semibold text-lg">{p.label}</span>
+                          </div>
+                          <div>
+                            <span className="text-[var(--dq-text-muted)]">{p.totalMinutes.toFixed(0)}m · {p.totalScrolls} scrolls</span>
+                          </div>
                         </div>
                         <div className="w-full h-3 bg-[var(--dq-surface)] border border-[var(--dq-border)] rounded-full overflow-hidden">
                           <div
@@ -364,7 +386,7 @@ export default function DigitalWellbeing() {
         </FadeIn>
       </div>
 
-      {/* â”€â”€â”€ Flow Breaker Report â”€â”€â”€ */}
+      {/* ─── Flow Breaker Report ─── */}
       <FadeIn delay={0.7}>
         <Card className="glass-card">
           <CardHeader>

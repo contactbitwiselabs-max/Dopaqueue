@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -6,13 +6,14 @@ import {
   Clock, LogIn, X, AlertCircle, LogOut, RefreshCw, Film, Zap, Image,
   ChevronDown, Search, Users, ExternalLink, TrendingUp, Send,
   Timer, Pause, Play, BarChart2, FileDown, Plus, Folder, Sparkles,
-  Shield, Copy, Share2
+  Shield, Copy, Share2, Leaf
 } from 'lucide-react';
 import {
   initStorage, getSavedVideos, getSavedChannels, subscribe,
   removeFromQueue, updateQueueItem, getScrapeResult, updateChannelGroup,
   getWhitelist, saveWhitelist, isWhitelistedChannel, getPomodoroState, savePomodoroState
 } from '../shared/storage.js';
+import { ThemeToggle } from '../shared/theme.js';
 import { syncWithCloud } from '../shared/sync.js';
 import { supabaseClient } from '../shared/supabase.js';
 import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFile, buildExportFilename } from '../shared/export.js';
@@ -59,10 +60,11 @@ const TYPE_CONFIG = {
 };
 
 function formatDateTime(ts: number): string {
-  if (!ts) return 'â€”';
+  if (!ts) return '-';
   const d = new Date(ts);
+  if (isNaN(d.getTime())) return '-';
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) +
-    ' Â· ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    ' · ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 type TabId = 'videos' | 'channels' | 'analysis' | 'circles' | 'settings';
@@ -289,13 +291,15 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
       {/* Thumbnail */}
       <div className="relative h-36 bg-[var(--dq-surface)] rounded-t-2xl overflow-hidden">
         {video.thumbnail ? (
-          <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+          <>
+            <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+          </>
         ) : (
           <div className="w-full h-full flex items-center justify-center text-[var(--dq-text-subtle)]">
             <typeCfg.icon className="w-8 h-8" />
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-transparent to-transparent" />
         <div className="absolute bottom-2 left-2">
           <Badge variant={typeCfg.variant}>{typeCfg.label}</Badge>
         </div>
@@ -319,7 +323,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
         <div className="flex flex-wrap gap-1.5 mb-3">
           {(video.tags || []).map(tag => (
             <button key={tag} onClick={() => onUpdateTags(video.id, (video.tags || []).filter(t => t !== tag))} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--dq-surface)] text-[var(--dq-text-muted)] hover:bg-red-500/10 hover:text-red-400 transition-colors">
-              #{tag} Ã—
+              #{tag} &times;
             </button>
           ))}
           <AnimatePresence>
@@ -387,9 +391,9 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span>
-                  <DeleteIcon size={14} className="text-[var(--dq-text-muted)] hover:text-red-400 p-2" onClick={onRemove} />
-                </span>
+                <button onClick={onRemove} className="p-2 rounded-lg text-[var(--dq-text-muted)] hover:text-red-400 transition-colors flex items-center justify-center">
+                  <DeleteIcon size={14} />
+                </button>
               </TooltipTrigger>
               <TooltipContent>Delete</TooltipContent>
             </Tooltip>
@@ -417,12 +421,12 @@ function NavItem({ active, onClick, icon, label, count }: NavItemProps) {
       whileTap={{ scale: 0.97 }}
       className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all text-sm ${
         active
-          ? 'bg-lime-500/10 text-lime-300 border border-lime-500/20'
-          : 'text-[var(--dq-text-muted)] hover:text-[var(--dq-text-subtle)] hover:bg-white/5 border border-transparent'
+          ? 'bg-lime-500/10 text-lime-600 dark:text-lime-300 border border-lime-500/20'
+          : 'text-[var(--dq-text-muted)] hover:text-[var(--dq-text-subtle)] hover:bg-black/5 dark:hover:bg-white/5 border border-transparent'
       }`}
     >
       <div className="flex items-center gap-3">
-        <span className={active ? 'text-lime-400' : 'text-[var(--dq-text-muted)]'}>
+        <span className={active ? 'text-lime-500 dark:text-lime-400' : 'text-[var(--dq-text-muted)]'}>
           {React.cloneElement(icon as React.ReactElement, { className: 'w-4 h-4' })}
         </span>
         <span className="font-medium">{label}</span>
@@ -620,11 +624,11 @@ export default function App() {
     <TooltipProvider>
       <div className="flex h-screen bg-[var(--dq-bg)] text-[var(--dq-text)] overflow-hidden">
 
-        {/* â”€â”€â”€ Sidebar â”€â”€â”€ */}
-        <div className="w-60 shrink-0 border-r border-[var(--dq-border)] flex flex-col p-3 backdrop-blur-xl bg-black/20">
+        {/* ─── Sidebar ─── */}
+        <div className="w-60 shrink-0 border-r border-[var(--dq-border)] flex flex-col p-3 backdrop-blur-xl bg-[var(--dq-surface)] dark:bg-black/20">
           <div className="px-2 py-3 mb-4">
             <motion.h1 className="text-xl font-black text-[var(--dq-text)] flex items-center gap-2" whileHover={{ scale: 1.02 }} transition={{ type: 'spring', stiffness: 400 }}>
-              ðŸŒ¿ <span className="gradient-text">DopaQueue</span>
+              <Leaf className="w-6 h-6 text-lime-500" /> <span className="gradient-text">DopaQueue</span>
             </motion.h1>
           </div>
 
@@ -637,6 +641,10 @@ export default function App() {
           <Separator className="my-3" />
 
           <div className="space-y-2">
+            <div className="flex items-center justify-between px-2 py-1">
+              <span className="text-xs font-semibold text-[var(--dq-text-muted)] uppercase tracking-wider">Theme</span>
+              <ThemeToggle />
+            </div>
             {!user ? (
               <Button variant="outline" size="sm" className="w-full justify-start gap-2" onClick={() => setShowAuth(true)}>
                 <LogIn className="w-4 h-4" /> Sign In to Sync
@@ -680,11 +688,11 @@ export default function App() {
                       <h2 className="text-3xl font-bold">Your Video Queue</h2>
                     </SlideUp>
                     <div className="flex items-center gap-3">
-                      <div className="relative flex-1 max-w-xs">
+                      <div className="relative flex-1 sm:max-w-xs">
                         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--dq-text-muted)] pointer-events-none" />
                         <Input
                           ref={searchInputRef}
-                          placeholder="Search... (âŒ˜K)"
+                          placeholder="Search... (Cmd+K)"
                           value={searchQuery}
                           onChange={e => setSearchQuery(e.target.value)}
                           className="pl-9 pr-8"

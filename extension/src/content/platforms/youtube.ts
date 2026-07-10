@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { extractVideoId, getPermanentThumbnail } from '../utils.js';
 import { universalScrapeAll } from './instagram.js'; // Will be unified scraper
 
@@ -20,6 +20,8 @@ function scrapeChannel() {
   if (linkName?.content) return linkName.content;
   const authorLink = document.querySelector('span[itemprop="author"] link[itemprop="name"]');
   if (authorLink?.content) return authorLink.content;
+  const shortAuthor = document.querySelector('ytd-reel-video-renderer[is-active] #text.ytd-channel-name, #channel-name #text');
+  if (shortAuthor?.textContent) return shortAuthor.textContent.trim();
   return null;
 }
 
