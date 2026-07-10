@@ -14,8 +14,7 @@
     "test": "node ../../verify.js",
     "test:watch": "node ../../verify.js --watch",
     "clean": "rm -rf dist",
-    "package": "npm run build && npm run package:crx",
-    "package:crx": "node scripts/package-crx.js"
+    "package": "npm run build && node scripts/package-zip.js"
   },
   "dependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.33",
@@ -47,11 +46,13 @@
     "vaul": "^1.1.2"
   },
   "devDependencies": {
+    "@types/archiver": "^8.0.0",
     "@types/chrome": "^0.2.2",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "archiver": "^8.0.0",
     "oxlint": "^1.71.0",
     "typescript": "^7.0.2",
     "vite": "^8.1.1"

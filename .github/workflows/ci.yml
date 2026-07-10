@@ -40,6 +40,9 @@ jobs:
     - name: Build extension
       run: cd extension && npm run build --if-present || true
     
+    - name: Build landing page
+      run: cd landing && npm run build
+    
     - name: Validate manifest.json
       run: node -e "JSON.parse(require('fs').readFileSync('extension/manifest.json')); console.log('✓ manifest.json valid')"
     
