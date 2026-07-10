@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 export function checkMindfulFlowBreaker() {
   const isShortForm = /\/shorts\//.test(location.pathname) || /\/(reels|explore)\//.test(location.pathname);
   const passExpiry = Number(sessionStorage.getItem('dopaqueue_mindful_pass') || '0');
@@ -31,8 +31,8 @@ export function checkMindfulFlowBreaker() {
 
   overlay.innerHTML = `
     <div style="max-width: 440px; width: 90%; background: #18181b; border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 32px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7);">
-      <div style="width: 48px; height: 48px; background: rgba(132, 204, 22, 0.12); border: 1px solid rgba(132, 204, 22, 0.3); border-radius: 14px; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 24px;">
-        ðŸŒ¿
+      <div style="width: 48px; height: 48px; background: rgba(132, 204, 22, 0.12); border: 1px solid rgba(132, 204, 22, 0.3); border-radius: 14px; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: #84cc16;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
       </div>
       <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 10px; color: #f4f4f5;">Mindful Check-In</h2>
       <p style="font-size: 14px; line-height: 1.6; color: #a1a1aa; margin: 0 0 24px;">
