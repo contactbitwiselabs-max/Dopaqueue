@@ -156,14 +156,14 @@ export default function App() {
             <span className="text-xl">🌿</span>
             <span className="font-black text-base gradient-text">DopaQueue</span>
           </motion.div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <ThemeToggle />
             <Tooltip>
               <TooltipTrigger asChild>
                 <HoverCard>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[var(--dq-surface)] border border-[var(--dq-border)] cursor-default">
-                    <PlantIcon health={health} size={14} />
-                    <span className="text-xs font-semibold" style={{ color: health > 70 ? '#86efac' : health > 40 ? '#fde68a' : '#6b7280' }}>{health}%</span>
+                  <div className="flex items-center gap-1 px-1.5 py-1 rounded-lg bg-[var(--dq-surface)] border border-[var(--dq-border)] cursor-default">
+                    <PlantIcon health={health} size={12} />
+                    <span className="text-[10px] font-semibold" style={{ color: health > 70 ? '#86efac' : health > 40 ? '#fde68a' : '#6b7280' }}>{health}%</span>
                   </div>
                 </HoverCard>
               </TooltipTrigger>
@@ -171,9 +171,9 @@ export default function App() {
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 px-2 flex items-center gap-1.5" onClick={() => chrome?.tabs?.create({ url: chrome.runtime.getURL('dashboard.html') })}>
-                  <LayoutDashboard className="w-4 h-4 text-[var(--dq-text-muted)]" />
-                  <span className="text-xs text-[var(--dq-text-muted)] font-medium">Dashboard</span>
+                <Button variant="ghost" size="sm" className="h-7 px-1.5 flex items-center gap-1" onClick={() => chrome?.tabs?.create({ url: chrome.runtime.getURL('dashboard.html') })}>
+                  <LayoutDashboard className="w-3.5 h-3.5 text-[var(--dq-text-muted)]" />
+                  <span className="text-[10px] text-[var(--dq-text-muted)] font-medium">Dashboard</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Open Dashboard</TooltipContent>

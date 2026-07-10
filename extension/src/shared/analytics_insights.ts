@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 // DopaQueue Analytics Insights Engine
 // Generates natural language insights from raw metrics
 
@@ -52,7 +52,7 @@ export function generateNaturalLanguageInsights(metrics) {
       insights.push({
         type: 'success',
         title: 'Focus Streak!',
-        message: `You are on a ${metrics.streak.current}-day focus streak with zero budget overflow! Keep protecting your dopamine budget.`,
+        message: `You are on a ${metrics.streak.current}-day focus streak keeping your scroll time under control! Keep protecting your dopamine budget.`,
       });
     } else {
       insights.push({

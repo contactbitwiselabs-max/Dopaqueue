@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid,
@@ -14,6 +14,8 @@ import {
   computeFlowBreakerStats, computeStreakTracker, filterSessionsByRange, buildChartData,
   generateNaturalLanguageInsights
 } from '../../shared/analytics';
+import { getGameState } from '../../shared/storage';
+import { DEFAULT_DAILY_BUDGET } from '../../shared/constants';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -49,7 +51,9 @@ export default function DigitalWellbeing() {
   const sessionDist = useMemo(() => computeSessionDistribution(sessions), [sessions]);
   const weeklyComp = useMemo(() => computeWeeklyComparison(allSessions), [allSessions]);
   const flowStats = useMemo(() => computeFlowBreakerStats(flowLog), [flowLog]);
-  const streak = useMemo(() => computeStreakTracker(allSessions), [allSessions]);
+  
+  const dailyBudget = getGameState()?.budgetMinutesTotal || DEFAULT_DAILY_BUDGET;
+  const streak = useMemo(() => computeStreakTracker(allSessions, dailyBudget), [allSessions, dailyBudget]);
 
   const insights = useMemo(() => generateNaturalLanguageInsights({
     heatmap,

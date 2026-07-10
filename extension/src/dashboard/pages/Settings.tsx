@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import React, { useEffect, useState } from 'react';
 import { LogOut, Cloud, Download, Folder, AlertCircle, Check } from 'lucide-react';
 import { User } from '@supabase/supabase-js';
@@ -12,7 +12,8 @@ import {
 } from '../../shared/auth';
 import { syncWithCloud } from '../../shared/sync';
 import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFile, buildExportFilename } from '../../shared/export';
-import { getSavedVideos, getSavedChannels } from '../../shared/storage';
+import { getSavedVideos, getSavedChannels, getGameState, updateGameState } from '../../shared/storage';
+import { DEFAULT_DAILY_BUDGET } from '../../shared/constants';
 import { getChannelGroups, createChannelGroup, deleteChannelGroup } from '../../shared/groups';
 import { ThemeToggle } from '../../shared/theme';
 
@@ -43,6 +44,8 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
   const [exportTemplate, setExportTemplate] = useState('');
   const [savedSettingsMsg, setSavedSettingsMsg] = useState(false);
   const [groups, setGroups] = useState<Map<string, string[]>>(new Map());
+  const [budgetMinutesTotal, setBudgetMinutesTotal] = useState(60);
+  const [savedBudgetMsg, setSavedBudgetMsg] = useState(false);
 
   useEffect(() => {
     async function loadUserAndSettings() {
@@ -65,10 +68,19 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
       }
 
       setGroups(getChannelGroups());
+
+      const game = getGameState();
+      setBudgetMinutesTotal(game?.budgetMinutesTotal || DEFAULT_DAILY_BUDGET);
     }
 
     loadUserAndSettings();
   }, [userProp]);
+
+  const handleSaveBudget = () => {
+    updateGameState({ budgetMinutesTotal });
+    setSavedBudgetMsg(true);
+    setTimeout(() => setSavedBudgetMsg(false), 2500);
+  };
 
   const handleSignIn = async () => {
     try {
@@ -276,6 +288,32 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
           {lastSyncTime && (
             <p className="text-xs text-[var(--dq-text-muted)]">Last synced: {lastSyncTime.toLocaleString()}</p>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="glass-card">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Daily Scroll Limit</CardTitle>
+            {savedBudgetMsg && <span className="text-xs text-lime-400 font-medium">✓ Saved</span>}
+          </div>
+          <CardDescription>Adjust your daily scrolling budget in minutes.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Input
+              type="number"
+              min="10"
+              max="1440"
+              value={budgetMinutesTotal}
+              onChange={(e) => setBudgetMinutesTotal(parseInt(e.target.value) || 0)}
+              className="w-24 text-center"
+            />
+            <span className="text-sm text-[var(--dq-text-muted)]">minutes / day</span>
+          </div>
+          <Button variant="secondary" onClick={handleSaveBudget}>
+            Update Limit
+          </Button>
         </CardContent>
       </Card>
 

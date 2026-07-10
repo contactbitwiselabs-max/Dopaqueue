@@ -232,26 +232,35 @@ export function computeFlowBreakerStats(flowBreakerLog: any[]) {
 
 /**
  * 8. Streak Tracker
- * Counts consecutive days with 0 minutes of scrolling.
- * Strict: 0 minutes = clean day (no grace period).
+ * Counts consecutive days where scroll time was kept under 70% of the daily budget.
  */
-export function computeStreakTracker(sessions: ScrollSession[]) {
-  // Build a set of dates that had scrolling activity
-  const scrollDates = new Set<string>();
+export function computeStreakTracker(sessions: ScrollSession[], dailyBudget: number = 60) {
+  // Aggregate total scroll duration (in ms) per day
+  const dailyScrollTime = new Map<string, number>();
+  
   sessions.forEach(s => {
     const d = s.date || new Date(s.startTime).toISOString().split('T')[0];
-    scrollDates.add(d);
+    let sessionDuration = s.duration || 0;
+    if (!sessionDuration && s.startTime && s.endTime) {
+      sessionDuration = new Date(s.endTime).getTime() - new Date(s.startTime).getTime();
+    }
+    const current = dailyScrollTime.get(d) || 0;
+    dailyScrollTime.set(d, current + sessionDuration);
   });
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  
+  // A clean day is one where the total scrolling is less than 70% of the daily budget
+  const maxAllowedMs = dailyBudget * 60 * 1000 * 0.7;
 
-  // Current streak: count consecutive days backwards from today with NO scrolling
+  // Current streak: count consecutive days backwards from today that are "clean"
   let currentStreak = 0;
   const d = new Date(today);
   while (true) {
     const ds = d.toISOString().split('T')[0];
-    if (scrollDates.has(ds)) break;
+    const scrolledMs = dailyScrollTime.get(ds) || 0;
+    if (scrolledMs > maxAllowedMs) break; // Streak broken!
     currentStreak++;
     d.setDate(d.getDate() - 1);
     if (currentStreak > 365) break; // safety cap
@@ -262,12 +271,13 @@ export function computeStreakTracker(sessions: ScrollSession[]) {
   let tempStreak = 0;
   if (sessions.length > 0) {
     const allDates = sessions.map(s => s.date || new Date(s.startTime).toISOString().split('T')[0]);
-    const minDate = new Date(Math.min(...allDates.map(d => new Date(d).getTime())));
+    const minDate = new Date(Math.min(...allDates.map(dateStr => new Date(dateStr).getTime())));
     const maxDate = new Date(today);
     const iter = new Date(minDate);
     while (iter <= maxDate) {
       const ds = iter.toISOString().split('T')[0];
-      if (!scrollDates.has(ds)) {
+      const scrolledMs = dailyScrollTime.get(ds) || 0;
+      if (scrolledMs <= maxAllowedMs) {
         tempStreak++;
         longestStreak = Math.max(longestStreak, tempStreak);
       } else {
