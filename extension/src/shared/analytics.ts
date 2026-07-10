@@ -351,7 +351,6 @@ export function filterSessionsByRange(sessions: ScrollSession[], range: string) 
  */
 export function buildChartData(sessions: ScrollSession[], range: string) {
   const now = new Date();
-  now.setHours(23, 59, 59, 999);
 
   if (range === 'hour') {
     // Group by 5-minute intervals (12 buckets)
