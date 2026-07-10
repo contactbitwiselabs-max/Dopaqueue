@@ -13,18 +13,35 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DopaQueue — Video Second Brain & Intentionality Platform",
-  description: "Hold up a mirror to your habits, replace algorithmic doom-scrolling with mindful learning, and turn your Watch Later graveyard into an active Second Brain.",
+  title: "DopaQueue — Spend Attention Like Money",
+  description:
+    "The anti-doomscroll Chrome extension. Set a daily scroll budget, save videos with one tap, and turn your Watch Later graveyard into an active second brain. Local-first, privacy-first, free forever.",
   manifest: "/manifest.json",
+  keywords: [
+    "doomscrolling",
+    "productivity",
+    "chrome extension",
+    "youtube shorts",
+    "instagram reels",
+    "dopamine detox",
+    "digital wellbeing",
+    "second brain",
+  ],
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "DopaQueue",
   },
+  openGraph: {
+    title: "DopaQueue — Spend Attention Like Money",
+    description:
+      "The anti-doomscroll extension. Budget your dopamine, save what matters, grow your second brain.",
+    type: "website",
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#09090b",
+  themeColor: "#0a0a08",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,

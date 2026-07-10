@@ -1,15 +1,19 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, ShieldCheck } from "lucide-react";
+import { ArrowRight, ShieldCheck, ChevronDown } from "lucide-react";
+import { gsap } from "gsap";
+import dynamic from "next/dynamic";
+import { MagneticButton } from "./ui/MagneticButton";
 
-// ── Live Dopamine Budget demo ───────────────────────────────────────
-// A real, ticking simulation of the extension's core mechanic instead of
-// a static screenshot: the budget drains, the plant reacts, and the
-// Speed Bump takes over when it hits zero — then the day resets.
+const DemoScene = dynamic(
+  () => import("./DemoScene").then((m) => m.DemoScene),
+  { ssr: false }
+);
 
+// ── Live Budget Demo (repurposed from old Hero) ──
 const TOTAL = 60;
 
 function plantFor(pct: number) {
@@ -35,17 +39,15 @@ function BudgetDemo() {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 28 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
+      initial={{ opacity: 0, y: 28, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.8, delay: 0.6, ease: [0.22, 1, 0.36, 1] }}
       className="relative"
     >
-      {/* stacked "queue ticket" layers behind the card */}
       <div aria-hidden className="absolute inset-0 translate-x-4 translate-y-4 rotate-[2.5deg] rounded-3xl border border-white/5 bg-[#0e0e0c]" />
       <div aria-hidden className="absolute inset-0 translate-x-2 translate-y-2 rotate-[1.2deg] rounded-3xl border border-white/5 bg-[#101010]" />
 
       <div className="relative rounded-3xl border border-white/10 bg-[#121211] p-6 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.8)] overflow-hidden">
-        {/* header */}
         <div className="flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.2em] text-zinc-500">
           <span>dopamine_budget</span>
           <span className="flex items-center gap-1.5">
@@ -54,7 +56,6 @@ function BudgetDemo() {
           </span>
         </div>
 
-        {/* big remaining counter */}
         <div className="mt-5 flex items-end gap-2">
           <span className="font-mono text-6xl font-bold tabular-nums text-white leading-none">
             {String(remaining).padStart(2, "0")}
@@ -62,7 +63,6 @@ function BudgetDemo() {
           <span className="font-mono text-sm text-zinc-500 pb-1">min left today</span>
         </div>
 
-        {/* drain bar */}
         <div className="mt-5 h-2 rounded-full bg-zinc-800/80 overflow-hidden">
           <motion.div
             className={`h-full rounded-full ${pct > 0.3 ? "bg-lime-400" : "bg-orange-400"}`}
@@ -71,7 +71,6 @@ function BudgetDemo() {
           />
         </div>
 
-        {/* plant status */}
         <div className="mt-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <AnimatePresence mode="popLayout" initial={false}>
@@ -91,10 +90,9 @@ function BudgetDemo() {
               <p className="font-mono text-[11px] text-zinc-500">your garden reacts in real time</p>
             </div>
           </div>
-          <span className="font-mono text-[11px] text-zinc-600">yt/shorts · ig/reels</span>
+          <span className="font-mono text-[10px] text-zinc-600">yt/shorts · ig/reels</span>
         </div>
 
-        {/* speed bump takeover */}
         <AnimatePresence>
           {spent && (
             <motion.div
@@ -124,53 +122,104 @@ function BudgetDemo() {
   );
 }
 
-// ── Hero ──────────────────────────────────────────────────────────────
-
-const ease = [0.22, 1, 0.36, 1] as const;
-
-export const Hero = () => {
+// ── Character Stagger Heading ──
+function StaggerHeading({ text, delay = 0 }: { text: string; delay?: number }) {
+  const chars = text.split("");
   return (
-    <section className="relative overflow-hidden bg-grain pt-36 pb-24">
-      {/* warm glow, off-center on purpose */}
-      <div aria-hidden className="absolute -top-32 right-[-12%] w-[520px] h-[520px] rounded-full bg-lime-400/[0.06] blur-[130px] pointer-events-none" />
+    <span className="inline-block">
+      {chars.map((char, i) => (
+        <motion.span
+          key={i}
+          initial={{ opacity: 0, y: 40, rotateX: -60 }}
+          animate={{ opacity: 1, y: 0, rotateX: 0 }}
+          transition={{
+            duration: 0.5,
+            delay: delay + i * 0.025,
+            ease: [0.22, 1, 0.36, 1],
+          }}
+          className="inline-block"
+          style={{ transformOrigin: "bottom center" }}
+        >
+          {char === " " ? "\u00A0" : char}
+        </motion.span>
+      ))}
+    </span>
+  );
+}
 
-      <div className="max-w-6xl mx-auto px-6 grid lg:grid-cols-[1.05fr_0.95fr] gap-16 items-center">
+// ── Hero ──
+export function Hero() {
+  const sectionRef = useRef<HTMLElement>(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePos({
+        x: (e.clientX / window.innerWidth - 0.5) * 2,
+        y: (e.clientY / window.innerHeight - 0.5) * 2,
+      });
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
+
+  return (
+    <section
+      ref={sectionRef}
+      className="relative min-h-screen flex items-center overflow-hidden bg-grain"
+    >
+      {/* Background Gradient Orbs — parallax on mouse */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ transform: `translate(${mousePos.x * 15}px, ${mousePos.y * 15}px)` }}
+      >
+        <div className="absolute top-[10%] right-[15%] w-[500px] h-[500px] rounded-full bg-lime-400/[0.04] blur-[120px]" />
+        <div className="absolute bottom-[20%] left-[10%] w-[400px] h-[400px] rounded-full bg-lime-400/[0.03] blur-[100px]" />
+        <div className="absolute top-[40%] left-[40%] w-[300px] h-[300px] rounded-full bg-emerald-400/[0.02] blur-[80px]" />
+      </div>
+
+      {/* 3D Scene Background */}
+      <div className="absolute inset-0 opacity-60">
+        <DemoScene className="w-full h-full" />
+      </div>
+
+      {/* Content */}
+      <div className="relative z-10 max-w-7xl mx-auto px-6 pt-24 pb-16 grid lg:grid-cols-[1.1fr_0.9fr] gap-12 lg:gap-20 items-center w-full">
+        {/* Left: Text */}
         <div>
           <motion.p
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease }}
+            initial={{ opacity: 0, y: 14, filter: "blur(10px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
             className="font-mono text-xs tracking-[0.3em] uppercase text-lime-400/90 mb-6"
           >
             ⏚ the anti-doomscroll extension
           </motion.p>
 
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.08, ease }}
-            className="text-5xl md:text-6xl font-bold tracking-tight text-white leading-[1.05]"
+          <h1
+            className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight text-white leading-[1.05]"
+            style={{ perspective: "600px" }}
           >
-            Spend attention
+            <StaggerHeading text="Spend attention" delay={0.1} />
             <br />
-            like it&apos;s{" "}
+            <StaggerHeading text="like it's " delay={0.5} />
             <span className="relative inline-block">
-              money.
+              <StaggerHeading text="money." delay={0.7} />
               <motion.span
                 aria-hidden
-                className="absolute left-0 -bottom-1.5 h-[4px] bg-lime-400 rounded-full"
+                className="absolute left-0 -bottom-2 h-[4px] bg-lime-400 rounded-full"
                 initial={{ width: 0 }}
                 animate={{ width: "100%" }}
-                transition={{ duration: 0.55, delay: 0.7, ease }}
+                transition={{ duration: 0.6, delay: 1.2, ease: [0.22, 1, 0.36, 1] }}
               />
             </span>
-          </motion.h1>
+          </h1>
 
           <motion.p
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.18, ease }}
-            className="mt-6 text-lg text-zinc-400 max-w-xl leading-relaxed"
+            transition={{ duration: 0.7, delay: 0.9, ease: [0.22, 1, 0.36, 1] }}
+            className="mt-8 text-lg md:text-xl text-zinc-400 max-w-xl leading-relaxed"
           >
             DopaQueue puts a price on every mindless scroll and a purpose behind
             every save. A daily budget, a plant that lives or dies by it, and a
@@ -178,18 +227,21 @@ export const Hero = () => {
           </motion.p>
 
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.28, ease }}
-            className="mt-10 flex flex-col sm:flex-row gap-3"
+            transition={{ duration: 0.7, delay: 1.1, ease: [0.22, 1, 0.36, 1] }}
+            className="mt-10 flex flex-col sm:flex-row gap-4"
           >
-            <button className="group inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl bg-lime-400 text-[#0a0a08] font-bold text-sm hover:bg-lime-300 active:scale-[0.98] transition-all">
+            <MagneticButton
+              className="group inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl bg-[var(--dq-lime)] text-[#0a0a08] font-bold text-sm hover:bg-lime-300 active:scale-[0.98] transition-all cursor-pointer"
+              strength={0.2}
+            >
               Add to Chrome — it&apos;s free
               <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-            </button>
+            </MagneticButton>
             <Link
               href="/share/demo"
-              className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl border border-white/10 text-zinc-300 text-sm font-medium hover:bg-white/5 hover:border-white/20 transition-colors"
+              className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-2xl border border-white/10 text-zinc-300 text-sm font-medium hover:bg-white/5 hover:border-white/20 transition-all"
             >
               Preview a shared deck
             </Link>
@@ -198,7 +250,7 @@ export const Hero = () => {
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 0.5 }}
+            transition={{ duration: 0.8, delay: 1.4 }}
             className="mt-8 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.2em] text-zinc-600"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-lime-500/70" />
@@ -206,8 +258,20 @@ export const Hero = () => {
           </motion.p>
         </div>
 
+        {/* Right: Budget Demo */}
         <BudgetDemo />
       </div>
+
+      {/* Scroll Indicator */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 2, duration: 1 }}
+        className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2"
+      >
+        <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-zinc-600">scroll</span>
+        <ChevronDown className="w-4 h-4 text-zinc-600 scroll-hint-arrow" />
+      </motion.div>
     </section>
   );
-};
+}

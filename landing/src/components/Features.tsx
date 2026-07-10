@@ -1,112 +1,204 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { cn } from "@/lib/utils";
-import { Clock, DownloadCloud, Lock, PlayCircle, Zap } from "lucide-react";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { GlowCard } from "./ui/GlowCard";
+import { TextReveal } from "./ui/TextReveal";
+import {
+  Clock,
+  Lock,
+  PlayCircle,
+  Zap,
+  DownloadCloud,
+  BarChart3,
+  Shield,
+  Users,
+} from "lucide-react";
 
-const ease = [0.22, 1, 0.36, 1] as const;
+gsap.registerPlugin(ScrollTrigger);
 
-const FeatureCard = ({
-  index,
-  title,
-  description,
-  icon,
-  className,
-}: {
-  index: number;
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  className?: string;
-}) => {
+const FEATURES = [
+  {
+    title: "Dopamine Budgeting",
+    description:
+      "Set a daily scroll budget. A virtual plant thrives when you're under it — and wilts when you aren't. Gamification that actually makes you scroll less.",
+    icon: Clock,
+    color: "#a3e635",
+    detail: "Your garden reacts in real-time as you scroll through Shorts & Reels.",
+  },
+  {
+    title: "Universal Save",
+    description:
+      "One-click save from YouTube, Shorts, Instagram Reels, TikTok, X, Reddit, and LinkedIn. Everything lands in a single queue with auto-transcripts and smart tags.",
+    icon: PlayCircle,
+    color: "#a3e635",
+    detail: "Works across 7 platforms with automatic metadata extraction.",
+  },
+  {
+    title: "Smart Transcripts",
+    description:
+      "Automatically extract and save transcripts from YouTube videos without expensive APIs. Search through everything you've ever saved — by topic, not title.",
+    icon: Zap,
+    color: "#fbbf24",
+    detail: "Full-text search across all your saved content, instantly.",
+  },
+  {
+    title: "Digital Wellbeing",
+    description:
+      "Enterprise-grade analytics for your attention. Vulnerability heatmaps, attention decay curves, streak tracking, and platform breakdowns — all computed locally.",
+    icon: BarChart3,
+    color: "#38bdf8",
+    detail: "Pattern detection that reveals your scrolling habits at a glance.",
+  },
+  {
+    title: "Local-First Privacy",
+    description:
+      "Your data never leaves your device unless you want it to. Completely offline-capable with on-demand cloud syncing and row-level security.",
+    icon: Lock,
+    color: "#a3e635",
+    detail: "Zero trackers. Zero analytics. 100% yours.",
+  },
+  {
+    title: "Rich Export & Circles",
+    description:
+      "Share curated video collections with friends. Export your queue to Markdown, Notion, Obsidian, or CSV — your second brain is portable by design.",
+    icon: Users,
+    color: "#e879f9",
+    detail: "Collaborative curation meets personal knowledge management.",
+  },
+];
+
+export function Features() {
+  const sectionRef = useRef<HTMLElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!sectionRef.current || !trackRef.current) return;
+
+    const track = trackRef.current;
+    const cards = track.querySelectorAll<HTMLElement>(".feature-card");
+    const totalWidth = track.scrollWidth - window.innerWidth;
+
+    const scrollTween = gsap.to(track, {
+      x: -totalWidth,
+      ease: "none",
+      scrollTrigger: {
+        trigger: sectionRef.current,
+        start: "top top",
+        end: () => `+=${totalWidth}`,
+        pin: true,
+        scrub: 1,
+        anticipatePin: 1,
+        invalidateOnRefresh: true,
+      },
+    });
+
+    // Stagger card entries
+    cards.forEach((card, i) => {
+      gsap.fromTo(
+        card,
+        { opacity: 0.3, scale: 0.92, y: 30 },
+        {
+          opacity: 1,
+          scale: 1,
+          y: 0,
+          scrollTrigger: {
+            trigger: card,
+            containerAnimation: scrollTween,
+            start: "left 80%",
+            end: "left 40%",
+            scrub: 1,
+          },
+        }
+      );
+    });
+
+    return () => {
+      ScrollTrigger.getAll().forEach((t) => t.kill());
+    };
+  }, []);
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 26 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.55, delay: index * 0.07, ease }}
-      className={cn(
-        "group relative flex flex-col justify-between overflow-hidden rounded-2xl bg-[#121211] border border-white/[0.07] p-6",
-        "transition-all duration-300 hover:border-lime-400/25 hover:-translate-y-1 hover:shadow-[0_16px_48px_-16px_rgba(0,0,0,0.7)]",
-        className
-      )}
+    <section
+      id="features"
+      ref={sectionRef}
+      className="relative overflow-hidden bg-[var(--dq-bg)]"
     >
-      <div className="flex items-start justify-between">
-        <div className="text-lime-400/90 transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-3">{icon}</div>
-        <span className="font-mono text-[11px] text-zinc-600 tracking-widest">
-          {String(index + 1).padStart(2, "0")}
-        </span>
-      </div>
-      <div className="mt-6">
-        <h3 className="mb-2 text-xl font-semibold text-zinc-100">{title}</h3>
-        <p className="text-sm text-zinc-400 leading-relaxed">{description}</p>
-      </div>
-
-      {/* corner glow on hover */}
-      <div className="absolute -bottom-16 -right-16 w-40 h-40 rounded-full bg-lime-400/[0.06] blur-2xl opacity-0 transition-opacity duration-500 group-hover:opacity-100 pointer-events-none" />
-    </motion.div>
-  );
-};
-
-export const Features = () => {
-  return (
-    <section id="features" className="py-28 bg-background">
-      <div className="max-w-6xl mx-auto px-6">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
+      {/* Section Header */}
+      <div className="max-w-7xl mx-auto px-6 pt-28 pb-12">
+        <motion.p
+          initial={{ opacity: 0, y: 14 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-60px" }}
-          transition={{ duration: 0.55, ease }}
-          className="mb-16 max-w-2xl"
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+          className="font-mono text-xs tracking-[0.3em] uppercase text-lime-400/80 mb-4"
         >
-          <p className="font-mono text-xs tracking-[0.3em] uppercase text-lime-400/80 mb-4">what&apos;s inside</p>
-          <h2 className="text-3xl md:text-5xl font-bold text-white mb-4 tracking-tight">
-            Built like a budget app.
-            <br />
-            Plays like a game.
-          </h2>
-          <p className="text-zinc-400">
-            Every mechanic exists to move minutes from the algorithm&apos;s pocket
-            back into yours — wrapped in a local-first experience you own.
-          </p>
-        </motion.div>
+          what&apos;s inside
+        </motion.p>
+        <TextReveal
+          as="h2"
+          className="text-4xl md:text-6xl font-bold text-white tracking-tight leading-tight"
+        >
+          Built like a budget app. Plays like a game.
+        </TextReveal>
+        <motion.p
+          initial={{ opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6, delay: 0.2 }}
+          className="mt-6 text-zinc-400 text-lg max-w-2xl"
+        >
+          Every mechanic exists to move minutes from the algorithm&apos;s pocket
+          back into yours — wrapped in a local-first experience you own.
+        </motion.p>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <FeatureCard
-            index={0}
-            className="md:col-span-2 md:row-span-2 min-h-[300px]"
-            title="Local-First Privacy"
-            description="Your data never leaves your device unless you want it to. Completely offline-capable with on-demand cloud syncing via Supabase — and row-level security when you do."
-            icon={<Lock className="w-8 h-8" />}
-          />
-          <FeatureCard
-            index={1}
-            title="Dopamine Budgeting"
-            description="Gamify your focus. Your virtual plant wilts when you scroll mindlessly, and thrives when you watch saved content."
-            icon={<Clock className="w-8 h-8" />}
-          />
-          <FeatureCard
-            index={2}
-            title="Universal Save"
-            description="Save YouTube videos, Shorts, and Instagram Reels directly to your queue with a single click."
-            icon={<PlayCircle className="w-8 h-8" />}
-          />
-          <FeatureCard
-            index={3}
-            title="Smart Transcripts"
-            description="Automatically extract and save transcripts from YouTube videos without relying on expensive APIs."
-            icon={<Zap className="w-8 h-8" />}
-          />
-          <FeatureCard
-            index={4}
-            className="md:col-span-2"
-            title="Rich Export"
-            description="Download your saved videos, channels, and AI-generated notes to Markdown, Notion, Obsidian, or CSV — your second brain is portable by design."
-            icon={<DownloadCloud className="w-8 h-8" />}
-          />
-        </div>
+      {/* Horizontal Scroll Track */}
+      <div ref={trackRef} className="flex items-stretch gap-8 px-6 pb-28 will-change-transform">
+        {FEATURES.map((feature, i) => (
+          <div
+            key={i}
+            className="feature-card shrink-0 w-[85vw] md:w-[550px] lg:w-[600px]"
+          >
+            <GlowCard className="h-full">
+              <div className="p-8 md:p-10 flex flex-col h-full min-h-[400px]">
+                {/* Top row */}
+                <div className="flex items-start justify-between mb-8">
+                  <div
+                    className="p-3 rounded-2xl border border-white/5"
+                    style={{ backgroundColor: `${feature.color}10` }}
+                  >
+                    <feature.icon
+                      className="w-7 h-7 transition-transform duration-300"
+                      style={{ color: feature.color }}
+                    />
+                  </div>
+                  <span className="font-mono text-[11px] text-zinc-600 tracking-widest">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                </div>
+
+                {/* Content */}
+                <h3 className="text-2xl md:text-3xl font-bold text-white mb-4 tracking-tight">
+                  {feature.title}
+                </h3>
+                <p className="text-zinc-400 leading-relaxed text-base flex-1">
+                  {feature.description}
+                </p>
+
+                {/* Bottom detail */}
+                <div className="mt-8 pt-6 border-t border-white/5">
+                  <p className="font-mono text-xs text-zinc-500 tracking-wide">
+                    {feature.detail}
+                  </p>
+                </div>
+              </div>
+            </GlowCard>
+          </div>
+        ))}
       </div>
     </section>
   );
-};
+}
