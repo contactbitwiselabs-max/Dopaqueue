@@ -90,7 +90,7 @@ export async function universalScrapeAll(targetUrl, containerEl = null) {
   return {
     url,
     title,
-    thumbnail,
+    thumbnail: thumbnail || rawImgUrl,
     author,
     authorUrl,
     authorImage,
@@ -192,6 +192,7 @@ export function scrapeMetadataOnly() {
     genre: contentType, channel: author, contentType, platform, transcript: null
   };
 }
+
 
 export function initInstagramButtons() {
   if (!location.hostname.includes('instagram.com')) return;

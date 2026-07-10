@@ -247,7 +247,9 @@ export function scrapeYouTubeMetadataOnly() {
   let authorImage = (document.querySelector('#avatar img, ytd-video-owner-renderer img, ytd-reel-channel-bar-renderer img') as HTMLImageElement)?.src || null;
   if (authorImage && authorImage.startsWith('//')) authorImage = 'https:' + authorImage;
 
-  const thumbnail = videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null;
+  const thumbnail = videoId
+    ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+    : ((document.querySelector('meta[property="og:image"]') as HTMLMetaElement)?.content || null);
   const genre = scrapeCategory();
 
   return {

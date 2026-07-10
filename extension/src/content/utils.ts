@@ -1,11 +1,12 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 export function extractVideoId(url) {
+  if (!url) return null;
   const m1 = url.match(/[?&]v=([A-Za-z0-9_-]{11})/);
   if (m1) return m1[1];
   const m2 = url.match(/youtu\.be\/([A-Za-z0-9_-]{11})/);
   if (m2) return m2[1];
-  const m3 = url.match(/\/shorts\/([A-Za-z0-9_-]{11})/);
-  if (m3) return m3[1];
+  const m3 = url.match(/\/(shorts|embed|v)\/([A-Za-z0-9_-]{11})/);
+  if (m3) return m3[2];
   return null;
 }
 
