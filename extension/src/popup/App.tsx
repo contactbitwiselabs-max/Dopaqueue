@@ -95,9 +95,19 @@ export default function App() {
             setCurrentUrl(tab.url || '');
             setCurrentTitle(tab.title || '');
             setContentType(detectContentType(tab.url || ''));
-            // Try to get thumbnail
             const videoId = tab.url ? extractYouTubeVideoId(tab.url) : null;
-            if (videoId) setCurrentThumbnail(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`);
+            if (videoId) {
+              setCurrentThumbnail(`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`);
+            }
+            if (tab.id) {
+              try {
+                chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (scraped) => {
+                  if (chrome.runtime.lastError || !scraped) return;
+                  if (scraped.thumbnail) setCurrentThumbnail(scraped.thumbnail);
+                  if (scraped.title && !videoId) setCurrentTitle(scraped.title);
+                });
+              } catch (e) { }
+            }
           }
         });
       }

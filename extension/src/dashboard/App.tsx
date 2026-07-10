@@ -298,7 +298,25 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
       <div className="relative h-36 bg-[var(--dq-surface)] rounded-t-2xl overflow-hidden">
         {video.thumbnail ? (
           <>
-            <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <img
+              src={video.thumbnail}
+              alt={video.title}
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (video.url && video.url.includes('youtube.com') && !target.dataset.retried) {
+                  const m = video.url.match(/([?&]v=|\/shorts\/|\/embed\/|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+                  const vid = m ? m[2] : null;
+                  if (vid) {
+                    target.dataset.retried = '1';
+                    target.src = `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`;
+                    return;
+                  }
+                }
+                target.style.display = 'none';
+              }}
+              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
           </>
         ) : (
