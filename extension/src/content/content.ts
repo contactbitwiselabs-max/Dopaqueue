@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { scrapeMetadataOnly, initInstagramButtons, universalScrapeAll } from './platforms/instagram.js';
 import { scrapeYouTube, injectYouTubeShortsButtons } from './platforms/youtube.js';
 import { initTextPlatformButtons } from './platforms/text_platforms.js';
@@ -25,25 +25,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'SCRAPE_NOW') {
     const isYouTube = location.hostname.includes('youtube.com');
 
-    // Respond INSTANTLY with live DOM metadata â€” never wait for transcript
-    const metadata = isYouTube ? scrapeYouTube() : scrapeMetadataOnly();
+    // Use universalScrapeAll so we get the base64 thumbnail for the popup
+    const scrapePromise = isYouTube ? scrapeYouTube() : universalScrapeAll();
     
-    // YouTube scraper is always async, so we just wait for it. Metadata scraper is sync.
-    if (metadata instanceof Promise) {
-      metadata.then(data => sendResponse(data));
+    if (scrapePromise instanceof Promise) {
+      scrapePromise.then(data => {
+        sendResponse(data);
+        // Fire-and-forget: send full scrape to background
+        if (data && (data.genre || data.channel || data.transcript || data.thumbnail)) {
+          try { chrome.runtime.sendMessage({ type: 'GENRE_SCRAPED', ...data }); } catch (e) { }
+        }
+      });
     } else {
-      sendResponse(metadata);
+      sendResponse(scrapePromise);
     }
 
-    // Fire-and-forget: send full scrape (with transcript) to background
-    (async () => {
-      try {
-        const full = isYouTube ? await scrapeYouTube() : await universalScrapeAll();
-        chrome.runtime.sendMessage({ type: 'GENRE_SCRAPED', ...full });
-      } catch (e) { }
-    })();
-
-    return true; // async response
+    return true; // Keep message channel open for async response
   }
 });
 

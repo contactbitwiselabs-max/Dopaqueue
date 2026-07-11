@@ -146,8 +146,13 @@ export default function App() {
 
   const handleSave = async () => {
     if (!currentUrl) { setSaveStatus('error'); setErrorMsg('No URL detected.'); return; }
-    const validation = validateUrl(currentUrl);
-    if (!validation.valid) { setSaveStatus('error'); setErrorMsg(validation.errors[0]); return; }
+    const sanitizedUrl = validateUrl(currentUrl, { requireVideoPlatform: true });
+    if (!sanitizedUrl) { 
+      setSaveStatus('error'); 
+      setErrorMsg('Invalid or unsupported URL.'); 
+      setTimeout(() => setSaveStatus('idle'), 3000);
+      return; 
+    }
 
     setSaveStatus('saving');
     try {
@@ -450,7 +455,7 @@ export default function App() {
               </div>
               <div className="space-y-2">
                 <AnimatePresence>
-                  {queue.slice(0, 4).map((item, i) => (
+                  {[...queue].sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()).slice(0, 4).map((item, i) => (
                     <motion.div
                       key={item.id}
                       initial={{ opacity: 0, x: -10 }}

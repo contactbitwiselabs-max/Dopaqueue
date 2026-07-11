@@ -296,9 +296,10 @@ interface VideoCardProps {
   onReadArticle: () => void;
   onUpdateTags: (id: string, tags: string[]) => void;
   onSetUrgency: (id: string, urgency: UrgencyLevel) => void;
+  scrapeVersion?: number; // bumped when scrape cache updates to force re-render
 }
 
-function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onSetUrgency }: VideoCardProps) {
+function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onSetUrgency, scrapeVersion: _sv }: VideoCardProps) {
   const [copied, setCopied] = useState(false);
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState('');
@@ -582,6 +583,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [readingVideo, setReadingVideo] = useState<QueueItem | null>(null);
+  const [scrapeVersion, setScrapeVersion] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const refreshData = useCallback(() => {
@@ -629,6 +631,9 @@ export default function App() {
     }
     initStorage().then(() => { refreshData(); setAuthChecked(true); });
     const unsubQueue = subscribe('dq_queue', refreshData);
+    // Bump version counter when scrape cache updates so VideoCards re-read getScrapeResult
+    // Using a separate counter (not refreshData) avoids stale-queue race conditions
+    const unsubScrape = subscribe('dq_scrape_cache', () => setScrapeVersion(v => v + 1));
     supabaseClient.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user || null);
     });
@@ -636,7 +641,7 @@ export default function App() {
       setUser(session?.user || null);
       if (session?.user) setShowAuth(false);
     });
-    return () => { unsubQueue(); authListener.subscription.unsubscribe(); };
+    return () => { unsubQueue(); unsubScrape(); authListener.subscription.unsubscribe(); };
   }, [refreshData]);
 
   useEffect(() => {
@@ -967,6 +972,7 @@ export default function App() {
                             onReadArticle={() => setReadingVideo(video)}
                             onUpdateTags={handleUpdateTags}
                             onSetUrgency={handleSetUrgency}
+                            scrapeVersion={scrapeVersion}
                           />
                         </StaggerItem>
                       ))}

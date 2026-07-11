@@ -56,6 +56,44 @@ function scrapeHashtagsFromPage(container) {
   return Array.from(tagSet).slice(0, 15);
 }
 
+// Extracts the actual caption from Instagram's og:description.
+// Instagram uses multiple formats across regions/versions:
+//   Old: "@username: Caption text #tags – Watch Instagram..."
+//   New: "132 Likes, 14 Comments - @username on Instagram: \"Caption text\""
+//   Reel: "Watch @username's video on Instagram"
+function extractInstagramCaption(): string | null {
+  const ogDesc = document.querySelector('meta[property="og:description"]');
+  const raw = ogDesc?.content || '';
+  if (!raw) return null;
+
+  let cleaned = raw;
+
+  // 1. Strip leading likes/comments count (newer format)
+  //    e.g. "132 Likes, 14 Comments - " or "1.2M Likes, 3K Comments - "
+  cleaned = cleaned.replace(/^\d[\d,.kKmM]* ?(?:Likes?|likes?),?\s*\d[\d,.kKmM]* ?(?:Comments?|comments?)\s*[-–—]\s*/i, '').trim();
+  // Also handle just likes with no comments
+  cleaned = cleaned.replace(/^\d[\d,.kKmM]* ?(?:Likes?|likes?)\s*[-–—]\s*/i, '').trim();
+
+  // 2. Strip trailing boilerplate
+  const trailingRe = [
+    /\s*[-–—]\s*Watch Instagram videos and photos.*/i,
+    /\s*[-–—]\s*See Instagram photos and videos.*/i,
+    /\s*[-–—]\s*Liked by.*/i,
+    /\s*on Instagram\.?\s*$/i,
+  ];
+  for (const re of trailingRe) cleaned = cleaned.replace(re, '').trim();
+
+  // 3. Strip leading "@username on Instagram: " or "@username: "
+  cleaned = cleaned.replace(/^@?[\w.]+\s+on\s+Instagram:\s*/i, '').trim();
+  cleaned = cleaned.replace(/^@?[\w.]+:\s*/, '').trim();
+
+  // 4. Strip surrounding quotes added by Instagram
+  cleaned = cleaned.replace(/^"|"$/g, '').trim();
+
+  // 5. Return only if something meaningful is left
+  return cleaned.length > 3 ? cleaned : null;
+}
+
 export async function universalScrapeAll(targetUrl, containerEl = null) {
   const url = targetUrl || location.href;
   const host = location.hostname.toLowerCase();
@@ -97,19 +135,7 @@ export async function universalScrapeAll(targetUrl, containerEl = null) {
 
   const thumbnail = await getPermanentThumbnail(rawImgUrl);
 
-  let title = document.title || `${platform} Item`;
-  const localCaption = container.querySelector('h1, span[dir="auto"]');
-  if (localCaption?.textContent?.trim()) {
-    title = localCaption.textContent.trim().slice(0, 150);
-  } else {
-    const ogTitle = document.querySelector('meta[property="og:title"]');
-    if (ogTitle?.content) title = ogTitle.content;
-    else {
-      const twitterTitle = document.querySelector('meta[name="twitter:title"]');
-      if (twitterTitle?.content) title = twitterTitle.content;
-    }
-  }
-
+  // 1. Author (do this first so we can exclude author name from title search)
   let author = null;
   const authorSpan = container.querySelector('a[href^="/"][role="link"] span, header a[href^="/"]');
   if (authorSpan?.textContent?.trim()) {
@@ -125,6 +151,60 @@ export async function universalScrapeAll(targetUrl, containerEl = null) {
       if (match) author = match[1];
     }
   }
+  if (!author) {
+    const twitterCreator = document.querySelector('meta[name="twitter:creator"]');
+    if (twitterCreator?.content) author = twitterCreator.content;
+  }
+
+  // 2. Title: prioritize document.title (Instagram updates this on SPA swipe!)
+  let title = null;
+  if (platform === 'Instagram') {
+    const docT = document.title || '';
+    // Format: "Username on Instagram: \"Caption\""
+    const match = docT.match(/on Instagram:\s*["\u201C]([^"\u201D]+)["\u201D]/i);
+    if (match && match[1]) title = match[1].trim();
+  }
+
+  // Fallback to DOM
+  if (!title) {
+    const captionSelectors = platform === 'Instagram' ? [
+      'h1[dir="auto"]',
+      '[data-testid="post-comment-root"] [dir="auto"]',
+      'div[class*="Caption"] [dir="auto"]',
+      '[dir="auto"]',
+    ] : ['h1', 'span[dir="auto"]'];
+    for (const sel of captionSelectors) {
+      const els = container.querySelectorAll(sel);
+      for (const el of els) {
+        // Skip if inside a link (display names and usernames are always links)
+        if (el.closest('a')) continue;
+
+        const text = el.textContent?.trim();
+        if (!text) continue;
+        if (author && (text.toLowerCase() === author.toLowerCase() || text.toLowerCase() === author.substring(1).toLowerCase())) continue;
+        if (['follow', 'following', 'share', 'like', 'comment', 'send'].includes(text.toLowerCase())) continue;
+        
+        // Skip strings that are just numbers/stats (e.g. "1.5M", "10K likes", "1,234 comments")
+        if (/^[\d,.]+[kKmM]?\s*(likes?|comments?|shares?|views?|plays?)?$/i.test(text)) continue;
+
+        const isHandle = text.length < 30 && !/[ #.!?\n\u2600-\u27BF\u1F300-\u1F9FF]/.test(text);
+        if (isHandle) continue;
+        title = text.slice(0, 150);
+        break;
+      }
+      if (title) break;
+    }
+  }
+
+  if (!title && platform === 'Instagram') {
+    title = extractInstagramCaption();
+  }
+
+  if (!title) {
+    const docTitle = document.title?.replace(/\s*[•·|]\s*(Instagram|TikTok|X)\s*$/i, '').trim();
+    if (docTitle && docTitle.length > 3) title = docTitle;
+  }
+  if (!title) title = `${platform} Item`;
   if (!author) {
     const twitterCreator = document.querySelector('meta[name="twitter:creator"]');
     if (twitterCreator?.content) author = twitterCreator.content;
@@ -200,21 +280,7 @@ export function scrapeMetadataOnly() {
     const twitterImg = document.querySelector('meta[name="twitter:image"]');
     if (twitterImg?.content) rawImgUrl = twitterImg.content;
   }
-
-  let title = null;
-  const visibleCaption = container.querySelector('h1, span[dir="auto"]');
-  if (visibleCaption?.textContent?.trim()) {
-    title = visibleCaption.textContent.trim().slice(0, 150);
-  }
-  if (!title && document.title && document.title !== 'Instagram' && document.title !== 'TikTok') {
-    title = document.title;
-  }
-  if (!title) {
-    const ogTitle = document.querySelector('meta[property="og:title"]');
-    if (ogTitle?.content) title = ogTitle.content;
-  }
-  if (!title) title = `${platform} Item`;
-
+  // 1. Author (do this first to filter title)
   let author = null;
   const authorSpan = container.querySelector('a[href^="/"][role="link"] span, header a[href^="/"]');
   if (authorSpan?.textContent?.trim()) {
@@ -234,6 +300,55 @@ export function scrapeMetadataOnly() {
     const twitterCreator = document.querySelector('meta[name="twitter:creator"]');
     if (twitterCreator?.content) author = twitterCreator.content;
   }
+
+  // 2. Title: prioritize document.title (Instagram updates this on SPA swipe!)
+  let title = null;
+  if (platform === 'Instagram') {
+    const docT = document.title || '';
+    const match = docT.match(/on Instagram:\s*["\u201C]([^"\u201D]+)["\u201D]/i);
+    if (match && match[1]) title = match[1].trim();
+  }
+
+  // Fallback to DOM
+  if (!title) {
+    const captionSelectors = platform === 'Instagram' ? [
+      'h1[dir="auto"]',
+      '[data-testid="post-comment-root"] [dir="auto"]',
+      'div[class*="Caption"] [dir="auto"]',
+      '[dir="auto"]',
+    ] : ['h1', 'span[dir="auto"]'];
+    for (const sel of captionSelectors) {
+      const els = container.querySelectorAll(sel);
+      for (const el of els) {
+        // Skip if inside a link (display names and usernames are always links)
+        if (el.closest('a')) continue;
+
+        const text = el.textContent?.trim();
+        if (!text) continue;
+        if (author && (text.toLowerCase() === author.toLowerCase() || text.toLowerCase() === author.substring(1).toLowerCase())) continue;
+        if (['follow', 'following', 'share', 'like', 'comment', 'send'].includes(text.toLowerCase())) continue;
+        
+        // Skip strings that are just numbers/stats (e.g. "1.5M", "10K likes", "1,234 comments")
+        if (/^[\d,.]+[kKmM]?\s*(likes?|comments?|shares?|views?|plays?)?$/i.test(text)) continue;
+
+        const isHandle = text.length < 30 && !/[ #.!?\n\u2600-\u27BF\u1F300-\u1F9FF]/.test(text);
+        if (isHandle) continue;
+        title = text.slice(0, 150);
+        break;
+      }
+      if (title) break;
+    }
+  }
+
+  if (!title && platform === 'Instagram') {
+    title = extractInstagramCaption();
+  }
+
+  if (!title) {
+    const docTitle = document.title?.replace(/\s*[•·|]\s*(Instagram|TikTok|X)\s*$/i, '').trim();
+    if (docTitle && docTitle.length > 3) title = docTitle;
+  }
+  if (!title) title = `${platform} Item`;
 
   let authorUrl = null;
   if (author) {
@@ -425,10 +540,15 @@ export function initInstagramButtons() {
 
         if (!isSaved) {
           label.textContent = 'Saving...';
-          const scraped = await universalScrapeAll(currentUrl, isReelActionRow ? null : postContainer);
+          let scraped = await universalScrapeAll(currentUrl, isReelActionRow ? null : postContainer);
+          // Fallback: if full scrape failed (container not ready), use sync metadata scraper
+          if (!scraped) {
+            const meta = scrapeMetadataOnly();
+            if (meta) scraped = { ...meta, thumbnail: null };
+          }
           chrome.runtime.sendMessage({
             type: 'SAVE_INSTAGRAM_ITEM',
-            ...scraped,
+            ...(scraped || {}),
             url: scraped?.url || currentUrl
           }, () => {
             setSavedUI();

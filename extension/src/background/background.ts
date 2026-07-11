@@ -374,7 +374,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const entry = {
         id: crypto.randomUUID(),
         url: message.url,
-        title: message.title || 'Instagram Post',
+        title: message.title && message.title !== 'Instagram Item' ? message.title : (message.author ? `${message.author}'s post` : 'Instagram Post'),
         thumbnail: message.thumbnail || null,
         author: message.author || null,
         contentType: message.contentType || 'reel',
@@ -386,6 +386,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       cacheScrapeResult(message.url, {
         genre: message.contentType || 'Instagram',
         channel: message.author || null,
+        title: message.title || null,
+        thumbnail: message.thumbnail || null,
+        author: message.author || null,
+        authorUrl: message.authorUrl || null,
+        authorImage: message.authorImage || null,
+        scrapedTags: Array.isArray(message.scrapedTags) ? message.scrapedTags : undefined,
       });
       if (message.author) {
         ensureChannelSaved(message.author, '', message.platform || 'Instagram');
