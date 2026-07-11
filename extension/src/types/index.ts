@@ -59,6 +59,7 @@ export interface ScrapeData {
   thumbnail?: string;
   title?: string;
   scrapedAt?: number;
+  scrapedTags?: string[];
 }
 export type ScrapeResult = ScrapeData;
 

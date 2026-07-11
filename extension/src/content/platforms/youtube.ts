@@ -252,6 +252,32 @@ export function scrapeYouTubeMetadataOnly() {
     : ((document.querySelector('meta[property="og:image"]') as HTMLMetaElement)?.content || null);
   const genre = scrapeCategory();
 
+  // Scrape hashtags from Shorts description / meta
+  const scrapedTags: string[] = [];
+  const hashRe = /#([a-zA-Z0-9_\u0080-\uFFFF]{2,40})/g;
+  const descSources = [
+    document.querySelector('meta[property="og:description"]'),
+    document.querySelector('meta[name="description"]'),
+    document.querySelector('#description, ytd-reel-video-renderer[is-active] #description'),
+  ];
+  const tagSet = new Set<string>();
+  for (const el of descSources) {
+    if (!el) continue;
+    const text = (el as any).content || (el as any).textContent || '';
+    let m;
+    while ((m = hashRe.exec(text)) !== null) {
+      const t = m[1].toLowerCase();
+      if (t.length >= 2) tagSet.add(t);
+    }
+    hashRe.lastIndex = 0;
+  }
+  // Also grab YouTube hashtag links in the description
+  document.querySelectorAll('a[href*="/hashtag/"]').forEach((a: any) => {
+    const t = a.textContent?.replace(/^#/, '').toLowerCase().trim();
+    if (t && t.length >= 2) tagSet.add(t);
+  });
+  scrapedTags.push(...Array.from(tagSet).slice(0, 15));
+
   return {
     url,
     title,
@@ -262,7 +288,8 @@ export function scrapeYouTubeMetadataOnly() {
     genre,
     channel,
     contentType: 'video',
-    platform: 'YouTube'
+    platform: 'YouTube',
+    scrapedTags,
   };
 }
 

@@ -205,7 +205,9 @@ async function budgetTick() {
     game.budgetMinutesUsed + 1
   );
 
-  const updated = updateGameState({ budgetMinutesUsed });
+  const remainingMins = Math.max(0, game.budgetMinutesTotal - budgetMinutesUsed);
+  const health = Math.max(0, Math.min(100, Math.round((remainingMins / (game.budgetMinutesTotal || 1)) * 100)));
+  const updated = updateGameState({ budgetMinutesUsed, health });
 
   const nowAtZero = updated.budgetMinutesUsed >= updated.budgetMinutesTotal;
   if (nowAtZero && !wasAtZero && !updated.notifiedZeroToday) {
@@ -267,6 +269,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         genre: message.genre || null,
         channel: message.channel || null,
         transcript: message.transcript || null,
+        scrapedTags: Array.isArray(message.scrapedTags) ? message.scrapedTags : undefined,
       });
       const authorOrChan = message.channel || message.author;
       if (authorOrChan && message.url) {
@@ -282,6 +285,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         transcriptLength: message.transcript ? message.transcript.length : 0,
         genre: message.genre,
         channel: message.channel,
+        scrapedTagsCount: message.scrapedTags?.length || 0,
       });
       sendResponse({ ok: true });
     });

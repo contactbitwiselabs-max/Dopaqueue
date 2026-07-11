@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 // chrome.storage.local helpers shared by background.js, popup.js, and the web app (dashboard).
 import {
   STORAGE_KEYS,
@@ -276,6 +276,12 @@ export function updateQueueItem(id: string, patch: Partial<QueueItem>): QueueIte
   if (patch.group !== undefined) {
     validatedPatch.group = validateString(patch.group, { maxLength: 50, allowEmpty: true }) || null;
   }
+  if (patch.urgency !== undefined) {
+    validatedPatch.urgency = patch.urgency;
+  }
+  if (patch.note !== undefined) {
+    validatedPatch.note = patch.note;
+  }
 
   localQueue = localQueue.map((item) => 
     item.id === id ? { ...item, ...validatedPatch, updatedAt: Date.now() } : item
@@ -404,6 +410,7 @@ export function cacheScrapeResult(url: string, data: Partial<ScrapeData>): Recor
     title: validateString(data.title, { maxLength: 200, allowEmpty: true }) || null,
     transcript: validateString(data.transcript, { maxLength: 50000, allowEmpty: true }) || null,
     genre: validateString(data.genre, { maxLength: 50, allowEmpty: true }) || null,
+    scrapedTags: Array.isArray(data.scrapedTags) ? data.scrapedTags.slice(0, 20) : undefined,
     scrapedAt: Date.now(),
   } as ScrapeData; // Coercing because platform/contentType are missing but okay for cache
   

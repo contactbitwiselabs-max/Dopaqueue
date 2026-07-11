@@ -261,14 +261,15 @@ function PomodoroBar() {
 }
 
 // ─── Smart Thumbnail ────────────────────────────────────────────────
-function SmartThumbnail({ video, typeCfg }: { video: QueueItem; typeCfg: any }) {
+function SmartThumbnail({ video, typeCfg }: { video: QueueItem; typeCfg?: any }) {
   const [imgError, setImgError] = useState(false);
   const resolvedUrl = resolveThumbnailUrl(video.url, video.thumbnail);
+  const FallbackIcon = typeCfg?.icon || PlayCircle;
 
   if (!resolvedUrl || imgError) {
     return (
       <div className="w-full h-full flex items-center justify-center text-[var(--dq-text-subtle)]">
-        <typeCfg.icon className="w-8 h-8" />
+        <FallbackIcon className="w-8 h-8" />
       </div>
     );
   }
@@ -291,7 +292,7 @@ function SmartThumbnail({ video, typeCfg }: { video: QueueItem; typeCfg: any }) 
 interface VideoCardProps {
   video: QueueItem;
   onRemove: () => void;
-  onExport: (v: QueueItem, fmt: ExportFormat) => void;
+  onExport: (video: QueueItem, fmt: ExportFormat) => void;
   onReadArticle: () => void;
   onUpdateTags: (id: string, tags: string[]) => void;
   onSetUrgency: (id: string, urgency: UrgencyLevel) => void;
@@ -303,7 +304,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
   const [tagInput, setTagInput] = useState('');
   const scrape = getScrapeResult(video.url) || {};
   const type = detectContentType(video.url);
-  const typeCfg = TYPE_CONFIG[type];
+  const typeCfg = (type && (TYPE_CONFIG as any)[type]) ? (TYPE_CONFIG as any)[type] : TYPE_CONFIG.video;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(video.url);
@@ -344,23 +345,45 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
         {scrape.channel && <p className="text-xs text-[var(--dq-text-muted)] mb-3 truncate">{scrape.channel}</p>}
 
         {/* Tags */}
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {(video.tags || []).map(tag => (
-            <button key={tag} onClick={() => onUpdateTags(video.id, (video.tags || []).filter(t => t !== tag))} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--dq-surface)] text-[var(--dq-text-muted)] hover:bg-red-500/10 hover:text-red-400 transition-colors">
-              #{tag} &times;
-            </button>
-          ))}
-          <AnimatePresence>
-            {showTagInput ? (
-              <motion.form initial={{ width: 0, opacity: 0 }} animate={{ width: 80, opacity: 1 }} exit={{ width: 0, opacity: 0 }} onSubmit={e => { e.preventDefault(); addTag(); }} className="inline-flex">
-                <input autoFocus value={tagInput} onChange={e => setTagInput(e.target.value)} onBlur={addTag} className="w-full text-[10px] bg-[var(--dq-surface)] border border-lime-500/30 rounded-full px-2 py-0.5 text-[var(--dq-text-subtle)] outline-none" placeholder="tag..." />
-              </motion.form>
-            ) : (
-              <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowTagInput(true)} className="text-[10px] px-2 py-0.5 rounded-full border border-zinc-700 border-dashed text-[var(--dq-text-muted)] hover:text-lime-400 hover:border-lime-500/30 transition-colors">
-                + tag
-              </motion.button>
-            )}
-          </AnimatePresence>
+        <div className="flex flex-col gap-1.5 mb-3">
+          <div className="flex flex-wrap gap-1.5">
+            {(video.tags || []).map(tag => (
+              <button key={tag} onClick={() => onUpdateTags(video.id, (video.tags || []).filter(t => t !== tag))} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--dq-surface)] text-[var(--dq-text-muted)] hover:bg-red-500/10 hover:text-red-400 transition-colors">
+                #{tag} &times;
+              </button>
+            ))}
+            <AnimatePresence>
+              {showTagInput ? (
+                <motion.form initial={{ width: 0, opacity: 0 }} animate={{ width: 80, opacity: 1 }} exit={{ width: 0, opacity: 0 }} onSubmit={e => { e.preventDefault(); addTag(); }} className="inline-flex">
+                  <input autoFocus value={tagInput} onChange={e => setTagInput(e.target.value)} onBlur={addTag} className="w-full text-[10px] bg-[var(--dq-surface)] border border-lime-500/30 rounded-full px-2 py-0.5 text-[var(--dq-text-subtle)] outline-none" placeholder="tag..." />
+                </motion.form>
+              ) : (
+                <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowTagInput(true)} className="text-[10px] px-2 py-0.5 rounded-full border border-zinc-700 border-dashed text-[var(--dq-text-muted)] hover:text-lime-400 hover:border-lime-500/30 transition-colors">
+                  + tag
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
+          
+          {/* Auto-detected tags */}
+          {scrape.scrapedTags && scrape.scrapedTags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {scrape.scrapedTags.map((tag: string) => {
+                const already = (video.tags || []).includes(tag);
+                if (already) return null;
+                return (
+                  <button
+                    key={'auto-' + tag}
+                    type="button"
+                    onClick={() => onUpdateTags(video.id, [...(video.tags || []), tag])}
+                    className="text-[9px] px-1.5 py-0.5 rounded border bg-transparent text-[var(--dq-text-subtle)] border-white/10 hover:bg-lime-500/10 hover:text-lime-400 hover:border-lime-500/20 transition-colors"
+                  >
+                    +#{tag}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="text-[10px] text-[var(--dq-text-muted)] mb-4 flex items-center gap-1">
@@ -533,7 +556,15 @@ function ArticleModal({ video, onClose }: { video: QueueItem; onClose: () => voi
 
 // ─── Main App ──────────────────────────────────────────────────────
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabId>('videos');
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    if (typeof window !== 'undefined') {
+      const tab = new URLSearchParams(window.location.search).get('tab');
+      if (tab === 'settings' || tab === 'channels' || tab === 'analysis' || tab === 'circles' || tab === 'videos') {
+        return tab;
+      }
+    }
+    return 'videos';
+  });
   const [videos, setVideos] = useState<QueueItem[]>([]);
   const [channels, setChannels] = useState<any[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -624,7 +655,11 @@ export default function App() {
 
   const handleDelete = (id: string) => { removeFromQueue(id); refreshData(); };
   const handleUpdateTags = (id: string, tags: string[]) => { updateQueueItem(id, { tags }); refreshData(); };
-  const handleSetUrgency = (id: string, urgency: UrgencyLevel) => { updateQueueItem(id, { urgency }); refreshData(); };
+  const handleSetUrgency = (id: string, urgency: UrgencyLevel) => {
+    updateQueueItem(id, { urgency });
+    setVideos(prev => prev.map(v => v.id === id ? { ...v, urgency } : v));
+    refreshData();
+  };
 
   const handleSync = async () => {
     if (!user) { setShowAuth(true); return; }
@@ -902,7 +937,7 @@ export default function App() {
                     <span className="text-xs text-[var(--dq-text-muted)]">Type:</span>
                     <FilterChip active={filterType === 'all'} onClick={() => setFilterType('all')} label="All" count={videos.length} />
                     {Object.entries(TYPE_CONFIG).map(([key, cfg]) =>
-                      typeCounts[key] > 0 && <FilterChip key={key} active={filterType === key} onClick={() => setFilterType(key as ContentType)} label={cfg.label} count={typeCounts[key]} />
+                      <FilterChip key={key} active={filterType === key} onClick={() => setFilterType(key as ContentType)} label={cfg.label} count={typeCounts[key] || 0} />
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 mb-8">

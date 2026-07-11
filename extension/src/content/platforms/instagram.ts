@@ -1,6 +1,61 @@
 // @ts-nocheck
 import { getActiveContainer, getPermanentThumbnail } from '../utils.js';
 
+async function fetchImageAsDataUrlInPage(imageUrl) {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith('data:')) return imageUrl;
+  try {
+    const res = await fetch(imageUrl, { credentials: 'include' });
+    if (!res.ok) return imageUrl;
+    const blob = await res.blob();
+    if (blob.size > 4000000) return imageUrl;
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => resolve(imageUrl);
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    return imageUrl;
+  }
+}
+
+function scrapeHashtagsFromPage(container) {
+  const tagSet = new Set();
+  const hashRe = /#([a-zA-Z0-9_\u0080-\uFFFF]{2,40})/g;
+
+  // Caption / visible text
+  const captionCandidates = [
+    container?.querySelector?.('h1, [data-testid="post-comment-root"], span[dir="auto"], [class*="caption"]'),
+    document.querySelector('meta[property="og:description"]'),
+    document.querySelector('meta[name="twitter:description"]'),
+    document.querySelector('meta[name="description"]'),
+  ];
+
+  for (const el of captionCandidates) {
+    if (!el) continue;
+    const text = el.textContent || el.content || '';
+    let m;
+    while ((m = hashRe.exec(text)) !== null) {
+      const tag = m[1].toLowerCase();
+      if (tag.length >= 2) tagSet.add(tag);
+    }
+    hashRe.lastIndex = 0;
+  }
+
+  // Also scan all visible span/a elements for hashtag links (TikTok, Instagram)
+  const hashLinks = Array.from((container || document).querySelectorAll('a[href*="/hashtag/"], a[href*="/explore/tags/"]'));
+  for (const link of hashLinks) {
+    const text = link.textContent?.trim();
+    if (text) {
+      const clean = text.replace(/^#/, '').toLowerCase();
+      if (clean.length >= 2) tagSet.add(clean);
+    }
+  }
+
+  return Array.from(tagSet).slice(0, 15);
+}
+
 export async function universalScrapeAll(targetUrl, containerEl = null) {
   const url = targetUrl || location.href;
   const host = location.hostname.toLowerCase();
@@ -87,10 +142,13 @@ export async function universalScrapeAll(targetUrl, containerEl = null) {
 
   let authorImage = container.querySelector<HTMLImageElement>('header img, a[role="link"] img, img[data-testid="user-avatar"]')?.src || document.querySelector<HTMLImageElement>('header img, img[alt*="profile picture"]')?.src || null;
 
+  const permThumb = await fetchImageAsDataUrlInPage(thumbnail || rawImgUrl);
+  const scrapedTags = scrapeHashtagsFromPage(container);
+
   return {
     url,
     title,
-    thumbnail: thumbnail || rawImgUrl,
+    thumbnail: permThumb,
     author,
     authorUrl,
     authorImage,
@@ -98,7 +156,8 @@ export async function universalScrapeAll(targetUrl, containerEl = null) {
     channel: author,
     contentType,
     platform,
-    transcript: null
+    transcript: null,
+    scrapedTags,
   };
 }
 
@@ -186,10 +245,12 @@ export function scrapeMetadataOnly() {
   }
 
   let authorImage = container.querySelector<HTMLImageElement>('header img, a[role="link"] img, img[data-testid="user-avatar"]')?.src || document.querySelector<HTMLImageElement>('header img, img[alt*="profile picture"]')?.src || null;
+  const scrapedTags = scrapeHashtagsFromPage(container);
 
   return {
     url, title, thumbnail: rawImgUrl, author, authorUrl, authorImage,
-    genre: contentType, channel: author, contentType, platform, transcript: null
+    genre: contentType, channel: author, contentType, platform, transcript: null,
+    scrapedTags,
   };
 }
 

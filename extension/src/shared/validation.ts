@@ -296,7 +296,7 @@ export function validateQueueItem(item: any): Partial<QueueItem> | null {
     channel: validateString(item.channel, { maxLength: 100, allowEmpty: true }) || null,
     author: validateString(item.author, { maxLength: 100, allowEmpty: true }) || null,
     authorUrl: validateUrl(item.authorUrl) || null,
-    thumbnail: validateUrl(item.thumbnail) || null,
+    thumbnail: (typeof item.thumbnail === 'string' && item.thumbnail.startsWith('data:')) ? item.thumbnail : (validateUrl(item.thumbnail) || null),
     platform: validatePlatform(item.platform) || null,
     contentType: validateContentType(item.contentType) || 'video',
     transcript: validateString(item.transcript, { maxLength: 50000, allowEmpty: true }) || null,
@@ -309,6 +309,10 @@ export function validateQueueItem(item: any): Partial<QueueItem> | null {
     id: item.id || undefined,
     updatedAt: item.updatedAt || undefined,
     type: item.type || undefined,
+    // Preserve review deck urgency & group
+    urgency: item.urgency || undefined,
+    group: item.group || undefined,
+    note: item.note || undefined,
   };
 
   // Remove null/undefined values

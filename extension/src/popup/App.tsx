@@ -65,6 +65,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [tagInput, setTagInput] = useState('');
   const [pendingTags, setPendingTags] = useState<string[]>([]);
+  const [scrapedTags, setScrapedTags] = useState<string[] | null>(null);
   const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null);
   const [contentType, setContentType] = useState<ContentType>('video');
 
@@ -102,9 +103,19 @@ export default function App() {
             if (tab.id) {
               try {
                 chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_NOW' }, (scraped) => {
-                  if (chrome.runtime.lastError || !scraped) return;
+                  if (chrome.runtime.lastError || !scraped) {
+                    // If on a shorts/reels page and scrape failed, mark as no tags
+                    const isShortPage = /shorts|reels/i.test(tab.url || '');
+                    if (isShortPage) setScrapedTags([]);
+                    return;
+                  }
                   if (scraped.thumbnail) setCurrentThumbnail(scraped.thumbnail);
                   if (scraped.title && !videoId) setCurrentTitle(scraped.title);
+                  // Always set scrapedTags for short/reel pages (empty array = no tags found)
+                  const isShortPage = /shorts|reels/i.test(tab.url || '');
+                  if (isShortPage || scraped.scrapedTags?.length) {
+                    setScrapedTags(Array.isArray(scraped.scrapedTags) ? scraped.scrapedTags : []);
+                  }
                 });
               } catch (e) { }
             }
@@ -162,13 +173,21 @@ export default function App() {
   };
 
   const alreadySaved = queue.some(v => v.url === currentUrl);
-  const health = gameState?.health ?? 0;
+  const budgetTotal = gameState?.budgetMinutesTotal ?? 60;
+  const budgetUsed = gameState?.budgetMinutesUsed ?? 0;
+  const budgetRemaining = Math.max(0, budgetTotal - budgetUsed);
+  const health = Math.max(0, Math.min(100, Math.round((budgetRemaining / (budgetTotal || 1)) * 100)));
   const plantStatus = health > 70 ? 'thriving' : health > 40 ? 'okay' : health > 20 ? 'wilting' : 'dead';
 
   const addTag = () => {
     const t = tagInput.trim().replace(/^#/, '');
     if (t && !pendingTags.includes(t)) setPendingTags(prev => [...prev, t]);
     setTagInput('');
+  };
+
+  const openDashboard = (tab?: string) => {
+    const url = chrome.runtime.getURL('dashboard.html') + (tab ? `?tab=${tab}` : '');
+    chrome?.tabs?.create({ url });
   };
 
   if (loading) {
@@ -243,7 +262,7 @@ export default function App() {
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 px-1.5 flex items-center gap-1" onClick={() => chrome?.tabs?.create({ url: chrome.runtime.getURL('dashboard.html') })}>
+                <Button variant="ghost" size="sm" className="h-7 px-1.5 flex items-center gap-1" onClick={() => openDashboard()}>
                   <LayoutDashboard className="w-3.5 h-3.5 text-[var(--dq-text-muted)]" />
                   <span className="text-[10px] text-[var(--dq-text-muted)] font-medium">Dashboard</span>
                 </Button>
@@ -283,8 +302,44 @@ export default function App() {
 
           {/* Tags input */}
           <SlideUp delay={0.05}>
-            <div>
-              <div className="flex flex-wrap gap-1.5 mb-2">
+            <div className="space-y-2">
+
+              {/* Auto-detected hashtag suggestions */}
+              {scrapedTags !== null && (
+                <div>
+                  <p className="text-[9px] font-semibold text-[var(--dq-text-subtle)] uppercase tracking-wider mb-1.5">
+                    {scrapedTags.length > 0 ? '✦ Auto-detected tags — click to add' : '✦ No hashtags found on this page'}
+                  </p>
+                  {scrapedTags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {scrapedTags.map(tag => {
+                        const already = pendingTags.includes(tag);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => {
+                              if (!already) setPendingTags(prev => [...prev, tag]);
+                            }}
+                            className={`text-[9px] px-2 py-0.5 rounded-full border transition-colors ${
+                              already
+                                ? 'bg-lime-500/20 text-lime-400 border-lime-500/40 cursor-default'
+                                : 'bg-[var(--dq-surface)] text-[var(--dq-text-muted)] border-white/10 hover:bg-lime-500/15 hover:text-lime-400 hover:border-lime-500/30 cursor-pointer'
+                            }`}
+                          >
+                            #{tag}{already ? ' ✓' : ' +'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[9px] text-[var(--dq-text-subtle)] italic">Add tags manually below.</p>
+                  )}
+                </div>
+              )}
+
+              {/* Selected / pending tags */}
+              <div className="flex flex-wrap gap-1.5">
                 <AnimatePresence>
                   {pendingTags.map(tag => (
                     <motion.button
@@ -300,6 +355,8 @@ export default function App() {
                   ))}
                 </AnimatePresence>
               </div>
+
+              {/* Manual tag input */}
               <div className="flex gap-2">
                 <Input
                   leftIcon={<span className="text-[var(--dq-text-muted)] text-xs">#</span>}
@@ -357,32 +414,29 @@ export default function App() {
             </AnimatePresence>
           </SlideUp>
 
-          {/* Plant Health */}
+          {/* Daily Scroll Quota & Focus Plant */}
           <SlideUp delay={0.15}>
             <div className="glass-card p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <PlantIcon health={health} size={16} />
-                  <span className="text-xs font-semibold text-[var(--dq-text-muted)]">Your Focus Plant</span>
+                  <span className="text-xs font-semibold text-[var(--dq-text-muted)]">Daily Scroll Quota</span>
                 </div>
-                <span className="text-xs text-[var(--dq-text-muted)]">{gameState?.streak ?? 0} day streak 🔥</span>
+                <span className="text-xs font-medium text-[var(--dq-text-muted)]">
+                  {budgetRemaining}m / {budgetTotal}m left
+                </span>
               </div>
               <Progress value={health} className="h-1.5" />
               <div className="flex justify-between text-[10px] text-[var(--dq-text-subtle)] items-center">
-                <span>Saved today: {gameState?.savedToday ?? 0}</span>
-                <div className="flex items-center gap-1.5">
-                  <span>Limit (mins):</span>
-                  <Input 
-                    type="number" 
-                    value={budgetInput} 
-                    onChange={(e) => {
-                      setBudgetInput(e.target.value);
-                      handleUpdateBudget(e.target.value);
-                    }}
-                    className="h-5 w-12 text-[10px] px-1 py-0 text-center bg-[var(--dq-surface)]"
-                  />
-                </div>
-                <span>XP: {gameState?.xp ?? 0}</span>
+                <span>Used: {budgetUsed}m</span>
+                <button
+                  type="button"
+                  onClick={() => openDashboard('settings')}
+                  className="text-[10px] text-lime-400 hover:underline cursor-pointer"
+                >
+                  Edit limit in Settings →
+                </button>
+                <span>{gameState?.streak ?? 0} day streak 🔥</span>
               </div>
             </div>
           </SlideUp>
