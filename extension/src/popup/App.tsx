@@ -34,6 +34,7 @@ function detectContentType(url: string): ContentType {
   if (/youtube\.com\/shorts\//i.test(url)) return 'short';
   if (/instagram\.com\/reel/i.test(url)) return 'reel';
   if (/instagram\.com\/p\//i.test(url)) return 'post';
+  if (/twitter\.com/i.test(url) || /x\.com/i.test(url) || /reddit\.com/i.test(url) || /linkedin\.com/i.test(url)) return 'post';
   return 'video';
 }
 

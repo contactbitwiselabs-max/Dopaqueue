@@ -6,7 +6,7 @@ import {
   Clock, LogIn, X, AlertCircle, LogOut, RefreshCw, Film, Zap, Image,
   ChevronDown, Search, Users, ExternalLink, TrendingUp, Send,
   Timer, Pause, Play, BarChart2, FileDown, Plus, Folder, Sparkles,
-  Shield, Copy, Share2, Leaf
+  Shield, Copy, Share2, Leaf, Edit2, FileText
 } from 'lucide-react';
 import {
   initStorage, getSavedVideos, getSavedChannels, subscribe,
@@ -50,6 +50,7 @@ function detectContentType(url: string): ContentType {
   if (/youtube\.com\/shorts\//i.test(url)) return 'short';
   if (/instagram\.com\/reel/i.test(url)) return 'reel';
   if (/instagram\.com\/p\//i.test(url)) return 'post';
+  if (/twitter\.com/i.test(url) || /x\.com/i.test(url) || /reddit\.com/i.test(url) || /linkedin\.com/i.test(url)) return 'post';
   return 'video';
 }
 
@@ -295,17 +296,39 @@ interface VideoCardProps {
   onExport: (video: QueueItem, fmt: ExportFormat) => void;
   onReadArticle: () => void;
   onUpdateTags: (id: string, tags: string[]) => void;
+  onUpdateNotes: (id: string, notes: string) => void;
+  onUpdateTranscript: (id: string, transcript: string) => void;
   onSetUrgency: (id: string, urgency: UrgencyLevel) => void;
   scrapeVersion?: number; // bumped when scrape cache updates to force re-render
 }
 
-function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onSetUrgency, scrapeVersion: _sv }: VideoCardProps) {
+function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onUpdateNotes, onUpdateTranscript, onSetUrgency, scrapeVersion: _sv }: VideoCardProps) {
   const [copied, setCopied] = useState(false);
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState('');
+  const [noteText, setNoteText] = useState(video.note || video.notes || '');
+  const [isEditingNote, setIsEditingNote] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [isEditingTranscript, setIsEditingTranscript] = useState(false);
   const scrape = getScrapeResult(video.url) || {};
+  const [transcriptText, setTranscriptText] = useState(video.transcript || scrape.transcript || '');
   const type = detectContentType(video.url);
   const typeCfg = (type && (TYPE_CONFIG as any)[type]) ? (TYPE_CONFIG as any)[type] : TYPE_CONFIG.video;
+
+  const handleTranscriptSave = () => {
+    setIsEditingTranscript(false);
+    if (transcriptText.trim() !== (video.transcript || '')) {
+      onUpdateTranscript(video.id, transcriptText.trim());
+    }
+  };
+
+  const renderTranscript = (text: string) => {
+    if (!text) return null;
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    return text.split(urlRegex).map((part, i) => 
+      urlRegex.test(part) ? <a key={i} href={part} target="_blank" rel="noreferrer" className="text-lime-400 hover:underline break-all">{part}</a> : part
+    );
+  };
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(video.url);
@@ -321,13 +344,23 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
     setTagInput(''); setShowTagInput(false);
   };
 
+  const handleNoteBlur = () => {
+    setIsEditingNote(false);
+    if (noteText.trim() !== (video.note || video.notes || '')) {
+      onUpdateNotes(video.id, noteText.trim());
+    }
+  };
+
   return (
     <HoverCard className="glass-card group flex flex-col h-full border border-[var(--dq-border)] hover:border-lime-500/20 transition-colors duration-300">
       {/* Thumbnail */}
       <div className="relative h-36 bg-[var(--dq-surface)] rounded-t-2xl overflow-hidden">
         <SmartThumbnail video={video} typeCfg={typeCfg} />
-        <div className="absolute bottom-2 left-2">
+        <div className="absolute bottom-2 left-2 flex gap-1.5">
           <Badge variant={typeCfg.variant}>{typeCfg.label}</Badge>
+          {(scrape.platform || (video as any).platform) && (
+            <Badge variant="glass" className="bg-black/50 text-white backdrop-blur-md">{(scrape.platform || (video as any).platform)}</Badge>
+          )}
         </div>
         {video.urgency && video.urgency !== 'Unscheduled' && (
           <div className="absolute top-2 right-2">
@@ -387,6 +420,30 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
           )}
         </div>
 
+        {/* Notes */}
+        <div className="mb-3">
+          {isEditingNote ? (
+            <textarea
+              autoFocus
+              value={noteText}
+              onChange={e => setNoteText(e.target.value)}
+              onBlur={handleNoteBlur}
+              placeholder="Add your thoughts here..."
+              className="w-full text-xs bg-[var(--dq-surface)] border border-lime-500/30 rounded p-2 text-[var(--dq-text)] outline-none resize-none min-h-[60px]"
+            />
+          ) : (
+            <div 
+              onClick={() => setIsEditingNote(true)}
+              className="text-xs p-2 rounded bg-black/10 border border-transparent hover:border-lime-500/20 cursor-pointer text-[var(--dq-text-muted)] min-h-[36px] flex items-start gap-2 transition-colors"
+            >
+              <Edit2 className="w-3.5 h-3.5 shrink-0 mt-0.5 opacity-50" />
+              <span className={noteText ? "text-[var(--dq-text)] whitespace-pre-wrap" : "italic opacity-50"}>
+                {noteText || "Add a note..."}
+              </span>
+            </div>
+          )}
+        </div>
+
         <div className="text-[10px] text-[var(--dq-text-muted)] mb-4 flex items-center gap-1">
           <Clock className="w-3 h-3" />
           {formatDateTime(video.savedAt)}
@@ -394,10 +451,14 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
 
         {/* Actions */}
         <div className="flex items-center gap-2 mt-auto">
+          <Button size="xs" variant="glass" className="flex-1 gap-1.5" onClick={() => setShowTranscript(true)}>
+            <FileText className="w-3.5 h-3.5" /> Content
+          </Button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="xs" variant="glass" className="flex-1 gap-1.5">
-                <FileDown className="w-3.5 h-3.5" /> Export
+              <Button size="xs" variant="glass" className="gap-1.5">
+                <FileDown className="w-3.5 h-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
@@ -448,6 +509,53 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onS
           </TooltipProvider>
         </div>
       </div>
+
+      {/* Transcript Dialog */}
+      <Dialog open={showTranscript} onOpenChange={setShowTranscript}>
+        <DialogContent className="sm:max-w-[600px] bg-[#111] border-zinc-800 max-h-[85vh] overflow-hidden flex flex-col p-6">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Content / Transcript</DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              View or manually save content here. (BYOK AI automation coming soon!)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto mt-4 pr-2">
+            {isEditingTranscript ? (
+              <textarea
+                autoFocus
+                value={transcriptText}
+                onChange={e => setTranscriptText(e.target.value)}
+                onBlur={handleTranscriptSave}
+                placeholder="Paste transcript or post content here..."
+                className="w-full min-h-[300px] text-sm bg-black/40 border border-lime-500/30 rounded-xl p-4 text-white outline-none resize-none focus:border-lime-500/50 transition-colors"
+              />
+            ) : (
+              <div 
+                className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed min-h-[200px]"
+                onDoubleClick={() => setIsEditingTranscript(true)}
+              >
+                {transcriptText ? renderTranscript(transcriptText) : (
+                  <div className="italic text-zinc-500 text-center py-16 border border-dashed border-zinc-700 rounded-xl cursor-pointer hover:bg-white/5 transition-colors" onClick={() => setIsEditingTranscript(true)}>
+                    No content saved yet. Click here to add.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-zinc-800">
+            {!isEditingTranscript && (
+              <Button variant="glass" onClick={() => setIsEditingTranscript(true)}>
+                <Edit2 className="w-4 h-4 mr-2" /> Edit
+              </Button>
+            )}
+            {isEditingTranscript && (
+              <Button className="bg-lime-500 text-black hover:bg-lime-600" onClick={handleTranscriptSave}>
+                Save Changes
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </HoverCard>
   );
 }
@@ -660,6 +768,8 @@ export default function App() {
 
   const handleDelete = (id: string) => { removeFromQueue(id); refreshData(); };
   const handleUpdateTags = (id: string, tags: string[]) => { updateQueueItem(id, { tags }); refreshData(); };
+  const handleUpdateNotes = (id: string, notes: string) => { updateQueueItem(id, { notes }); refreshData(); };
+  const handleUpdateTranscript = (id: string, transcript: string) => { updateQueueItem(id, { transcript }); refreshData(); };
   const handleSetUrgency = (id: string, urgency: UrgencyLevel) => {
     updateQueueItem(id, { urgency });
     setVideos(prev => prev.map(v => v.id === id ? { ...v, urgency } : v));
@@ -971,6 +1081,8 @@ export default function App() {
                             onExport={handleExport}
                             onReadArticle={() => setReadingVideo(video)}
                             onUpdateTags={handleUpdateTags}
+                            onUpdateNotes={handleUpdateNotes}
+                            onUpdateTranscript={handleUpdateTranscript}
                             onSetUrgency={handleSetUrgency}
                             scrapeVersion={scrapeVersion}
                           />
