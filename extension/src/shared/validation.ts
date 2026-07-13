@@ -23,10 +23,14 @@ const ALLOWED_DOMAINS = new Set([
   'www.twitter.com',
   'x.com',
   'www.x.com',
+  'reddit.com',
+  'www.reddit.com',
+  'linkedin.com',
+  'www.linkedin.com',
 ]);
 
 // Allowed platforms
-const ALLOWED_PLATFORMS = new Set(['youtube', 'instagram', 'tiktok', 'twitter', 'x']);
+const ALLOWED_PLATFORMS = new Set(['youtube', 'instagram', 'tiktok', 'twitter', 'x', 'reddit', 'linkedin']);
 
 export interface StringValidationOptions {
   maxLength?: number;

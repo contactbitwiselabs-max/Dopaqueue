@@ -163,6 +163,13 @@ export async function universalScrapeAll(targetUrl, containerEl = null) {
     // Format: "Username on Instagram: \"Caption\""
     const match = docT.match(/on Instagram:\s*["\u201C]([^"\u201D]+)["\u201D]/i);
     if (match && match[1]) title = match[1].trim();
+  } else if (platform === 'X / Twitter') {
+    const tweetText = document.querySelector('[data-testid="tweetText"]')?.textContent?.trim();
+    if (tweetText) title = tweetText.slice(0, 150);
+    else {
+      const ogDesc = document.querySelector('meta[property="og:description"]')?.content?.trim();
+      if (ogDesc) title = ogDesc.replace(/^“|”$/g, '').slice(0, 150);
+    }
   }
 
   // Fallback to DOM
@@ -200,9 +207,10 @@ export async function universalScrapeAll(targetUrl, containerEl = null) {
     title = extractInstagramCaption();
   }
 
+
   if (!title) {
-    const docTitle = document.title?.replace(/\s*[•·|]\s*(Instagram|TikTok|X)\s*$/i, '').trim();
-    if (docTitle && docTitle.length > 3) title = docTitle;
+    const docTitle = document.title?.replace(/^\(\d+\)\s*/, '').replace(/\s*[•·|]\s*(Instagram|TikTok|X)\s*$/i, '').trim();
+    if (docTitle && docTitle.length > 3 && docTitle.toLowerCase() !== 'conversation') title = docTitle;
   }
   if (!title) title = `${platform} Item`;
   if (!author) {
@@ -307,6 +315,13 @@ export function scrapeMetadataOnly() {
     const docT = document.title || '';
     const match = docT.match(/on Instagram:\s*["\u201C]([^"\u201D]+)["\u201D]/i);
     if (match && match[1]) title = match[1].trim();
+  } else if (platform === 'X / Twitter') {
+    const tweetText = document.querySelector('[data-testid="tweetText"]')?.textContent?.trim();
+    if (tweetText) title = tweetText.slice(0, 150);
+    else {
+      const ogDesc = document.querySelector('meta[property="og:description"]')?.content?.trim();
+      if (ogDesc) title = ogDesc.replace(/^“|”$/g, '').slice(0, 150);
+    }
   }
 
   // Fallback to DOM
@@ -344,9 +359,10 @@ export function scrapeMetadataOnly() {
     title = extractInstagramCaption();
   }
 
+
   if (!title) {
-    const docTitle = document.title?.replace(/\s*[•·|]\s*(Instagram|TikTok|X)\s*$/i, '').trim();
-    if (docTitle && docTitle.length > 3) title = docTitle;
+    const docTitle = document.title?.replace(/^\(\d+\)\s*/, '').replace(/\s*[•·|]\s*(Instagram|TikTok|X)\s*$/i, '').trim();
+    if (docTitle && docTitle.length > 3 && docTitle.toLowerCase() !== 'conversation') title = docTitle;
   }
   if (!title) title = `${platform} Item`;
 
@@ -540,7 +556,12 @@ export function initInstagramButtons() {
 
         if (!isSaved) {
           label.textContent = 'Saving...';
-          let scraped = await universalScrapeAll(currentUrl, isReelActionRow ? null : postContainer);
+          let scraped = null;
+          try {
+            scraped = await universalScrapeAll(currentUrl, isReelActionRow ? null : postContainer);
+          } catch (e) {
+            console.error('[Dopaqueue] Error scraping instagram:', e);
+          }
           // Fallback: if full scrape failed (container not ready), use sync metadata scraper
           if (!scraped) {
             const meta = scrapeMetadataOnly();

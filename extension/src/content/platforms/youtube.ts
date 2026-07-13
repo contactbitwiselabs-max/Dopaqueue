@@ -429,7 +429,12 @@ export function injectYouTubeShortsButtons() {
         const urlToSave = location.href;
         
         // Use fast synchronous metadata to instantly update UI and save
-        const scraped = scrapeYouTubeMetadataOnly();
+        let scraped = null;
+        try {
+          scraped = scrapeYouTubeMetadataOnly();
+        } catch (e) {
+          console.error('[Dopaqueue] Error scraping youtube:', e);
+        }
         
         chrome.runtime.sendMessage({
           type: 'SAVE_INSTAGRAM_ITEM',

@@ -99,12 +99,16 @@ function scrapeAndSaveX(tweetNode) {
   const fullUrl = 'https://x.com' + urlPath;
   const authorImage = tweetNode.querySelector<HTMLImageElement>('[data-testid="Tweet-User-Avatar"] img')?.src || null;
 
+  const mediaNode = tweetNode.querySelector<HTMLImageElement | HTMLVideoElement>('[data-testid="tweetPhoto"] img, [data-testid="videoComponent"] video, [data-testid="videoPlayer"] video');
+  const thumbnail = mediaNode ? (mediaNode.src || (mediaNode as HTMLVideoElement).poster || null) : null;
+
   const metadata = {
     id: 'x_' + Date.now(),
     url: fullUrl,
     title: textNode ? textNode.textContent.slice(0, 50) + '...' : 'X Post',
     channel: authorNode ? authorNode.textContent.split('@')[1] || 'Unknown' : 'Unknown',
     authorImage,
+    thumbnail,
     contentType: 'post',
     platform: 'X / Twitter',
     postTextHtml: cleanHtml
@@ -194,7 +198,7 @@ function scrapeAndSaveLinkedIn(postNode) {
 function sendToBackground(metadata) {
   chrome.runtime.sendMessage({
     type: 'SAVE_INSTAGRAM_ITEM', // We reuse the generic queue save message
-    metadata: metadata
+    ...metadata
   });
 }
 
