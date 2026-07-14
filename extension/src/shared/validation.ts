@@ -317,6 +317,8 @@ export function validateQueueItem(item: any): Partial<QueueItem> | null {
     urgency: item.urgency || undefined,
     group: item.group || undefined,
     note: item.note || undefined,
+    expiryDate: typeof item.expiryDate === 'number' ? item.expiryDate : undefined,
+    notifiedExpiry: Boolean(item.notifiedExpiry),
   };
 
   // Remove null/undefined values

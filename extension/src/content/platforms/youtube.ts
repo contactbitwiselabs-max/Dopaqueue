@@ -16,12 +16,21 @@ function scrapeCategory() {
 }
 
 function scrapeChannel() {
-  const linkName = document.querySelector('link[itemprop="name"]');
-  if (linkName?.content) return linkName.content;
+  const isShort = location.href.includes('/shorts/');
+  if (isShort) {
+    const shortAuthor = document.querySelector('ytd-reel-video-renderer[is-active] #text.ytd-channel-name, ytd-reel-video-renderer[is-active] #channel-name #text');
+    if (shortAuthor?.textContent) return shortAuthor.textContent.trim();
+  }
+  
+  const videoAuthor = document.querySelector('ytd-watch-flexy:not([hidden]) ytd-channel-name yt-formatted-string, ytd-watch-flexy:not([hidden]) #owner-name a');
+  if (videoAuthor?.textContent) return videoAuthor.textContent.trim();
+
   const authorLink = document.querySelector('span[itemprop="author"] link[itemprop="name"]');
   if (authorLink?.content) return authorLink.content;
-  const shortAuthor = document.querySelector('ytd-reel-video-renderer[is-active] #text.ytd-channel-name, #channel-name #text');
-  if (shortAuthor?.textContent) return shortAuthor.textContent.trim();
+  
+  const linkName = document.querySelector('link[itemprop="name"]');
+  if (linkName?.content) return linkName.content;
+  
   return null;
 }
 

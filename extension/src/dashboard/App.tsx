@@ -6,7 +6,7 @@ import {
   Clock, LogIn, X, AlertCircle, LogOut, RefreshCw, Film, Zap, Image,
   ChevronDown, Search, Users, ExternalLink, TrendingUp, Send,
   Timer, Pause, Play, BarChart2, FileDown, Plus, Folder, Sparkles,
-  Shield, Copy, Share2, Leaf, Edit2, FileText
+  Shield, Copy, Share2, Leaf, Edit2, FileText, CalendarIcon
 } from 'lucide-react';
 import {
   initStorage, getSavedVideos, getSavedChannels, subscribe,
@@ -18,7 +18,7 @@ import { syncWithCloud } from '../shared/sync.js';
 import { supabaseClient } from '../shared/supabase.js';
 import { signInWithGoogle } from '../shared/auth.js';
 import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFile, buildExportFilename } from '../shared/export.js';
-import { generateActionChecklist, autoTagItem } from '../shared/ai.js';
+import { generateActionChecklist, autoTagItem, summarizeWithChromeAI, isChromeAIAvailable } from '../shared/ai.js';
 import { generateSharePayload, encodeShareLink } from '../shared/share.js';
 import { getMyCircle, createCircle, joinCircleByCode, getWeeklyMirrorReport } from '../shared/circles.js';
 import { SHARE_BASE_URL, resolveThumbnailUrl } from '../shared/constants.js';
@@ -35,6 +35,9 @@ import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 import { Progress } from '../components/ui/progress';
 import { Skeleton } from '../components/ui/skeleton';
 import { Separator } from '../components/ui/separator';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
+import { Calendar } from '../components/ui/calendar';
+import { format } from 'date-fns';
 import { DeleteIcon, SyncIcon, ExportIcon, ShareIcon as AnimShareIcon, CopyIcon, TagIcon, SparklesIcon, PlantIcon } from '../components/ui/animated-icons';
 import { StaggerList, StaggerItem, PageTransition, HoverCard, FadeIn, SlideUp, PulseDot } from '../components/motion';
 
@@ -299,10 +302,11 @@ interface VideoCardProps {
   onUpdateNotes: (id: string, notes: string) => void;
   onUpdateTranscript: (id: string, transcript: string) => void;
   onSetUrgency: (id: string, urgency: UrgencyLevel) => void;
+  onSetExpiry: (id: string, expiryDate: number | null) => void;
   scrapeVersion?: number; // bumped when scrape cache updates to force re-render
 }
 
-function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onUpdateNotes, onUpdateTranscript, onSetUrgency, scrapeVersion: _sv }: VideoCardProps) {
+function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onUpdateNotes, onUpdateTranscript, onSetUrgency, onSetExpiry, scrapeVersion: _sv }: VideoCardProps) {
   const [copied, setCopied] = useState(false);
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState('');
@@ -310,6 +314,23 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
   const [isEditingTranscript, setIsEditingTranscript] = useState(false);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [chromeAIAvailable, setChromeAIAvailable] = useState(false);
+  const [customExpiryDate, setCustomExpiryDate] = useState<Date | undefined>(
+    video.expiryDate ? new Date(video.expiryDate) : undefined
+  );
+  const [customExpiryTime, setCustomExpiryTime] = useState(
+    video.expiryDate 
+      ? new Date(video.expiryDate).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) 
+      : '12:00'
+  );
+  const [isExpiryDialogOpen, setIsExpiryDialogOpen] = useState(false);
+
+  useEffect(() => {
+    isChromeAIAvailable().then(setChromeAIAvailable);
+  }, []);
+
   const scrape = getScrapeResult(video.url) || {};
   const [transcriptText, setTranscriptText] = useState(video.transcript || scrape.transcript || '');
   const type = detectContentType(video.url);
@@ -325,9 +346,18 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
   const renderTranscript = (text: string) => {
     if (!text) return null;
     const urlRegex = /(https?:\/\/[^\s]+)/g;
-    return text.split(urlRegex).map((part, i) => 
-      urlRegex.test(part) ? <a key={i} href={part} target="_blank" rel="noreferrer" className="text-lime-400 hover:underline break-all">{part}</a> : part
-    );
+    return text.split(urlRegex).map((part, i) => {
+      if (urlRegex.test(part)) {
+        return <a key={i} href={part} target="_blank" rel="noreferrer" className="text-lime-400 hover:underline break-all">{part}</a>;
+      }
+      // Basic bold markdown `**text**` renderer
+      const boldRegex = /\*\*([^*]+)\*\*/g;
+      return <span key={i}>{
+        part.split(boldRegex).map((subPart, j) => 
+          boldRegex.test(`**${subPart}**`) && j % 2 !== 0 ? <strong key={j} className="text-white font-semibold">{subPart}</strong> : subPart
+        )
+      }</span>;
+    });
   };
 
   const handleCopy = async () => {
@@ -363,8 +393,13 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
           )}
         </div>
         {video.urgency && video.urgency !== 'Unscheduled' && (
-          <div className="absolute top-2 right-2">
+          <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
             <Badge variant="warning" className="text-[10px]">{video.urgency}</Badge>
+            {video.expiryDate && (
+              <Badge variant="outline" className="text-[10px] bg-black/70 backdrop-blur-sm border-lime-500/30 text-lime-400">
+                Due: {new Date(video.expiryDate).toLocaleDateString('en-US', {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})}
+              </Badge>
+            )}
           </div>
         )}
       </div>
@@ -474,7 +509,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="xs" variant="glass" className="gap-1.5">
+              <Button size="xs" variant="glass" className={`gap-1.5 ${video.expiryDate && video.expiryDate <= Date.now() && !video.notifiedExpiry ? 'border-red-500/50 text-red-400' : ''}`}>
                 <Clock className="w-3.5 h-3.5" />
               </Button>
             </DropdownMenuTrigger>
@@ -486,8 +521,70 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
                   {u === video.urgency ? '✓ ' : ''}{u}
                 </DropdownMenuItem>
               ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={(e) => {
+                e.preventDefault();
+                setIsExpiryDialogOpen(true);
+              }}>
+                <CalendarIcon className="w-4 h-4 mr-2" />
+                Custom Expiry Time
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <Dialog open={isExpiryDialogOpen} onOpenChange={setIsExpiryDialogOpen}>
+            <DialogContent className="sm:max-w-[400px] bg-[var(--dq-surface)] border-[var(--dq-border)] flex flex-col p-6 text-[var(--dq-text)]">
+              <DialogHeader>
+                <DialogTitle className="text-xl">Set Custom Expiry</DialogTitle>
+                <DialogDescription className="text-sm text-[var(--dq-text-muted)]">
+                  Pick a date and time for when you want to review this video.
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="flex flex-col gap-4 py-4 items-center">
+                <Calendar
+                  mode="single"
+                  selected={customExpiryDate}
+                  onSelect={setCustomExpiryDate}
+                  className="rounded-md border border-[var(--dq-border)] pointer-events-auto"
+                />
+                
+                <div className="flex w-full items-center gap-4">
+                  <span className="text-sm font-medium">Time:</span>
+                  <input
+                    type="time"
+                    value={customExpiryTime}
+                    onChange={(e) => setCustomExpiryTime(e.target.value)}
+                    className="flex-1 rounded bg-black/40 border border-zinc-700 text-white p-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 w-full">
+                {video.expiryDate && (
+                  <Button variant="ghost" className="text-red-400 hover:text-red-300 hover:bg-red-950/30" onClick={() => {
+                    onSetExpiry(video.id, null);
+                    setCustomExpiryDate(undefined);
+                    setIsExpiryDialogOpen(false);
+                  }}>
+                    Clear
+                  </Button>
+                )}
+                <Button variant="ghost" onClick={() => setIsExpiryDialogOpen(false)}>Cancel</Button>
+                <Button className="bg-lime-500 text-black hover:bg-lime-600" onClick={() => {
+                  if (customExpiryDate) {
+                    const [hours, minutes] = customExpiryTime.split(':').map(Number);
+                    const newDate = new Date(customExpiryDate);
+                    newDate.setHours(hours, minutes, 0, 0);
+                    onSetExpiry(video.id, newDate.getTime());
+                  }
+                  setIsExpiryDialogOpen(false);
+                }}>
+                  Save
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <TooltipProvider>
             <Tooltip>
@@ -514,9 +611,28 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
       <Dialog open={showTranscript} onOpenChange={setShowTranscript}>
         <DialogContent className="sm:max-w-[600px] bg-[#111] border-zinc-800 max-h-[85vh] overflow-hidden flex flex-col p-6">
           <DialogHeader>
-            <DialogTitle className="text-xl">Content / Transcript</DialogTitle>
+            <DialogTitle className="text-xl flex items-center justify-between">
+              <span>Content / Transcript</span>
+              {chromeAIAvailable && !isEditingTranscript && transcriptText && (
+                <Button 
+                  size="sm" 
+                  variant="glass" 
+                  className="bg-lime-500/20 text-lime-400 border-lime-500/30 hover:bg-lime-500/30"
+                  onClick={async () => {
+                    setIsSummarizing(true);
+                    const summary = await summarizeWithChromeAI(transcriptText);
+                    setAiSummary(summary);
+                    setIsSummarizing(false);
+                  }}
+                  disabled={isSummarizing}
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  {isSummarizing ? "Summarizing..." : "Summarize with AI"}
+                </Button>
+              )}
+            </DialogTitle>
             <DialogDescription className="text-zinc-400">
-              View or manually save content here. (BYOK AI automation coming soon!)
+              View or manually save content here. Built-in Chrome AI is ready to summarize.
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto mt-4 pr-2">
@@ -530,15 +646,27 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
                 className="w-full min-h-[300px] text-sm bg-black/40 border border-lime-500/30 rounded-xl p-4 text-white outline-none resize-none focus:border-lime-500/50 transition-colors"
               />
             ) : (
-              <div 
-                className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed min-h-[200px]"
-                onDoubleClick={() => setIsEditingTranscript(true)}
-              >
-                {transcriptText ? renderTranscript(transcriptText) : (
-                  <div className="italic text-zinc-500 text-center py-16 border border-dashed border-zinc-700 rounded-xl cursor-pointer hover:bg-white/5 transition-colors" onClick={() => setIsEditingTranscript(true)}>
-                    No content saved yet. Click here to add.
+              <div className="space-y-4">
+                {aiSummary && (
+                  <div className="bg-lime-500/10 border border-lime-500/20 rounded-xl p-4 mb-4">
+                    <div className="flex items-center gap-2 text-lime-400 font-medium mb-2">
+                      <Sparkles size={16} /> AI Summary
+                    </div>
+                    <div className="text-sm text-zinc-200 leading-relaxed">
+                      {renderTranscript(aiSummary)}
+                    </div>
                   </div>
                 )}
+                <div 
+                  className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed min-h-[200px]"
+                  onDoubleClick={() => setIsEditingTranscript(true)}
+                >
+                  {transcriptText ? renderTranscript(transcriptText) : (
+                    <div className="italic text-zinc-500 text-center py-16 border border-dashed border-zinc-700 rounded-xl cursor-pointer hover:bg-white/5 transition-colors" onClick={() => setIsEditingTranscript(true)}>
+                      No content saved yet. Click here to add.
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -699,22 +827,24 @@ export default function App() {
     setVideos(savedVideos);
 
     // Derive unique channels from saved videos via scrape cache
-    const channelMap = new Map<string, { name: string; url: string; videoCount: number; savedAt: number; authorImage: string | null; platform: string | null }>();
+    const channelMap = new Map<string, { name: string; url: string; videoCount: number; savedAt: number; authorImage: string | null; platform: string | null; contentTypes: Set<string> }>();
     savedVideos.forEach(v => {
       const scrape = getScrapeResult(v.url) || {} as any;
       const name = scrape.channel || v.channel || v.channelName || v.author || null;
       const authorUrl = scrape.authorUrl || v.authorUrl || '';
       const authorImage = scrape.authorImage || null;
       const platform = scrape.platform || v.platform || detectContentType(v.url) || null;
+      const cType = scrape.contentType || detectContentType(v.url) || 'post';
       if (!name) return;
       const key = name.toLowerCase();
       if (channelMap.has(key)) {
         const existing = channelMap.get(key)!;
         existing.videoCount++;
+        existing.contentTypes.add(cType);
         if ((v.savedAt as number) > existing.savedAt) existing.savedAt = v.savedAt as number;
         if (!existing.authorImage && authorImage) existing.authorImage = authorImage;
       } else {
-        channelMap.set(key, { name, url: authorUrl, videoCount: 1, savedAt: v.savedAt as number, authorImage, platform });
+        channelMap.set(key, { name, url: authorUrl, videoCount: 1, savedAt: v.savedAt as number, authorImage, platform, contentTypes: new Set([cType]) });
       }
     });
     const derivedChannels: Channel[] = Array.from(channelMap.entries()).map(([key, val]) => ({
@@ -724,7 +854,8 @@ export default function App() {
       savedAt: val.savedAt,
       videoCount: val.videoCount,
       authorImage: val.authorImage,
-      platform: val.platform
+      platform: val.platform,
+      contentTypes: Array.from(val.contentTypes)
     } as any));
     setChannels(derivedChannels.sort((a: any, b: any) => b.videoCount - a.videoCount));
   }, []);
@@ -773,6 +904,11 @@ export default function App() {
   const handleSetUrgency = (id: string, urgency: UrgencyLevel) => {
     updateQueueItem(id, { urgency });
     setVideos(prev => prev.map(v => v.id === id ? { ...v, urgency } : v));
+    refreshData();
+  };
+  const handleSetExpiry = (id: string, expiryDate: number | null) => {
+    updateQueueItem(id, { expiryDate });
+    setVideos(prev => prev.map(v => v.id === id ? { ...v, expiryDate } : v));
     refreshData();
   };
 
@@ -1084,6 +1220,7 @@ export default function App() {
                             onUpdateNotes={handleUpdateNotes}
                             onUpdateTranscript={handleUpdateTranscript}
                             onSetUrgency={handleSetUrgency}
+                            onSetExpiry={handleSetExpiry}
                             scrapeVersion={scrapeVersion}
                           />
                         </StaggerItem>
@@ -1107,7 +1244,10 @@ export default function App() {
                     <StaggerList className="grid gap-3">
                       {channels.map(ch => (
                         <StaggerItem key={ch.id}>
-                          <HoverCard className="glass-card p-4 flex items-center justify-between group">
+                          <HoverCard 
+                            className="glass-card p-4 flex items-center justify-between group cursor-pointer hover:border-lime-500/30 transition-all"
+                            onClick={() => { setSearchQuery(ch.name); setActiveTab('videos'); }}
+                          >
                             <div className="flex items-center gap-3">
                               <div className="w-11 h-11 rounded-full bg-lime-500/10 border border-lime-500/20 flex items-center justify-center text-lime-400 font-bold text-lg overflow-hidden shrink-0">
                                 {ch.authorImage ? (
@@ -1124,20 +1264,24 @@ export default function App() {
                                 ) : (
                                   <p className="font-semibold text-sm text-[var(--dq-text)]">{ch.name}</p>
                                 )}
-                                <div className="text-xs text-[var(--dq-text-muted)] mt-1 flex items-center gap-2">
-                                  <span>{ch.videoCount ?? 1} saved video{(ch.videoCount ?? 1) !== 1 ? 's' : ''}</span>
+                                <div className="text-xs text-[var(--dq-text-muted)] mt-1.5 flex items-center gap-2">
+                                  <span>Saves: {ch.videoCount ?? 1}</span>
                                   {ch.platform && (
-                                    <>
-                                      <span className="w-1 h-1 rounded-full bg-[var(--dq-border)]" />
-                                      <span className="opacity-80">{ch.platform}</span>
-                                    </>
+                                    <Badge variant="glass" className="scale-90 origin-left px-2 py-0 bg-black/30 backdrop-blur-md">
+                                      {ch.platform}
+                                    </Badge>
+                                  )}
+                                  {ch.contentTypes && ch.contentTypes.length > 0 && (
+                                    <Badge variant="outline" className="scale-90 origin-left px-2 py-0 capitalize text-lime-400 border-lime-500/20">
+                                      {ch.contentTypes.join(', ')}
+                                    </Badge>
                                   )}
                                 </div>
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
-                                onClick={() => { setSearchQuery(ch.name); setActiveTab('videos'); }}
+                                onClick={e => { e.stopPropagation(); setSearchQuery(ch.name); setActiveTab('videos'); }}
                                 className="text-xs px-3 py-1.5 rounded-lg border border-[var(--dq-border)] bg-[var(--dq-bg)] hover:bg-lime-500/10 hover:text-lime-400 transition-colors"
                               >
                                 View Queue

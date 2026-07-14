@@ -21,6 +21,7 @@ import {
 } from '../shared/storage.js';
 
 const BUDGET_TICK_ALARM = 'budgetTick';
+const REVIEW_DECK_ALARM = 'reviewDeckTick';
 
 const BADGE_COLORS = {
   thriving: '#22c55e',
@@ -33,6 +34,11 @@ async function ensureBudgetAlarm() {
   const existing = await chrome.alarms.get(BUDGET_TICK_ALARM);
   if (!existing) {
     chrome.alarms.create(BUDGET_TICK_ALARM, { periodInMinutes: 1 });
+  }
+
+  const existingReview = await chrome.alarms.get(REVIEW_DECK_ALARM);
+  if (!existingReview) {
+    chrome.alarms.create(REVIEW_DECK_ALARM, { periodInMinutes: 5 });
   }
 }
 
@@ -218,10 +224,46 @@ async function budgetTick() {
   await refreshBadge();
 }
 
+async function checkReviewDeckExpirations() {
+  await initStorage();
+  const queue = getQueue();
+  const now = Date.now();
+  let updated = false;
+
+  for (const item of queue) {
+    if (item.expiryDate && item.expiryDate <= now && !item.notifiedExpiry && !item.deleted) {
+      // Trigger notification
+      await chrome.notifications.create(`review-${item.id}`, {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('src/icons/icon128.png'),
+        title: 'DopaQueue Review Reminder',
+        message: `It's time to review: "${item.title}"!`,
+        priority: 2,
+      });
+
+      // Update item so we don't notify again
+      // We do this directly via chrome.storage.local to avoid pulling the entire queue update flow here if possible,
+      // but the safest way is via updateQueueItem from storage.js, which we can import.
+      // Wait, updateQueueItem isn't imported. Let's just import it at the top or update the raw object.
+      // We will rely on raw storage update for simplicity since updateQueueItem might not be imported in background.
+      item.notifiedExpiry = true;
+      updated = true;
+    }
+  }
+
+  if (updated) {
+    chrome.storage.local.set({ [STORAGE_KEYS.QUEUE]: queue });
+  }
+}
+
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === BUDGET_TICK_ALARM) {
     budgetTick().catch((err) => {
       console.error('DopaQueue: budgetTick failed', err);
+    });
+  } else if (alarm.name === REVIEW_DECK_ALARM) {
+    checkReviewDeckExpirations().catch((err) => {
+      console.error('DopaQueue: checkReviewDeckExpirations failed', err);
     });
   }
 });
@@ -266,10 +308,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'GENRE_SCRAPED') {
     initStorage().then(() => {
       cacheScrapeResult(message.url, {
-        genre: message.genre || null,
-        channel: message.channel || null,
+        genre: message.genre || message.contentType || null,
+        channel: message.channel || message.author || null,
         transcript: message.transcript || null,
         scrapedTags: Array.isArray(message.scrapedTags) ? message.scrapedTags : undefined,
+        authorImage: message.authorImage || null,
+        platform: message.platform || null,
+        authorUrl: message.authorUrl || null,
       });
       const authorOrChan = message.channel || message.author;
       if (authorOrChan && message.url) {
@@ -377,6 +422,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         title: message.title && message.title !== 'Instagram Item' ? message.title : (message.author ? `${message.author}'s post` : 'Instagram Post'),
         thumbnail: message.thumbnail || null,
         author: message.author || null,
+        authorUrl: message.authorUrl || null,
+        platform: message.platform || 'Instagram',
         contentType: message.contentType || 'reel',
         type: 'video',
         savedAt: Date.now(),

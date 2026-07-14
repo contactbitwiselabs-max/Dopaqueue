@@ -1,6 +1,83 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 // DopaQueue Local-First AI & Action Checklist Extractor
 // BYOK (Bring Your Own Key) for Google Gemini / OpenAI, plus a Free Local Heuristic Extractor
+
+// --- Chrome AI Nano Helpers ---
+export async function isChromeAIAvailable() {
+  return typeof window !== 'undefined' && 'ai' in window && 'summarizer' in (window as any).ai;
+}
+
+export async function summarizeWithChromeAI(text: string): Promise<string | null> {
+  if (!await isChromeAIAvailable()) return null;
+  try {
+    const ai = (window as any).ai;
+    const canSummarize = await ai.summarizer.capabilities();
+    if (canSummarize.available === 'no') {
+      console.warn("Chrome AI summarizer is not available on this device.");
+      return null;
+    }
+    
+    // Use shared or standard mode depending on Chrome version
+    let summarizer;
+    if (canSummarize.available === 'readily') {
+      summarizer = await ai.summarizer.create({ type: 'tl;dr', format: 'markdown', length: 'medium' });
+    } else {
+      summarizer = await ai.summarizer.create({ type: 'tl;dr', format: 'markdown', length: 'medium' });
+      await summarizer.ready;
+    }
+    
+    // Chunking if text is huge (Nano has limit)
+    const MAX_CHARS = 15000;
+    const truncatedText = text.slice(0, MAX_CHARS);
+    
+    const summary = await summarizer.summarize(truncatedText);
+    return summary;
+  } catch (err) {
+    console.error("Chrome AI Summarizer error:", err);
+    return null;
+  }
+}
+
+export async function isChromeAILanguageModelAvailable() {
+  return typeof window !== 'undefined' && 'ai' in window && 'languageModel' in (window as any).ai;
+}
+
+export async function generateChromeAIInsights(metrics: any): Promise<string | null> {
+  if (!await isChromeAILanguageModelAvailable()) return null;
+  try {
+    const ai = (window as any).ai;
+    const canUse = await ai.languageModel.capabilities();
+    if (canUse.available === 'no') return null;
+
+    let session;
+    if (canUse.available === 'readily') {
+      session = await ai.languageModel.create({
+        systemPrompt: "You are an empathetic digital wellbeing coach. Read the user's focus metrics and provide one concise, encouraging paragraph with a single specific piece of advice to improve their focus health.",
+        temperature: 0.7,
+      });
+    } else {
+      session = await ai.languageModel.create({
+        systemPrompt: "You are an empathetic digital wellbeing coach. Read the user's focus metrics and provide one concise, encouraging paragraph with a single specific piece of advice to improve their focus health.",
+        temperature: 0.7,
+      });
+      await session.ready;
+    }
+
+    const prompt = `Here are my scrolling metrics:
+- Peak scrolling hour: ${metrics.heatmap?.[0] ? metrics.heatmap[0].hour + ':00' : 'Unknown'}
+- Attention span: ${metrics.attentionDecay?.avgCurve?.length || 'Unknown'} reels before losing focus
+- Current healthy focus streak: ${metrics.streak?.current || 0} days
+- Longest focus streak: ${metrics.streak?.longest || 0} days
+Please give me a short, empathetic paragraph (max 3 sentences) interpreting these stats and suggesting one actionable improvement.`;
+
+    const result = await session.prompt(prompt);
+    return result;
+  } catch (err) {
+    console.error("Chrome AI LanguageModel error:", err);
+    return null;
+  }
+}
+// ------------------------------
 
 export async function getAIConfig() {
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -194,6 +271,65 @@ export function autoTagItem(title = '', transcript = '', url = '') {
 
   const result = Array.from(matched);
   return result.length > 0 ? result : ['learning', 'general'];
+}
+
+// ----------------------------------------------------
+// Chrome AI Auto Tagging & Urgency (Phase 4)
+// ----------------------------------------------------
+
+export async function autoTagItemWithChromeAI(title = '', transcript = ''): Promise<string[] | null> {
+  if (!await isChromeAILanguageModelAvailable()) return null;
+  
+  try {
+    const ai = (window as any).ai;
+    const canUse = await ai.languageModel.capabilities();
+    if (canUse.available === 'no') return null;
+
+    const session = await ai.languageModel.create({
+      systemPrompt: "You are an AI that tags content. Given a title and transcript, reply ONLY with up to 3 short, lowercase, relevant tags separated by commas. No spaces after commas. Example: ai,programming,productivity",
+      temperature: 0.1,
+    });
+    
+    if (canUse.available !== 'readily') await session.ready;
+
+    const prompt = `Title: ${title}\nTranscript: ${(transcript || '').slice(0, 3000)}`;
+    const result = await session.prompt(prompt);
+    
+    if (result) {
+      return result.split(',').map((t: string) => t.trim().toLowerCase().replace(/[^a-z0-9-]/g, '')).filter(Boolean).slice(0, 3);
+    }
+  } catch (err) {
+    console.error("Chrome AI AutoTag error:", err);
+  }
+  return null;
+}
+
+export async function suggestUrgencyWithChromeAI(title = '', transcript = ''): Promise<number | null> {
+  if (!await isChromeAILanguageModelAvailable()) return null;
+  
+  try {
+    const ai = (window as any).ai;
+    const canUse = await ai.languageModel.capabilities();
+    if (canUse.available === 'no') return null;
+
+    const session = await ai.languageModel.create({
+      systemPrompt: "You evaluate the urgency and educational value of content. Return ONLY a single integer from 1 (low urgency/entertainment) to 5 (high urgency/highly actionable learning/career impact). Do not explain.",
+      temperature: 0.1,
+    });
+    
+    if (canUse.available !== 'readily') await session.ready;
+
+    const prompt = `Title: ${title}\nTranscript: ${(transcript || '').slice(0, 3000)}`;
+    const result = await session.prompt(prompt);
+    
+    const score = parseInt(result.trim().replace(/\D/g, ''), 10);
+    if (!isNaN(score) && score >= 1 && score <= 5) {
+      return score;
+    }
+  } catch (err) {
+    console.error("Chrome AI Urgency error:", err);
+  }
+  return null;
 }
 
 

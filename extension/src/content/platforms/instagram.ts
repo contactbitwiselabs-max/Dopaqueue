@@ -137,11 +137,15 @@ export async function universalScrapeAll(targetUrl, containerEl = null) {
 
   // 1. Author (do this first so we can exclude author name from title search)
   let author = null;
-  const authorSpan = container.querySelector('a[href^="/"][role="link"] span, header a[href^="/"]');
-  if (authorSpan?.textContent?.trim()) {
-    const t = authorSpan.textContent.trim();
-    if (t && !['explore', 'reels', 'home'].includes(t.toLowerCase())) {
-      author = t.startsWith('@') ? t : '@' + t;
+  const authorCandidates = Array.from(container.querySelectorAll('header a[href^="/"], a[href^="/"][role="link"]'));
+  for (const a of authorCandidates) {
+    const href = a.getAttribute('href');
+    const text = a.textContent?.trim();
+    if (href && text && !href.includes('/explore/') && !href.includes('/p/') && !href.includes('/reel/') && !href.includes('/reels/') && !href.includes('/audio/')) {
+      if (text.length > 1 && !['explore', 'reels', 'home', 'login', 'signup'].includes(text.toLowerCase())) {
+        author = text.startsWith('@') ? text : '@' + text;
+        break;
+      }
     }
   }
   if (!author) {
@@ -290,11 +294,15 @@ export function scrapeMetadataOnly() {
   }
   // 1. Author (do this first to filter title)
   let author = null;
-  const authorSpan = container.querySelector('a[href^="/"][role="link"] span, header a[href^="/"]');
-  if (authorSpan?.textContent?.trim()) {
-    const t = authorSpan.textContent.trim();
-    if (t && !['explore', 'reels', 'home'].includes(t.toLowerCase())) {
-      author = t.startsWith('@') ? t : '@' + t;
+  const authorCandidates = Array.from(container.querySelectorAll('header a[href^="/"], a[href^="/"][role="link"]'));
+  for (const a of authorCandidates) {
+    const href = a.getAttribute('href');
+    const text = a.textContent?.trim();
+    if (href && text && !href.includes('/explore/') && !href.includes('/p/') && !href.includes('/reel/') && !href.includes('/reels/') && !href.includes('/audio/')) {
+      if (text.length > 1 && !['explore', 'reels', 'home', 'login', 'signup'].includes(text.toLowerCase())) {
+        author = text.startsWith('@') ? text : '@' + text;
+        break;
+      }
     }
   }
   if (!author) {

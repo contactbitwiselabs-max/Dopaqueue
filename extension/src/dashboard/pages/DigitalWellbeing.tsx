@@ -6,14 +6,14 @@ import {
 } from 'recharts';
 import {
   Shield, TrendingUp, TrendingDown, Zap, Flame, Clock, Activity, BarChart3,
-  Target, Award, ShieldCheck, Minus
+  Target, Award, ShieldCheck, Minus, Sparkles
 } from 'lucide-react';
 import {
   computeAttentionDecay, computeVulnerabilityHeatmap,
   computePlatformSplit, computeSessionDistribution, computeWeeklyComparison,
-  computeFlowBreakerStats, computeStreakTracker, filterSessionsByRange, buildChartData,
-  generateNaturalLanguageInsights
+  computeFlowBreakerStats, computeStreakTracker, filterSessionsByRange, buildChartData
 } from '../../shared/analytics';
+import { generateNaturalLanguageInsights } from '../../shared/analytics_insights';
 import { getGameState } from '../../shared/storage';
 import { DEFAULT_DAILY_BUDGET, todayLocalDateString } from '../../shared/constants';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
@@ -79,8 +79,10 @@ export default function DigitalWellbeing() {
     heatmap,
     attentionDecay,
     platformSplit,
-    streak
-  }), [heatmap, attentionDecay, platformSplit, streak]);
+    streak,
+    flowStats,
+    sessionDist
+  }), [heatmap, attentionDecay, platformSplit, streak, flowStats, sessionDist]);
   
   const totalMinutes = sessions.reduce((s: number, x: any) => s + (x.duration || 0) / 60000, 0);
   const totalScrolls = sessions.reduce((s: number, x: any) => s + (x.scrollCount || 1), 0);
@@ -122,31 +124,35 @@ export default function DigitalWellbeing() {
         </div>
       </SlideUp>
 
-      {/* ─── Natural Language Insights Panel ─── */}
-      {insights && insights.length > 0 && (
-        <StaggerList className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {insights.map((insight: any, idx: number) => (
-            <StaggerItem key={idx}>
-              <Card className={`h-full ${
-                insight.type === 'warning' ? 'bg-red-500/10 border-red-500/20' :
-                insight.type === 'success' ? 'bg-lime-500/10 border-lime-500/20' :
-                'bg-blue-500/10 border-blue-500/20'
-              }`}>
-                <CardContent className="p-4 flex flex-col gap-2">
-                  <div className="flex-1">
-                    <h4 className="text-sm font-semibold text-[var(--dq-text)] flex items-center gap-2">
-                      {insight.type === 'warning' && '⚠️'}
-                      {insight.type === 'success' && '🎉'}
-                      {insight.type === 'info' && '💡'}
-                      {insight.title}
-                    </h4>
+      {/* ─── Actionable Insights Panel ─── */}
+      {insights.length > 0 && (
+        <SlideUp delay={0.1}>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {insights.map((insight, idx) => {
+              const Icon = insight.type === 'warning' ? Flame : insight.type === 'success' ? ShieldCheck : Sparkles;
+              const colorClass = insight.type === 'warning' ? 'text-orange-400 bg-orange-500/10 border-orange-500/20' 
+                               : insight.type === 'success' ? 'text-lime-400 bg-lime-500/10 border-lime-500/20' 
+                               : 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+              const iconColor = insight.type === 'warning' ? 'text-orange-400' 
+                               : insight.type === 'success' ? 'text-lime-400' 
+                               : 'text-blue-400';
+
+              return (
+                <div key={idx} className={`border rounded-xl p-5 relative overflow-hidden transition-all hover:scale-[1.02] ${colorClass}`}>
+                  <div className="flex items-start gap-3 relative z-10">
+                    <div className={`p-2 rounded-lg mt-1 ${colorClass.split(' ')[1]}`}>
+                      <Icon size={20} className={iconColor} />
+                    </div>
+                    <div>
+                      <h3 className={`font-semibold mb-1 ${iconColor}`}>{insight.title}</h3>
+                      <p className="text-zinc-300 text-sm leading-relaxed">{insight.message}</p>
+                    </div>
                   </div>
-                  <p className="text-sm text-[var(--dq-text-subtle)] leading-relaxed">{insight.message}</p>
-                </CardContent>
-              </Card>
-            </StaggerItem>
-          ))}
-        </StaggerList>
+                </div>
+              );
+            })}
+          </div>
+        </SlideUp>
       )}
 
       {/* ─── Scorecard Row ─── */}

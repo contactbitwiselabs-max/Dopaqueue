@@ -130,17 +130,18 @@ export function PageTransition({ children, tabKey, className = '' }: PageTransit
 }
 
 // ─── Hover Card ───────────────────────────────────────────────────
-interface HoverCardProps {
+interface HoverCardProps extends React.ComponentPropsWithoutRef<typeof motion.div> {
   children: React.ReactNode;
   className?: string;
 }
 
-export function HoverCard({ children, className = '' }: HoverCardProps) {
+export function HoverCard({ children, className = '', ...props }: HoverCardProps) {
   return (
     <motion.div
       className={className}
       whileHover={{ y: -3, boxShadow: '0 8px 30px rgba(163, 230, 53, 0.12)' }}
       transition={{ type: 'spring', stiffness: 350, damping: 22 }}
+      {...props}
     >
       {children}
     </motion.div>

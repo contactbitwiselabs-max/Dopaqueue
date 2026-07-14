@@ -282,6 +282,15 @@ export function updateQueueItem(id: string, patch: Partial<QueueItem>): QueueIte
   if (patch.note !== undefined) {
     validatedPatch.note = patch.note;
   }
+  if (patch.expiryDate !== undefined) {
+    validatedPatch.expiryDate = typeof patch.expiryDate === 'number' ? patch.expiryDate : null;
+    if (patch.notifiedExpiry === undefined) {
+      validatedPatch.notifiedExpiry = false; // Reset notification state if a new expiry is set
+    }
+  }
+  if (patch.notifiedExpiry !== undefined) {
+    validatedPatch.notifiedExpiry = Boolean(patch.notifiedExpiry);
+  }
 
   localQueue = localQueue.map((item) => 
     item.id === id ? { ...item, ...validatedPatch, updatedAt: Date.now() } : item

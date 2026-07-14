@@ -46,6 +46,7 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
   const [groups, setGroups] = useState<Map<string, string[]>>(new Map());
   const [budgetMinutesTotal, setBudgetMinutesTotal] = useState(60);
   const [savedBudgetMsg, setSavedBudgetMsg] = useState(false);
+  const [clearKeyword, setClearKeyword] = useState('');
 
   useEffect(() => {
     async function loadUserAndSettings() {
@@ -80,6 +81,16 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
     updateGameState({ budgetMinutesTotal });
     setSavedBudgetMsg(true);
     setTimeout(() => setSavedBudgetMsg(false), 2500);
+  };
+
+  const handleClearData = () => {
+    if (clearKeyword === 'DELETE') {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.clear(() => {
+          window.location.reload();
+        });
+      }
+    }
   };
 
   const handleSignIn = async () => {
@@ -424,6 +435,34 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
           ) : (
             <p className="text-sm text-[var(--dq-text-muted)] italic">No groups yet.</p>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="glass-card border-red-500/20 bg-red-500/5">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-red-400"><AlertCircle className="w-5 h-5" /> Danger Zone</CardTitle>
+          <CardDescription>Permanently delete all your saved videos, settings, and progress.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-[var(--dq-text-subtle)]">
+            This action cannot be undone. To confirm, type <strong>DELETE</strong> below.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="text"
+              value={clearKeyword}
+              onChange={(e) => setClearKeyword(e.target.value)}
+              placeholder="Type DELETE"
+              className="border-red-500/20 focus:border-red-500/50"
+            />
+            <Button 
+              onClick={handleClearData} 
+              disabled={clearKeyword !== 'DELETE'}
+              className={clearKeyword === 'DELETE' ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-red-500/20 text-red-500/50 cursor-not-allowed'}
+            >
+              Clear All Data
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard, Check, AlertCircle, Cloud, LogIn, ExternalLink,
-  Clock, Timer, Leaf, RefreshCw, X, Search, BookOpen, TrendingUp
+  Clock, Timer, Leaf, RefreshCw, X, Search, BookOpen, TrendingUp, Sparkles, Flame
 } from 'lucide-react';
 import {
   initStorage, getGameState, getQueue, addToQueue, updateQueueItem,
@@ -15,6 +15,7 @@ import {
 } from '../shared/constants.js';
 import { validateUrl, validateQueueItem } from '../shared/validation.js';
 import { supabaseClient } from '../shared/supabase.js';
+import { autoTagItemWithChromeAI, suggestUrgencyWithChromeAI, isChromeAILanguageModelAvailable } from '../shared/ai.js';
 
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -61,7 +62,6 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState('');
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [gameState, setGameState] = useState<GameState | null>(null);
-  const [budgetInput, setBudgetInput] = useState<string>('');
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [tagInput, setTagInput] = useState('');
@@ -69,6 +69,14 @@ export default function App() {
   const [scrapedTags, setScrapedTags] = useState<string[] | null>(null);
   const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null);
   const [contentType, setContentType] = useState<ContentType>('video');
+  const [currentAuthor, setCurrentAuthor] = useState('');
+  const [currentAuthorUrl, setCurrentAuthorUrl] = useState('');
+  const [currentAuthorImage, setCurrentAuthorImage] = useState('');
+  const [currentPlatform, setCurrentPlatform] = useState('');
+  const [currentContentType, setCurrentContentType] = useState('');
+  const [currentTranscript, setCurrentTranscript] = useState('');
+  const [aiUrgency, setAiUrgency] = useState<number>(0);
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -76,7 +84,6 @@ export default function App() {
       setQueue(getSavedVideos());
       const gs = getGameState();
       setGameState(gs);
-      setBudgetInput(gs?.budgetMinutesTotal?.toString() || '60');
 
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.get(['dq_terms_accepted'], (res) => {
@@ -117,6 +124,31 @@ export default function App() {
                   if (isShortPage || scraped.scrapedTags?.length) {
                     setScrapedTags(Array.isArray(scraped.scrapedTags) ? scraped.scrapedTags : []);
                   }
+                  if (scraped.author || scraped.channel) setCurrentAuthor(scraped.author || scraped.channel);
+                  if (scraped.authorUrl) setCurrentAuthorUrl(scraped.authorUrl);
+                  if (scraped.authorImage) setCurrentAuthorImage(scraped.authorImage);
+                  if (scraped.platform) setCurrentPlatform(scraped.platform);
+                  if (scraped.contentType || scraped.genre) setCurrentContentType(scraped.contentType || scraped.genre);
+                  if (scraped.transcript) setCurrentTranscript(scraped.transcript);
+                  
+                  // Try AI Auto-tagging
+                  isChromeAILanguageModelAvailable().then(async (available) => {
+                    if (available && (scraped.title || scraped.transcript)) {
+                      setIsAiProcessing(true);
+                      try {
+                        const newTags = await autoTagItemWithChromeAI(scraped.title, scraped.transcript);
+                        if (newTags && newTags.length > 0) {
+                          setPendingTags(prev => Array.from(new Set([...prev, ...newTags])));
+                        }
+                        const urgency = await suggestUrgencyWithChromeAI(scraped.title, scraped.transcript);
+                        if (urgency) setAiUrgency(urgency);
+                      } catch (e) {
+                        console.error("AI processing failed in popup:", e);
+                      } finally {
+                        setIsAiProcessing(false);
+                      }
+                    }
+                  });
                 });
               } catch (e) { }
             }
@@ -132,18 +164,9 @@ export default function App() {
       setQueue(getSavedVideos()); 
       const gs = getGameState();
       setGameState(gs); 
-      setBudgetInput(gs?.budgetMinutesTotal?.toString() || '60');
     });
     return () => unsub();
   }, []);
-
-  const handleUpdateBudget = (val: string) => {
-    const num = parseInt(val, 10);
-    if (!isNaN(num) && num > 0) {
-      updateGameState({ budgetMinutesTotal: num });
-      setGameState(getGameState());
-    }
-  };
 
   const handleSave = async () => {
     if (!currentUrl) { setSaveStatus('error'); setErrorMsg('No URL detected.'); return; }
@@ -162,9 +185,15 @@ export default function App() {
         title: currentTitle || currentUrl,
         thumbnail: currentThumbnail,
         savedAt: Date.now(),
-        type: contentType,
+        type: (currentContentType as any) || contentType,
         tags: pendingTags,
+        author: currentAuthor,
+        authorUrl: currentAuthorUrl,
+        platform: currentPlatform,
+        contentType: currentContentType || contentType,
+        urgency: aiUrgency || 0,
       };
+      // Note: background.ts caching will also catch the channel info, but storing it directly ensures safety.
       await addToQueue(item as QueueItem);
       setQueue(getSavedVideos());
       setGameState(getGameState());
@@ -309,6 +338,17 @@ export default function App() {
           {/* Tags input */}
           <SlideUp delay={0.05}>
             <div className="space-y-2">
+
+              {isAiProcessing && (
+                <div className="flex items-center gap-2 text-lime-400 text-xs mb-2">
+                  <Sparkles size={12} className="animate-pulse" /> Chrome AI analyzing content...
+                </div>
+              )}
+              {aiUrgency > 0 && (
+                <div className="flex items-center gap-2 text-orange-400 text-xs mb-2">
+                  <Flame size={12} /> AI Urgency Score: {aiUrgency}/5
+                </div>
+              )}
 
               {/* Auto-detected hashtag suggestions */}
               {scrapedTags !== null && (

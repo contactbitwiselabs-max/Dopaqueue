@@ -32,6 +32,8 @@ export interface QueueItem {
   group?: string;
   fromContentScript?: boolean;
   updatedAt?: number;
+  expiryDate?: number;
+  notifiedExpiry?: boolean;
 }
 
 // ─── Channel ─────────────────────────────────────────────────────
