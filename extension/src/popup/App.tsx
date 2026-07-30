@@ -15,6 +15,7 @@ import {
 } from '../shared/constants.js';
 import { validateUrl, validateQueueItem } from '../shared/validation.js';
 import { supabaseClient } from '../shared/supabase.js';
+import { saveBlob } from '../shared/blobStore.js';
 import { autoTagItemWithChromeAI, suggestUrgencyWithChromeAI, isChromeAILanguageModelAvailable } from '../shared/ai.js';
 
 import { Button } from '../components/ui/button';
@@ -182,6 +183,60 @@ export default function App() {
     });
     return () => unsub();
   }, []);
+
+  const handleScreenshotCapture = async (type: 'CAPTURE_SCREENSHOT_VISIBLE' | 'CAPTURE_SCREENSHOT_AREA') => {
+    const sanitizedUrl = validateUrl(currentUrl, { allowAny: true });
+    if (!sanitizedUrl) return;
+
+    setSaveStatus('saving');
+    try {
+      const response = await chrome.runtime.sendMessage({ type });
+      
+      if (!response?.ok) {
+        throw new Error(response?.error || 'Screenshot failed or cancelled');
+      }
+
+      if (response.status === 'overlay_injected') {
+        window.close();
+        return;
+      }
+
+      // Handle full screenshot immediately (area screenshot is handled in background.ts)
+      if (type === 'CAPTURE_SCREENSHOT_VISIBLE' && response.dataUrl) {
+        const res = await fetch(response.dataUrl);
+        const blob = await res.blob();
+        const blobId = await saveBlob(blob, 'image/jpeg');
+
+        const item: Omit<QueueItem, 'id'> = {
+          url: sanitizedUrl,
+          title: currentTitle || sanitizedUrl,
+          thumbnail: currentThumbnail,
+          savedAt: Date.now(),
+          type: 'screenshot',
+          tags: pendingTags,
+          note: pendingNote || undefined,
+          collection: pendingCollection || undefined,
+          author: currentAuthor,
+          authorUrl: currentAuthorUrl,
+          platform: currentPlatform,
+          contentType: 'screenshot',
+          urgency: (pendingUrgency as any) || (aiUrgency ? `${aiUrgency}` : undefined),
+          sourceDomain: (() => { try { return new URL(sanitizedUrl).hostname.replace(/^www\./, ''); } catch { return ''; } })(),
+          blobId,
+        };
+
+        await addToQueue(item as QueueItem);
+        setQueue(getSavedVideos());
+        setGameState(getGameState());
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+      }
+    } catch (err: any) {
+      setSaveStatus('error');
+      setErrorMsg(err.message || 'Failed to capture.');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }
+  };
 
   const handleSave = async () => {
     if (!currentUrl) { setSaveStatus('error'); setErrorMsg('No URL detected.'); return; }
@@ -530,16 +585,38 @@ export default function App() {
                 </motion.div>
               ) : (
                 <motion.div key="save">
-                  <Button
-                    className="w-full h-11 text-sm gap-2"
-                    variant={alreadySaved ? 'secondary' : 'premium'}
-                    onClick={handleSave}
-                    loading={saveStatus === 'saving'}
-                    disabled={saveStatus === 'saving' || !currentUrl}
-                  >
-                    {!alreadySaved && <SaveIcon size={16} />}
-                    {alreadySaved ? '✓ Already Saved' : 'Save to Queue'}
-                  </Button>
+                  {saveMode === 'screenshot' ? (
+                    <div className="flex gap-2">
+                      <Button
+                        className="flex-1 h-11 text-sm gap-2 bg-[var(--dq-surface)] border hover:bg-lime-500/10 hover:border-lime-500 hover:text-lime-400 text-[var(--dq-text)] transition-colors"
+                        onClick={() => handleScreenshotCapture('CAPTURE_SCREENSHOT_VISIBLE')}
+                        loading={saveStatus === 'saving'}
+                        disabled={saveStatus === 'saving' || !currentUrl}
+                      >
+                        Full Page
+                      </Button>
+                      <Button
+                        className="flex-1 h-11 text-sm gap-2"
+                        variant="premium"
+                        onClick={() => handleScreenshotCapture('CAPTURE_SCREENSHOT_AREA')}
+                        loading={saveStatus === 'saving'}
+                        disabled={saveStatus === 'saving' || !currentUrl}
+                      >
+                        Select Area
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      className="w-full h-11 text-sm gap-2"
+                      variant={alreadySaved ? 'secondary' : 'premium'}
+                      onClick={handleSave}
+                      loading={saveStatus === 'saving'}
+                      disabled={saveStatus === 'saving' || !currentUrl}
+                    >
+                      {!alreadySaved && <SaveIcon size={16} />}
+                      {alreadySaved ? '✓ Already Saved' : 'Save to Queue'}
+                    </Button>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>

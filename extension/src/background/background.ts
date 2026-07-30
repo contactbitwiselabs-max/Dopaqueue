@@ -18,7 +18,9 @@ import {
   addToQueue,
   ensureChannelSaved,
   getQueue,
+  getSettings,
 } from '../shared/storage.js';
+import { autoSyncItem } from '../shared/sync.js';
 
 const BUDGET_TICK_ALARM = 'budgetTick';
 const REVIEW_DECK_ALARM = 'reviewDeckTick';
@@ -578,6 +580,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       }
 
+      const settings = getSettings();
+      if (settings.autoSyncEnabled) {
+        autoSyncItem(saved).catch(err => console.warn('DopaQueue: autoSyncItem failed', err));
+      }
+
       sendResponse({ ok: true, entry: saved });
     });
     return true;
@@ -624,9 +631,64 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const tab = await getActiveFocusedTab();
         if (!tab?.windowId) { sendResponse({ ok: false }); return; }
         const fullDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
-        // Crop is handled client-side by the popup using OffscreenCanvas
-        sendResponse({ ok: true, dataUrl: fullDataUrl, rect: message.rect });
+        
+        // Crop using OffscreenCanvas
+        const rect = message.rect;
+        const res = await fetch(fullDataUrl);
+        const blob = await res.blob();
+        const bitmap = await createImageBitmap(blob);
+        
+        const canvas = new OffscreenCanvas(rect.width, rect.height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('No 2d context');
+        
+        // Draw the cropped area
+        ctx.drawImage(bitmap, rect.x * rect.devicePixelRatio, rect.y * rect.devicePixelRatio, rect.width * rect.devicePixelRatio, rect.height * rect.devicePixelRatio, 0, 0, rect.width, rect.height);
+        
+        const croppedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+        
+        // Save blob
+        const { saveBlob } = await import('../shared/blobStore.js');
+        const blobId = await saveBlob(croppedBlob, 'image/jpeg');
+
+        // Create and save QueueItem
+        const url = tab.url || '';
+        const domain = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
+        
+        const entry = {
+          id: crypto.randomUUID(),
+          url,
+          title: tab.title || 'Screenshot',
+          thumbnail: tab.favIconUrl || null,
+          platform: detectPlatformFromUrl(url),
+          contentType: 'screenshot',
+          type: 'screenshot',
+          tags: [],
+          sourceDomain: domain,
+          blobId,
+          savedAt: Date.now(),
+          watched: false,
+        };
+
+        const { addToQueue, getSettings } = await import('../shared/storage.js');
+        addToQueue(entry);
+        
+        const settings = getSettings();
+        if (settings.autoSyncEnabled) {
+          const { autoSyncItem } = await import('../shared/sync.js');
+          autoSyncItem(entry).catch(e => console.warn('Sync failed', e));
+        }
+
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: chrome.runtime.getURL('src/icons/icon48.png'),
+          title: 'DopaQueue',
+          message: 'Area screenshot saved to Queue!',
+        });
+
+        sendResponse({ ok: true });
       } catch (err) {
+        console.error('Screenshot error:', err);
         sendResponse({ ok: false, error: String(err) });
       }
     })();
@@ -667,6 +729,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.author) {
         ensureChannelSaved(message.author, '', message.platform || 'Instagram');
       }
+
+      const settings = getSettings();
+      if (settings.autoSyncEnabled) {
+        autoSyncItem(entry).catch(err => console.warn('DopaQueue: autoSyncItem failed', err));
+      }
+
       sendResponse({ ok: true, entry });
     });
     return true;

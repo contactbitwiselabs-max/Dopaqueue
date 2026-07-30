@@ -18,7 +18,8 @@ import { ThemeToggle } from '../shared/theme.js';
 import { syncWithCloud } from '../shared/sync.js';
 import { supabaseClient } from '../shared/supabase.js';
 import { signInWithGoogle } from '../shared/auth.js';
-import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFile, buildExportFilename } from '../shared/export.js';
+import { exportToMarkdown, exportToCSV,  exportToJSON, exportToNotion, exportToObsidian, buildExportFilename, downloadFile 
+} from '../shared/export.js';
 import { generateActionChecklist, autoTagItem, summarizeWithChromeAI, isChromeAIAvailable } from '../shared/ai.js';
 import { generateSharePayload, encodeShareLink } from '../shared/share.js';
 import { getMyCircle, createCircle, joinCircleByCode, getWeeklyMirrorReport } from '../shared/circles.js';
@@ -537,7 +538,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
             <DropdownMenuContent align="start">
               <DropdownMenuLabel>Export as</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {(['markdown', 'csv', 'json', 'notion'] as ExportFormat[]).map(fmt => (
+              {(['markdown', 'csv', 'json', 'notion', 'obsidian'] as ExportFormat[]).map(fmt => (
                 <DropdownMenuItem key={fmt} onClick={() => onExport(video, fmt)}>
                   {fmt.charAt(0).toUpperCase() + fmt.slice(1)}
                 </DropdownMenuItem>
@@ -982,6 +983,7 @@ export default function App() {
       csv: () => [exportToCSV([item]), buildExportFilename('csv', video.title), 'text/csv'],
       json: () => [exportToJSON([item]), buildExportFilename('json', video.title), 'application/json'],
       notion: () => [exportToNotion([item]), buildExportFilename('markdown', `${video.title}-notion`), 'text/markdown'],
+      obsidian: () => [exportToObsidian([item]), buildExportFilename('markdown', `${video.title}-obsidian`), 'text/markdown'],
     };
     const [content, filename, mimeType] = handlers[format]();
     downloadFile(content, filename, mimeType);

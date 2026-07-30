@@ -11,7 +11,7 @@ import {
   getUserName,
 } from '../../shared/auth';
 import { syncWithCloud } from '../../shared/sync';
-import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, downloadFile, buildExportFilename } from '../../shared/export';
+import { exportToMarkdown, exportToCSV, exportToJSON, exportToNotion, exportToObsidian, downloadFile, buildExportFilename } from '../../shared/export';
 import { getSavedVideos, getSavedChannels, getGameState, updateGameState } from '../../shared/storage';
 import { DEFAULT_DAILY_BUDGET } from '../../shared/constants';
 import { getChannelGroups, createChannelGroup, deleteChannelGroup } from '../../shared/groups';
@@ -187,6 +187,11 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
           filename = buildExportFilename('markdown', 'videos-notion');
           mimeType = 'text/markdown';
           break;
+        case 'obsidian':
+          content = exportToObsidian(items);
+          filename = buildExportFilename('markdown', 'videos-obsidian');
+          mimeType = 'text/markdown';
+          break;
         default:
           return;
       }
@@ -339,8 +344,8 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
           <CardDescription>Download your saved videos and transcripts.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {(['markdown', 'csv', 'json', 'notion'] as ExportFormat[]).map(fmt => (
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {(['markdown', 'csv', 'json', 'notion', 'obsidian'] as ExportFormat[]).map(fmt => (
               <Button
                 key={fmt}
                 variant="outline"

@@ -113,6 +113,59 @@ export function exportToNotion(items: QueueItem[]): string {
   return lines.join('\n');
 }
 
+// Generate Obsidian markdown format (with YAML frontmatter)
+export function exportToObsidian(items: QueueItem[]): string {
+  const lines: string[] = [];
+
+  for (const item of items) {
+    // YAML Frontmatter
+    lines.push('---');
+    lines.push(`title: "${(item.title || 'Untitled').replace(/"/g, '\\"')}"`);
+    lines.push(`url: "${item.url || ''}"`);
+    lines.push(`channel: "${(item.channel || '—').replace(/"/g, '\\"')}"`);
+    lines.push(`type: "${item.type || 'video'}"`);
+    if (item.savedAt) {
+      lines.push(`saved: "${new Date(item.savedAt).toISOString()}"`);
+    }
+    lines.push(`watched: ${item.watched ? 'true' : 'false'}`);
+    if (item.tags && item.tags.length > 0) {
+      lines.push('tags:');
+      for (const tag of item.tags) {
+        lines.push(`  - ${tag}`);
+      }
+    }
+    if (item.collection) {
+      lines.push(`collection: "${item.collection}"`);
+    }
+    lines.push('---');
+    lines.push('');
+
+    // Body
+    lines.push(`# ${item.title || 'Untitled'}`);
+    lines.push('');
+    
+    if (item.description || item.note || item.notes) {
+      lines.push('## Notes');
+      lines.push(item.note || item.notes || item.description || '');
+      lines.push('');
+    }
+    
+    if (item.transcript) {
+      lines.push('## Content / Transcript');
+      lines.push(item.transcript);
+      lines.push('');
+    }
+    
+    // Separator between items if multiple
+    if (items.length > 1) {
+      lines.push('---');
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}
+
 // Download file helper
 export function downloadFile(content: string, filename: string, mimeType = 'text/plain'): void {
   const blob = new Blob([content], { type: mimeType });
