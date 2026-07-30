@@ -15,11 +15,46 @@ function scrapeCategory() {
   return null;
 }
 
+function getActiveShortContainer() {
+  const activeRenderer = document.querySelector('ytd-reel-video-renderer[is-active]');
+  if (activeRenderer) return activeRenderer;
+  const allLikeButtons = Array.from(document.querySelectorAll('like-button-view-model, ytd-like-button-renderer, ytd-segmented-like-dislike-button-renderer'));
+  const visibleLikeBtn = allLikeButtons.find(b => b.getBoundingClientRect().height > 0);
+  if (visibleLikeBtn) {
+    return visibleLikeBtn.closest('ytd-reel-video-renderer, ytd-shorts-player, [is-active]') || document.body;
+  }
+  return document.body;
+}
+
 function scrapeChannel() {
   const isShort = location.href.includes('/shorts/');
   if (isShort) {
-    const shortAuthor = document.querySelector('ytd-reel-video-renderer[is-active] #text.ytd-channel-name, ytd-reel-video-renderer[is-active] #channel-name #text');
+    const container = getActiveShortContainer();
+    
+    // 1. Try standard text nodes first (fastest if they still exist)
+    const shortAuthor = container.querySelector(
+      'ytd-channel-name .yt-core-attributed-string, ' +
+      '#text.ytd-channel-name, ' +
+      '#channel-name #text'
+    );
     if (shortAuthor?.textContent) return shortAuthor.textContent.trim();
+
+    // 2. Try the anchor tag directly
+    const anchor = container.querySelector('ytd-channel-name a, #channel-name a');
+    if (anchor?.textContent) return anchor.textContent.trim();
+
+    // 3. Bulletproof fallback: find the first visible channel handle link in the viewport
+    // 3. Bulletproof fallback: find the first visible channel handle link inside the container
+    const handleLinks = Array.from(container.querySelectorAll('a[href^="/@"]'));
+    for (const link of handleLinks) {
+      const text = link.textContent?.trim();
+      if (text && text.length > 0) {
+        const rect = link.getBoundingClientRect();
+        if (rect.top >= 0 && rect.bottom <= (window.innerHeight || document.documentElement.clientHeight)) {
+          return text;
+        }
+      }
+    }
   }
   
   const videoAuthor = document.querySelector('ytd-watch-flexy:not([hidden]) ytd-channel-name yt-formatted-string, ytd-watch-flexy:not([hidden]) #owner-name a');
@@ -243,12 +278,33 @@ export function scrapeYouTubeMetadataOnly() {
   }
   if (!title) title = 'YouTube Video';
 
-  let channel = document.querySelector('#channel-name a, ytd-video-owner-renderer #channel-name a, ytd-channel-name a')?.textContent?.trim();
-  if (!channel) {
-    channel = scrapeChannel();
+  const isShort = location.href.includes('/shorts/');
+  
+  let channel = scrapeChannel();
+  if (!channel && !isShort) {
+    channel = document.querySelector('#channel-name a, ytd-video-owner-renderer #channel-name a, ytd-channel-name a')?.textContent?.trim();
   }
 
-  let authorUrl = document.querySelector('#channel-name a, ytd-video-owner-renderer #channel-name a')?.href || null;
+  let authorUrl = null;
+  if (isShort) {
+    const container = getActiveShortContainer();
+    // Fast path
+    authorUrl = container.querySelector('#channel-name a, ytd-channel-name a')?.href || null;
+    
+    // Bulletproof fallback
+    if (!authorUrl) {
+      const handleLinks = Array.from(container.querySelectorAll('a[href^="/@"]'));
+      for (const link of handleLinks) {
+        if (link.getBoundingClientRect().top >= 0 && link.getBoundingClientRect().bottom <= (window.innerHeight || document.documentElement.clientHeight)) {
+          authorUrl = (link as HTMLAnchorElement).href;
+          break;
+        }
+      }
+    }
+  }
+  if (!authorUrl) {
+    authorUrl = document.querySelector('#channel-name a, ytd-video-owner-renderer #channel-name a')?.href || null;
+  }
   if (!authorUrl && channel) {
     authorUrl = `https://www.youtube.com/@${channel.replace(/^@/, '')}`;
   }

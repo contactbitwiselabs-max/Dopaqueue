@@ -16,7 +16,7 @@ import {
   validateString,
   validateUrl,
 } from './validation';
-import { QueueItem, GameState, AppSettings, PomodoroState, AIConfig, ScrapeData } from '../types';
+import { QueueItem, GameState, AppSettings, PomodoroState, AIConfig, ScrapeData, SavedCollection } from '../types';
 
 // --- Pub/Sub ---
 type ListenerCallback = (value: any) => void;
@@ -42,6 +42,7 @@ export let localCache: Record<string, ScrapeData> = {};
 export let localWhitelist: string[] = [];
 export let localUrlChannels: Record<string, string> = {};
 export let localPomodoro: PomodoroState = { active: false, remainingSeconds: 1500, label: 'Focus Block' };
+export let localCollections: SavedCollection[] = [];
 
 let initialized = false;
 
@@ -96,6 +97,7 @@ export async function initStorage(): Promise<void> {
       STORAGE_KEYS.URL_CHANNELS,
       STORAGE_KEYS.AI_CONFIG,
       STORAGE_KEYS.CONFIG,
+      STORAGE_KEYS.COLLECTIONS,
     ], (res: any) => {
       // Check for errors or undefined responses to prevent crashes
       if (chrome.runtime.lastError) {
@@ -128,7 +130,7 @@ export async function initStorage(): Promise<void> {
       
       localUrlChannels = (res[STORAGE_KEYS.URL_CHANNELS] || {}) as Record<string, string>;
       localPomodoro = { active: false, remainingSeconds: 1500, label: 'Focus Block', ...(res[STORAGE_KEYS.POMODORO] || {}) };
-
+      localCollections = Array.isArray(res[STORAGE_KEYS.COLLECTIONS]) ? res[STORAGE_KEYS.COLLECTIONS] : [];
       // Perform daily reset check for game state
       applyDailyReset();
 
@@ -581,4 +583,71 @@ export async function setAIConfig(config: AIConfig): Promise<AIConfig> {
 }
 
 export async function ensureChannelSaved(channelId: string, channelName: string, thumbnailUrl: string): Promise<boolean> { return true; }
+
+// --- Collections ---
+export function getCollections(): SavedCollection[] { return [...localCollections]; }
+
+export function addCollection(collection: Omit<SavedCollection, 'id' | 'createdAt'>): SavedCollection {
+  const newCol: SavedCollection = {
+    id: crypto.randomUUID(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    ...collection,
+  };
+  localCollections = [...localCollections, newCol];
+  storageSet(STORAGE_KEYS.COLLECTIONS, localCollections);
+  return newCol;
+}
+
+export function updateCollection(id: string, patch: Partial<SavedCollection>): SavedCollection | null {
+  localCollections = localCollections.map(c =>
+    c.id === id ? { ...c, ...patch, updatedAt: Date.now() } : c
+  );
+  storageSet(STORAGE_KEYS.COLLECTIONS, localCollections);
+  return localCollections.find(c => c.id === id) || null;
+}
+
+export function deleteCollection(id: string): void {
+  localCollections = localCollections.filter(c => c.id !== id);
+  // Remove collection assignment from all items
+  localQueue = localQueue.map(item =>
+    item.collection === (localCollections.find(c => c.id === id)?.name)
+      ? { ...item, collection: undefined, updatedAt: Date.now() }
+      : item
+  );
+  storageSet(STORAGE_KEYS.COLLECTIONS, localCollections);
+  storageSet(STORAGE_KEYS.QUEUE, localQueue);
+}
+
+// --- Item Filters ---
+export function getItemsByType(type: string): QueueItem[] {
+  return localQueue.filter(item => !item.deleted && item.type === type);
+}
+
+export function getItemsByPlatform(platform: string): QueueItem[] {
+  return localQueue.filter(item => !item.deleted && item.platform?.toLowerCase() === platform.toLowerCase());
+}
+
+export function getItemsByCollection(collectionName: string): QueueItem[] {
+  return localQueue.filter(item => !item.deleted && item.collection === collectionName);
+}
+
+export function getItemsByTag(tag: string): QueueItem[] {
+  const normalizedTag = tag.toLowerCase().trim();
+  return localQueue.filter(item =>
+    !item.deleted && Array.isArray(item.tags) && item.tags.some(t => t.toLowerCase() === normalizedTag)
+  );
+}
+
+export function searchItems(query: string): QueueItem[] {
+  const q = query.toLowerCase().trim();
+  if (!q) return localQueue.filter(item => !item.deleted);
+  return localQueue.filter(item => {
+    if (item.deleted) return false;
+    const inTitle = item.title?.toLowerCase().includes(q);
+    const inTags = Array.isArray(item.tags) && item.tags.some(t => t.toLowerCase().includes(q));
+    const inUrl = item.url?.toLowerCase().includes(q);
+    return inTitle || inTags || inUrl;
+  });
+}
 

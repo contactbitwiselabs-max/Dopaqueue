@@ -1,12 +1,13 @@
 // Central types for DopaQueue Chrome Extension
 
-export type ContentType = 'video' | 'short' | 'reel' | 'post';
+export type ContentType = 'video' | 'short' | 'reel' | 'post' | 'image' | 'article' | 'screenshot' | 'link';
 export type UrgencyLevel = 'Tomorrow' | 'Weekend' | 'Reference' | 'Unscheduled';
 export type ThemeMode = 'light' | 'dark' | 'system';
-export type ExportFormat = 'markdown' | 'csv' | 'json' | 'notion';
+export type ExportFormat = 'markdown' | 'csv' | 'json' | 'notion' | 'obsidian';
 export type AuthProvider = 'google' | 'github';
+export type BlobType = 'screenshot' | 'article' | 'image';
 
-// ─── Queue / Video ────────────────────────────────────────────────
+// ─── Queue / Saved Item ────────────────────────────────────────────
 export interface QueueItem {
   id: string;
   url: string;
@@ -30,6 +31,11 @@ export interface QueueItem {
   description?: string;
   deleted?: boolean;
   group?: string;
+  collection?: string;       // user-defined collection name
+  blobId?: string;           // references IndexedDB BlobEntry for large content
+  sourceDomain?: string;     // auto-extracted from URL hostname
+  wordCount?: number;        // for article type items
+  altText?: string;          // for image type items
   fromContentScript?: boolean;
   updatedAt?: number;
   expiryDate?: number;
@@ -157,6 +163,27 @@ export interface ExportItem {
   urgency?: UrgencyLevel;
 }
 
+// ─── Blob Store (IndexedDB) ───────────────────────────────────────
+export interface BlobEntry {
+  id: string;
+  itemId: string;
+  type: BlobType;
+  data: string;       // base64 data URL or plain text
+  mimeType?: string;
+  createdAt: number;
+  sizeBytes?: number;
+}
+
+// ─── Collections ─────────────────────────────────────────────────
+export interface SavedCollection {
+  id: string;
+  name: string;
+  color?: string;   // hex color e.g. '#84cc16'
+  icon?: string;    // emoji or lucide icon name
+  createdAt: number;
+  updatedAt?: number;
+}
+
 // ─── Storage Keys ────────────────────────────────────────────────
 export interface StorageData {
   dq_queue?: QueueItem[];
@@ -167,6 +194,7 @@ export interface StorageData {
   dq_pomodoro?: PomodoroState;
   dq_theme?: ThemeMode;
   dq_onboarding_complete?: boolean;
+  dq_collections?: SavedCollection[];
 }
 
 // ─── Config ──────────────────────────────────────────────────────
@@ -198,6 +226,7 @@ export interface AppSettings {
   notificationsEnabled: boolean;
   enableAnalytics: boolean;
   autoSync: boolean;
+  autoSyncEnabled: boolean;  // always-on sync: push to Supabase on every save
   webhookUrl: string | null;
   exportTemplate: string;
   updatedAt?: number;

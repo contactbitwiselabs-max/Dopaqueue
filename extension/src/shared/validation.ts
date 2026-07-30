@@ -80,8 +80,9 @@ export function validateUrl(url: any, options: UrlValidationOptions = {}): strin
       return null;
     }
 
-    // Check if domain is allowed
-    if (options.requireVideoPlatform) {
+    // Check if domain is allowed (only used for legacy video-only paths)
+    // For universal saves, all http/https URLs are allowed
+    if (options.requireVideoPlatform && !options.allowAny) {
       const domain = parsed.hostname.toLowerCase();
       const isAllowed = ALLOWED_DOMAINS.has(domain) || 
         Array.from(ALLOWED_DOMAINS).some(d => domain.endsWith(`.${d}`));

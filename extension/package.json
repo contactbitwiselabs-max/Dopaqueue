@@ -1,6 +1,6 @@
 {
   "name": "dopaqueue-extension",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "DopaQueue Chrome Extension - Save videos intentionally, watch them distraction-free",
   "type": "module",
   "scripts": {
@@ -46,7 +46,8 @@
     "recharts": "^3.9.2",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.2",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "webextension-polyfill": "^0.12.0"
   },
   "devDependencies": {
     "@types/archiver": "^8.0.0",

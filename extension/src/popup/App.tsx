@@ -31,17 +31,26 @@ import { ThemeToggle } from '../shared/theme';
 import type { QueueItem, GameState, ContentType } from '../types';
 
 function detectContentType(url: string): ContentType {
-  if (!url) return 'video';
+  if (!url) return 'link';
   if (/youtube\.com\/shorts\//i.test(url)) return 'short';
+  if (/youtube\.com\/watch/i.test(url)) return 'video';
+  if (/youtu\.be/i.test(url)) return 'video';
   if (/instagram\.com\/reel/i.test(url)) return 'reel';
   if (/instagram\.com\/p\//i.test(url)) return 'post';
-  if (/twitter\.com/i.test(url) || /x\.com/i.test(url) || /reddit\.com/i.test(url) || /linkedin\.com/i.test(url)) return 'post';
-  return 'video';
+  if (/tiktok\.com\/@[^/]+\/video/i.test(url)) return 'video';
+  if (/twitter\.com|x\.com/i.test(url)) return 'post';
+  if (/reddit\.com/i.test(url)) return 'post';
+  if (/linkedin\.com/i.test(url)) return 'post';
+  if (/\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?|$)/i.test(url)) return 'image';
+  return 'link'; // default — user can switch to 'article'
 }
 
-const CONTENT_TYPE_LABEL: Record<ContentType, string> = {
-  video: 'Video', short: 'Short', reel: 'Reel', post: 'Post'
+const CONTENT_TYPE_LABEL: Record<string, string> = {
+  video: 'Video', short: 'Short', reel: 'Reel', post: 'Post',
+  image: 'Image', article: 'Article', screenshot: 'Screenshot', link: 'Link',
 };
+
+type SaveMode = 'auto' | 'article' | 'screenshot' | 'link';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -68,7 +77,8 @@ export default function App() {
   const [pendingTags, setPendingTags] = useState<string[]>([]);
   const [scrapedTags, setScrapedTags] = useState<string[] | null>(null);
   const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null);
-  const [contentType, setContentType] = useState<ContentType>('video');
+  const [contentType, setContentType] = useState<ContentType>('link');
+  const [saveMode, setSaveMode] = useState<SaveMode>('auto');
   const [currentAuthor, setCurrentAuthor] = useState('');
   const [currentAuthorUrl, setCurrentAuthorUrl] = useState('');
   const [currentAuthorImage, setCurrentAuthorImage] = useState('');
@@ -77,6 +87,10 @@ export default function App() {
   const [currentTranscript, setCurrentTranscript] = useState('');
   const [aiUrgency, setAiUrgency] = useState<number>(0);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
+  const [pendingNote, setPendingNote] = useState('');
+  const [pendingCollection, setPendingCollection] = useState('');
+  const [collections, setCollections] = useState<any[]>([]);
+  const [pendingUrgency, setPendingUrgency] = useState<string>('');
 
   useEffect(() => {
     const init = async () => {
@@ -86,8 +100,9 @@ export default function App() {
       setGameState(gs);
 
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        chrome.storage.local.get(['dq_terms_accepted'], (res) => {
+        chrome.storage.local.get(['dq_terms_accepted', 'dq_collections'], (res) => {
           setTermsAccepted(Boolean(res?.dq_terms_accepted));
+          setCollections(Array.isArray(res?.dq_collections) ? res.dq_collections : []);
         });
       } else {
         setTermsAccepted(true);
@@ -170,34 +185,46 @@ export default function App() {
 
   const handleSave = async () => {
     if (!currentUrl) { setSaveStatus('error'); setErrorMsg('No URL detected.'); return; }
-    const sanitizedUrl = validateUrl(currentUrl, { requireVideoPlatform: true });
-    if (!sanitizedUrl) { 
-      setSaveStatus('error'); 
-      setErrorMsg('Invalid or unsupported URL.'); 
+    // Universal URL validation — any http/https URL is valid
+    const sanitizedUrl = validateUrl(currentUrl, { allowAny: true });
+    if (!sanitizedUrl) {
+      setSaveStatus('error');
+      setErrorMsg('Invalid URL.');
       setTimeout(() => setSaveStatus('idle'), 3000);
-      return; 
+      return;
     }
 
     setSaveStatus('saving');
     try {
+      const effectiveType = saveMode === 'auto'
+        ? ((currentContentType as any) || contentType)
+        : saveMode === 'article' ? 'article'
+        : saveMode === 'screenshot' ? 'screenshot'
+        : 'link';
+
       const item: Omit<QueueItem, 'id'> = {
-        url: currentUrl,
-        title: currentTitle || currentUrl,
+        url: sanitizedUrl,
+        title: currentTitle || sanitizedUrl,
         thumbnail: currentThumbnail,
         savedAt: Date.now(),
-        type: (currentContentType as any) || contentType,
+        type: effectiveType as any,
         tags: pendingTags,
+        note: pendingNote || undefined,
+        collection: pendingCollection || undefined,
         author: currentAuthor,
         authorUrl: currentAuthorUrl,
         platform: currentPlatform,
-        contentType: currentContentType || contentType,
-        urgency: aiUrgency || 0,
+        contentType: effectiveType,
+        urgency: (pendingUrgency as any) || (aiUrgency ? `${aiUrgency}` : undefined),
+        sourceDomain: (() => { try { return new URL(sanitizedUrl).hostname.replace(/^www\./, ''); } catch { return ''; } })(),
       };
-      // Note: background.ts caching will also catch the channel info, but storing it directly ensures safety.
+
       await addToQueue(item as QueueItem);
       setQueue(getSavedVideos());
       setGameState(getGameState());
       setPendingTags([]);
+      setPendingNote('');
+      setPendingCollection('');
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (err: any) {
@@ -206,6 +233,7 @@ export default function App() {
       setTimeout(() => setSaveStatus('idle'), 3000);
     }
   };
+
 
   const alreadySaved = queue.some(v => v.url === currentUrl);
   const budgetTotal = gameState?.budgetMinutesTotal ?? 60;
@@ -335,6 +363,34 @@ export default function App() {
             </div>
           </ScaleIn>
 
+          {/* Save type toggle */}
+          <SlideUp delay={0.02}>
+            <div className="flex gap-1 p-1 rounded-xl bg-[var(--dq-surface)] border border-[var(--dq-border)]">
+              {(['auto', 'article', 'screenshot', 'link'] as SaveMode[]).map((mode) => {
+                const labels: Record<SaveMode, string> = {
+                  auto: `✦ ${CONTENT_TYPE_LABEL[contentType] ?? 'Auto'}`,
+                  article: '📄 Article',
+                  screenshot: '📷 Screenshot',
+                  link: '🔗 Link',
+                };
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setSaveMode(mode)}
+                    className={`flex-1 text-[10px] py-1 rounded-lg font-semibold transition-all ${
+                      saveMode === mode
+                        ? 'bg-lime-500 text-zinc-900'
+                        : 'text-[var(--dq-text-muted)] hover:text-[var(--dq-text)]'
+                    }`}
+                  >
+                    {labels[mode]}
+                  </button>
+                );
+              })}
+            </div>
+          </SlideUp>
+
           {/* Tags input */}
           <SlideUp delay={0.05}>
             <div className="space-y-2">
@@ -414,6 +470,35 @@ export default function App() {
                 />
                 <Button size="sm" variant="ghost" onClick={addTag} className="shrink-0 h-8 px-3">Add</Button>
               </div>
+
+              {/* Note */}
+              <div>
+                <label className="text-[9px] font-semibold text-[var(--dq-text-subtle)] uppercase tracking-wider mb-1 block">Note (optional)</label>
+                <textarea
+                  value={pendingNote}
+                  onChange={(e) => setPendingNote(e.target.value)}
+                  placeholder="Add a note..."
+                  rows={2}
+                  className="w-full text-xs rounded-lg bg-[var(--dq-surface)] border border-[var(--dq-border)] text-[var(--dq-text)] placeholder:text-[var(--dq-text-muted)] px-3 py-2 resize-none focus:outline-none focus:border-lime-500/50 transition-colors"
+                />
+              </div>
+
+              {/* Collection */}
+              {collections.length > 0 && (
+                <div>
+                  <label className="text-[9px] font-semibold text-[var(--dq-text-subtle)] uppercase tracking-wider mb-1 block">Collection</label>
+                  <select
+                    value={pendingCollection}
+                    onChange={(e) => setPendingCollection(e.target.value)}
+                    className="w-full text-xs rounded-lg bg-[var(--dq-surface)] border border-[var(--dq-border)] text-[var(--dq-text)] px-3 py-2 focus:outline-none focus:border-lime-500/50 transition-colors"
+                  >
+                    <option value="">None</option>
+                    {collections.map((col: any) => (
+                      <option key={col.id} value={col.name}>{col.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </SlideUp>
 

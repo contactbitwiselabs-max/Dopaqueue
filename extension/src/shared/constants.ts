@@ -23,6 +23,20 @@ export const STORAGE_KEYS = {
   FLOW_BREAKER_LOG: 'dq_flow_breaker_log',
   AI_CONFIG: 'dq_ai_config',
   CONFIG: 'dq_config',
+  COLLECTIONS: 'dq_collections',
+};
+
+/** Human-readable display names for platforms */
+export const PLATFORM_LABELS: Record<string, string> = {
+  youtube: 'YouTube',
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+  twitter: 'X / Twitter',
+  x: 'X / Twitter',
+  reddit: 'Reddit',
+  linkedin: 'LinkedIn',
+  generic: 'Web',
+  web: 'Web',
 };
 
 // Cap on the eviction-proof url->channel map used for the whitelist
@@ -69,6 +83,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   enableAnalytics: true,
   autoSync: false,
+  autoSyncEnabled: false,  // always-on Supabase sync — off by default
   webhookUrl: '',
   exportTemplate: '',
 };

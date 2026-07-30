@@ -69,7 +69,121 @@ async function handleTabChange(tab) {
 chrome.runtime.onInstalled.addListener(async () => {
   ensureBudgetAlarm();
   await refreshBadge();
+  setupContextMenus();
 });
+
+function setupContextMenus() {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: 'dq-save-page',
+      title: '📌 Save page to DopaQueue',
+      contexts: ['page', 'frame'],
+    });
+    chrome.contextMenus.create({
+      id: 'dq-save-image',
+      title: '🖼️ Save image to DopaQueue',
+      contexts: ['image'],
+    });
+    chrome.contextMenus.create({
+      id: 'dq-save-link',
+      title: '🔗 Save link to DopaQueue',
+      contexts: ['link'],
+    });
+  });
+}
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  await initStorage();
+
+  if (info.menuItemId === 'dq-save-page' && tab) {
+    const domain = new URL(tab.url || 'https://example.com').hostname.replace(/^www\./, '');
+    const entry = {
+      id: crypto.randomUUID(),
+      url: tab.url || '',
+      title: tab.title || tab.url || 'Saved Page',
+      thumbnail: tab.favIconUrl || null,
+      platform: detectPlatformFromUrl(tab.url || ''),
+      contentType: 'link',
+      type: 'link',
+      sourceDomain: domain,
+      savedAt: Date.now(),
+      watched: false,
+    };
+    addToQueue(entry);
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('src/icons/icon48.png'),
+      title: 'DopaQueue',
+      message: `Page saved: "${(tab.title || '').slice(0, 50)}"`,
+    });
+  }
+
+  if (info.menuItemId === 'dq-save-image' && info.srcUrl) {
+    const domain = tab?.url ? new URL(tab.url).hostname.replace(/^www\./, '') : '';
+    // Send message to content script to enrich with alt text / caption
+    // If content script not reachable, fall back to direct save
+    try {
+      if (tab?.id) {
+        chrome.tabs.sendMessage(tab.id, { type: 'SAVE_IMAGE_FROM_CONTEXT', srcUrl: info.srcUrl });
+      }
+    } catch {
+      // Direct save fallback
+      const entry = {
+        id: crypto.randomUUID(),
+        url: info.srcUrl,
+        title: 'Saved Image',
+        thumbnail: info.srcUrl,
+        platform: detectPlatformFromUrl(tab?.url || ''),
+        contentType: 'image',
+        type: 'image',
+        sourceDomain: domain,
+        savedAt: Date.now(),
+        watched: false,
+      };
+      addToQueue(entry);
+    }
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('src/icons/icon48.png'),
+      title: 'DopaQueue',
+      message: 'Image saved to DopaQueue!',
+    });
+  }
+
+  if (info.menuItemId === 'dq-save-link' && info.linkUrl) {
+    const domain = (() => { try { return new URL(info.linkUrl).hostname.replace(/^www\./, ''); } catch { return ''; } })();
+    const entry = {
+      id: crypto.randomUUID(),
+      url: info.linkUrl,
+      title: info.selectionText || info.linkUrl.slice(0, 80),
+      thumbnail: null,
+      platform: detectPlatformFromUrl(info.linkUrl),
+      contentType: 'link',
+      type: 'link',
+      sourceDomain: domain,
+      savedAt: Date.now(),
+      watched: false,
+    };
+    addToQueue(entry);
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('src/icons/icon48.png'),
+      title: 'DopaQueue',
+      message: `Link saved: "${entry.title.slice(0, 50)}"`,
+    });
+  }
+});
+
+function detectPlatformFromUrl(url: string): string {
+  if (!url) return 'web';
+  if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
+  if (url.includes('instagram.com')) return 'instagram';
+  if (url.includes('tiktok.com')) return 'tiktok';
+  if (url.includes('x.com') || url.includes('twitter.com')) return 'x';
+  if (url.includes('reddit.com')) return 'reddit';
+  if (url.includes('linkedin.com')) return 'linkedin';
+  return 'web';
+}
 
 chrome.runtime.onStartup.addListener(async () => {
   ensureBudgetAlarm();
@@ -412,6 +526,116 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ saved });
     });
     return true; // async
+  }
+
+  // ─── Unified SAVE_ITEM handler ─────────────────────────────────────────────
+  // All content scripts, context menus, and popup saves flow through here.
+  if (message?.type === 'SAVE_ITEM') {
+    initStorage().then(async () => {
+      const url = message.url;
+      if (!url) { sendResponse({ ok: false, error: 'No URL' }); return; }
+
+      const domain = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
+      const contentType = message.contentType || message.type || 'link';
+
+      const entry = {
+        id: crypto.randomUUID(),
+        url,
+        title: (message.title || url).slice(0, 200),
+        thumbnail: message.thumbnail || null,
+        author: message.author || null,
+        authorUrl: message.authorUrl || null,
+        platform: message.platform || detectPlatformFromUrl(url),
+        contentType,
+        type: contentType,
+        tags: Array.isArray(message.tags) ? message.tags : [],
+        note: message.note || null,
+        collection: message.collection || null,
+        urgency: message.urgency || null,
+        sourceDomain: domain,
+        altText: message.altText || null,
+        wordCount: message.wordCount || null,
+        blobId: message.blobId || null,
+        description: message.description || null,
+        fromContentScript: message.fromContentScript || false,
+        savedAt: Date.now(),
+        watched: false,
+      };
+
+      const saved = addToQueue(entry);
+
+      // Cache scrape result for platforms with metadata
+      if (message.platform || message.author || message.thumbnail) {
+        cacheScrapeResult(url, {
+          genre: contentType,
+          channel: message.author || null,
+          title: entry.title,
+          thumbnail: message.thumbnail || null,
+          author: message.author || null,
+          authorUrl: message.authorUrl || null,
+          scrapedTags: Array.isArray(message.tags) ? message.tags : undefined,
+          platform: message.platform || null,
+        });
+      }
+
+      sendResponse({ ok: true, entry: saved });
+    });
+    return true;
+  }
+
+  // ─── Screenshot handlers ──────────────────────────────────────────────────
+  if (message?.type === 'CAPTURE_SCREENSHOT_VISIBLE') {
+    (async () => {
+      try {
+        const tab = await getActiveFocusedTab();
+        if (!tab?.windowId) { sendResponse({ ok: false, error: 'No active window' }); return; }
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 85 });
+        sendResponse({ ok: true, dataUrl });
+      } catch (err) {
+        sendResponse({ ok: false, error: String(err) });
+      }
+    })();
+    return true;
+  }
+
+  if (message?.type === 'CAPTURE_SCREENSHOT_AREA') {
+    (async () => {
+      try {
+        const tab = await getActiveFocusedTab();
+        if (!tab?.id) { sendResponse({ ok: false, error: 'No active tab' }); return; }
+
+        // Inject the overlay content script
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['src/content/features/screenshotCapture.js'],
+        });
+
+        sendResponse({ ok: true, status: 'overlay_injected' });
+      } catch (err) {
+        sendResponse({ ok: false, error: String(err) });
+      }
+    })();
+    return true;
+  }
+
+  if (message?.type === 'SCREENSHOT_AREA_SELECTED') {
+    (async () => {
+      try {
+        const tab = await getActiveFocusedTab();
+        if (!tab?.windowId) { sendResponse({ ok: false }); return; }
+        const fullDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
+        // Crop is handled client-side by the popup using OffscreenCanvas
+        sendResponse({ ok: true, dataUrl: fullDataUrl, rect: message.rect });
+      } catch (err) {
+        sendResponse({ ok: false, error: String(err) });
+      }
+    })();
+    return true;
+  }
+
+  if (message?.type === 'SCREENSHOT_AREA_CANCELLED') {
+    sendResponse({ ok: true });
+    return false;
   }
 
   if (message?.type === 'SAVE_INSTAGRAM_ITEM') {

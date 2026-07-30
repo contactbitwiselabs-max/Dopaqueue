@@ -192,3 +192,29 @@ export async function syncWithCloud() {
 
   return result;
 }
+
+/**
+ * Always-on sync: upserts a single QueueItem's metadata to the Supabase `queue` table.
+ * Blobs (screenshots, article content) are NEVER synced — they remain in local IndexedDB only.
+ * Called from background.ts SAVE_ITEM handler when autoSyncEnabled = true and user is logged in.
+ */
+export async function autoSyncItem(item: QueueItem): Promise<void> {
+  try {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session?.user?.id) return; // Not logged in — skip silently
+
+    // Strip blob data if accidentally present — blobs are local-only
+    const safeItem = { ...item, blobId: undefined };
+
+    const { error } = await supabaseClient
+      .from('queue')
+      .upsert({ ...safeItem, user_id: session.user.id }, { onConflict: 'id' });
+
+    if (error) {
+      console.warn('[DopaQueue] autoSyncItem upsert failed:', error.message);
+    }
+  } catch (e) {
+    // Non-fatal — always-on sync failures should not interrupt the save flow
+    console.warn('[DopaQueue] autoSyncItem error:', e);
+  }
+}

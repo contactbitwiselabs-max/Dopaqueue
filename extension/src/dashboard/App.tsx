@@ -6,13 +6,14 @@ import {
   Clock, LogIn, X, AlertCircle, LogOut, RefreshCw, Film, Zap, Image,
   ChevronDown, Search, Users, ExternalLink, TrendingUp, Send,
   Timer, Pause, Play, BarChart2, FileDown, Plus, Folder, Sparkles,
-  Shield, Copy, Share2, Leaf, Edit2, FileText, CalendarIcon
+  Shield, Copy, Share2, Leaf, Edit2, FileText, CalendarIcon, Camera, Link2, LayoutGrid
 } from 'lucide-react';
 import {
   initStorage, getSavedVideos, getSavedChannels, subscribe,
   removeFromQueue, updateQueueItem, getScrapeResult, updateChannelGroup,
   getWhitelist, saveWhitelist, isWhitelistedChannel, getPomodoroState, savePomodoroState
 } from '../shared/storage.js';
+import { getBlob } from '../shared/blobStore.js';
 import { ThemeToggle } from '../shared/theme.js';
 import { syncWithCloud } from '../shared/sync.js';
 import { supabaseClient } from '../shared/supabase.js';
@@ -43,6 +44,7 @@ import { StaggerList, StaggerItem, PageTransition, HoverCard, FadeIn, SlideUp, P
 
 import Settings from './pages/Settings.jsx';
 import DigitalWellbeing from './pages/DigitalWellbeing.jsx';
+import Collections from './pages/Collections.js';
 
 import type { QueueItem, Channel, StatusMessage, ContentType, UrgencyLevel, ExportFormat } from '../types';
 
@@ -62,6 +64,10 @@ const TYPE_CONFIG = {
   short: { label: 'Short', variant: 'short' as const, icon: Zap },
   reel: { label: 'Reel', variant: 'reel' as const, icon: Film },
   post: { label: 'Post', variant: 'post' as const, icon: Image },
+  image: { label: 'Image', variant: 'default' as const, icon: Image },
+  article: { label: 'Article', variant: 'secondary' as const, icon: FileText },
+  screenshot: { label: 'Screenshot', variant: 'outline' as const, icon: Camera },
+  link: { label: 'Link', variant: 'default' as const, icon: Link2 },
 };
 
 function formatDateTime(ts: number): string {
@@ -72,7 +78,7 @@ function formatDateTime(ts: number): string {
     ' · ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
-type TabId = 'videos' | 'channels' | 'analysis' | 'circles' | 'settings';
+type TabId = 'videos' | 'collections' | 'channels' | 'analysis' | 'circles' | 'settings';
 
 // ─── Auth Page ───────────────────────────────────────────────────â”€â”€
 function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
@@ -267,10 +273,34 @@ function PomodoroBar() {
 // ─── Smart Thumbnail ────────────────────────────────────────────────
 function SmartThumbnail({ video, typeCfg }: { video: QueueItem; typeCfg?: any }) {
   const [imgError, setImgError] = useState(false);
+  const [blobData, setBlobData] = useState<string | null>(null);
   const resolvedUrl = resolveThumbnailUrl(video.url, video.thumbnail);
   const FallbackIcon = typeCfg?.icon || PlayCircle;
 
-  if (!resolvedUrl || imgError) {
+  useEffect(() => {
+    if (video.blobId) {
+      getBlob(video.blobId).then(blob => {
+        if (blob?.data) {
+          setBlobData(blob.data);
+        }
+      }).catch(err => console.warn('Failed to load blob for thumbnail', err));
+    }
+  }, [video.blobId]);
+
+  if (video.type === 'article' || video.contentType === 'article') {
+    return (
+      <div className="w-full h-full bg-[var(--dq-surface)] p-4 flex flex-col justify-center items-center text-center">
+        <FallbackIcon className="w-8 h-8 text-[var(--dq-text-muted)] mb-2" />
+        <p className="text-xs text-[var(--dq-text-subtle)] line-clamp-3">
+          {blobData ? blobData.slice(0, 150) + '...' : (video.description || video.note || video.title)}
+        </p>
+      </div>
+    );
+  }
+
+  const imageSrc = blobData || resolvedUrl;
+
+  if (!imageSrc || imgError) {
     return (
       <div className="w-full h-full flex items-center justify-center text-[var(--dq-text-subtle)]">
         <FallbackIcon className="w-8 h-8" />
@@ -281,7 +311,7 @@ function SmartThumbnail({ video, typeCfg }: { video: QueueItem; typeCfg?: any })
   return (
     <>
       <img
-        src={resolvedUrl}
+        src={imageSrc}
         alt={video.title}
         referrerPolicy="no-referrer"
         onError={() => setImgError(true)}
@@ -386,10 +416,15 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
       {/* Thumbnail */}
       <div className="relative h-36 bg-[var(--dq-surface)] rounded-t-2xl overflow-hidden">
         <SmartThumbnail video={video} typeCfg={typeCfg} />
-        <div className="absolute bottom-2 left-2 flex gap-1.5">
+        <div className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 max-w-[80%]">
           <Badge variant={typeCfg.variant}>{typeCfg.label}</Badge>
           {(scrape.platform || (video as any).platform) && (
             <Badge variant="glass" className="bg-black/50 text-white backdrop-blur-md">{(scrape.platform || (video as any).platform)}</Badge>
+          )}
+          {video.collection && (
+            <Badge variant="outline" className="bg-black/50 text-lime-100 backdrop-blur-md border-lime-500/30">
+              <Folder className="w-3 h-3 mr-1 inline" /> {video.collection}
+            </Badge>
           )}
         </div>
         {video.urgency && video.urgency !== 'Unscheduled' && (
@@ -411,7 +446,10 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
           <ExternalLink className="w-3.5 h-3.5 text-[var(--dq-text-muted)] group-hover/link:text-lime-400 shrink-0 mt-0.5 transition-colors" />
         </a>
 
-        {scrape.channel && <p className="text-xs text-[var(--dq-text-muted)] mb-3 truncate">{scrape.channel}</p>}
+        {(() => {
+          const authorName = scrape.channel || scrape.author || (video as any).channel || (video as any).author;
+          return authorName ? <p className="text-xs text-[var(--dq-text-muted)] mb-3 truncate">{authorName}</p> : null;
+        })()}
 
         {/* Tags */}
         <div className="flex flex-col gap-1.5 mb-3">
@@ -771,7 +809,7 @@ function ArticleModal({ video, onClose }: { video: QueueItem; onClose: () => voi
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="text-[var(--dq-text)] line-clamp-2">{video.title}</DialogTitle>
-          <DialogDescription>{scrape.channel}</DialogDescription>
+          <DialogDescription>{scrape.channel || scrape.author || (readingVideo as any)?.channel || (readingVideo as any)?.author}</DialogDescription>
         </DialogHeader>
         <ScrollArea className="flex-1">
           <div className="prose prose-invert prose-sm max-w-none p-1">
@@ -796,7 +834,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>(() => {
     if (typeof window !== 'undefined') {
       const tab = new URLSearchParams(window.location.search).get('tab');
-      if (tab === 'settings' || tab === 'channels' || tab === 'analysis' || tab === 'circles' || tab === 'videos') {
+      if (tab === 'settings' || tab === 'channels' || tab === 'analysis' || tab === 'circles' || tab === 'videos' || tab === 'collections') {
         return tab;
       }
     }
@@ -818,6 +856,7 @@ export default function App() {
   const [filterUrgency, setFilterUrgency] = useState<UrgencyLevel | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [groupBy, setGroupBy] = useState<'none' | 'collection' | 'type' | 'platform'>('none');
   const [readingVideo, setReadingVideo] = useState<QueueItem | null>(null);
   const [scrapeVersion, setScrapeVersion] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -830,7 +869,7 @@ export default function App() {
     const channelMap = new Map<string, { name: string; url: string; videoCount: number; savedAt: number; authorImage: string | null; platform: string | null; contentTypes: Set<string> }>();
     savedVideos.forEach(v => {
       const scrape = getScrapeResult(v.url) || {} as any;
-      const name = scrape.channel || v.channel || v.channelName || v.author || null;
+      const name = scrape.channel || scrape.author || v.channel || v.channelName || v.author || null;
       const authorUrl = scrape.authorUrl || v.authorUrl || '';
       const authorImage = scrape.authorImage || null;
       const platform = scrape.platform || v.platform || detectContentType(v.url) || null;
@@ -966,7 +1005,7 @@ export default function App() {
         v.title,
         ...(v.tags || []),
         scrape.transcript,
-        scrape.channel,
+        scrape.channel || scrape.author || v.channel || v.author,
         v.channel,
         v.channelName,
         v.author,
@@ -1043,7 +1082,8 @@ export default function App() {
   }
 
   const navItems: { id: TabId; icon: React.ReactNode; label: string; count?: number }[] = [
-    { id: 'videos', icon: <PlayCircle />, label: 'Saved Videos', count: videos.length },
+    { id: 'videos', icon: <LayoutGrid />, label: 'Saved Content', count: videos.length },
+    { id: 'collections', icon: <Folder />, label: 'Collections' },
     { id: 'channels', icon: <Hash />, label: 'Channels', count: channels.length },
     { id: 'analysis', icon: <BarChart2 />, label: 'Analysis' },
     { id: 'circles', icon: <Users />, label: 'Focus Circles' },
@@ -1149,7 +1189,7 @@ export default function App() {
 
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <SlideUp>
-                      <h2 className="text-3xl font-bold">Your Video Queue</h2>
+                      <h2 className="text-3xl font-bold">Your Saved Content</h2>
                     </SlideUp>
                     <div className="flex items-center gap-3">
                       <div className="relative flex-1 sm:max-w-xs">
@@ -1178,6 +1218,22 @@ export default function App() {
                           <ChevronDown className={`w-3 h-3 transition-transform ${sortOrder === 'oldest' ? 'rotate-180' : ''}`} />
                           {sortOrder === 'newest' ? 'Newest first' : 'Oldest first'}
                         </button>
+                        
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[var(--dq-border)] text-[var(--dq-text-muted)] hover:text-[var(--dq-text)] hover:border-[var(--dq-text-muted)] transition-colors">
+                              <LayoutGrid className="w-3 h-3" />
+                              Group: {groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setGroupBy('none')}>None</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setGroupBy('collection')}>Collection</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setGroupBy('type')}>Content Type</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setGroupBy('platform')}>Platform</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+
                         <Badge variant="secondary" className="shrink-0">{filteredVideos.length} items</Badge>
                       </div>
                     </div>
@@ -1204,33 +1260,79 @@ export default function App() {
                       <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}>
                         <PlayCircle className="w-12 h-12 mx-auto mb-4 opacity-40" />
                       </motion.div>
-                      <p className="font-medium">No videos found.</p>
-                      <p className="text-sm mt-1 text-[var(--dq-text-subtle)]">Save a video using the extension to get started.</p>
+                      <p className="font-medium">No content found.</p>
+                      <p className="text-sm mt-1 text-[var(--dq-text-subtle)]">Save something using the extension to get started.</p>
                     </FadeIn>
                   ) : (
-                    <StaggerList className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                      {filteredVideos.map(video => (
-                        <StaggerItem key={video.id}>
-                          <VideoCard
-                            video={video}
-                            onRemove={() => handleDelete(video.id)}
-                            onExport={handleExport}
-                            onReadArticle={() => setReadingVideo(video)}
-                            onUpdateTags={handleUpdateTags}
-                            onUpdateNotes={handleUpdateNotes}
-                            onUpdateTranscript={handleUpdateTranscript}
-                            onSetUrgency={handleSetUrgency}
-                            onSetExpiry={handleSetExpiry}
-                            scrapeVersion={scrapeVersion}
-                          />
-                        </StaggerItem>
-                      ))}
-                    </StaggerList>
+                    groupBy === 'none' ? (
+                      <StaggerList className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                        {filteredVideos.map(video => (
+                          <StaggerItem key={video.id}>
+                            <VideoCard
+                              video={video}
+                              scrapeVersion={scrapeVersion}
+                              onRemove={() => handleDelete(video.id)}
+                              onExport={handleExport}
+                              onReadArticle={() => setReadingVideo(video)}
+                              onUpdateTags={handleUpdateTags}
+                              onUpdateNotes={handleUpdateNotes}
+                              onUpdateTranscript={handleUpdateTranscript}
+                              onSetUrgency={handleSetUrgency}
+                              onSetExpiry={handleSetExpiry}
+                            />
+                          </StaggerItem>
+                        ))}
+                      </StaggerList>
+                    ) : (
+                      <div className="space-y-12">
+                        {Object.entries(
+                          filteredVideos.reduce((acc, video) => {
+                            const scrape = getScrapeResult(video.url) || {};
+                            let key = 'Other';
+                            if (groupBy === 'collection') key = video.collection || 'Uncategorized';
+                            else if (groupBy === 'type') key = (TYPE_CONFIG as any)[detectContentType(video.url)]?.label || 'Other';
+                            else if (groupBy === 'platform') key = (scrape as any).platform || video.platform || 'Web';
+                            
+                            if (!acc[key]) acc[key] = [];
+                            acc[key].push(video);
+                            return acc;
+                          }, {} as Record<string, QueueItem[]>)
+                        ).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, groupVideos]) => (
+                          <div key={groupName}>
+                            <h3 className="text-xl font-bold mb-4 flex items-center gap-2 border-b border-[var(--dq-border)] pb-2 text-[var(--dq-text)]">
+                              {groupBy === 'collection' && <Folder className="w-5 h-5 text-lime-400" />}
+                              {groupBy === 'platform' && <Hash className="w-5 h-5 text-lime-400" />}
+                              {groupName} <span className="text-xs text-[var(--dq-text-muted)] font-normal ml-2 bg-black/20 px-2 py-0.5 rounded-full">{groupVideos.length}</span>
+                            </h3>
+                            <StaggerList className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                              {groupVideos.map(video => (
+                                <StaggerItem key={video.id}>
+                                  <VideoCard
+                                    video={video}
+                                    scrapeVersion={scrapeVersion}
+                                    onRemove={() => handleDelete(video.id)}
+                                    onExport={handleExport}
+                                    onReadArticle={() => setReadingVideo(video)}
+                                    onUpdateTags={handleUpdateTags}
+                                    onUpdateNotes={handleUpdateNotes}
+                                    onUpdateTranscript={handleUpdateTranscript}
+                                    onSetUrgency={handleSetUrgency}
+                                    onSetExpiry={handleSetExpiry}
+                                  />
+                                </StaggerItem>
+                              ))}
+                            </StaggerList>
+                          </div>
+                        ))}
+                      </div>
+                    )
                   )}
                 </div>
               )}
 
-              {/* ─── Channels Tab ─── */}
+              {/* ─── Collections Tab ─── */}
+              {activeTab === 'collections' && <Collections />}
+
               {activeTab === 'channels' && (
                 <div>
                   <SlideUp><h2 className="text-3xl font-bold mb-6">Saved Channels</h2></SlideUp>
