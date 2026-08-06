@@ -385,6 +385,14 @@ export function injectYouTubeShortsButtons() {
   if (!location.hostname.includes('youtube.com')) return;
 
   let currentShortUrl = null;
+  // B19: Dedupe across re-rendered action containers. YT frequently rebuilds
+  // the actions panel on navigation; without this, every render produces a
+  // fresh "Save" button while the previous one lingers orphaned.
+  const injectedContainers = new WeakSet<Element>();
+  // B19: Guard against double-invocation. content.ts only calls once, but a
+  // hot-reload or future refactor could trigger it again and leak the interval.
+  if ((injectYouTubeShortsButtons as any).__dqInstalled) return;
+  (injectYouTubeShortsButtons as any).__dqInstalled = true;
 
   function attemptInjection() {
     if (!location.pathname.startsWith('/shorts/')) return;
@@ -414,6 +422,9 @@ export function injectYouTubeShortsButtons() {
     // Find the main vertical actions column it lives in
     const actionsContainer = targetAnchor.closest('reel-action-bar-view-model, #actions');
     if (!actionsContainer) return;
+
+    // B19: Skip if we've already injected into this container (re-render guard)
+    if (injectedContainers.has(actionsContainer)) return;
 
     let wrapper = actionsContainer.querySelector('.dq-yt-shorts-save');
     
@@ -523,6 +534,8 @@ export function injectYouTubeShortsButtons() {
 
       // Inject perfectly above the like button
       actionsContainer.insertBefore(wrapper, targetAnchor);
+      // B19: Mark container so we don't inject again on re-render
+      injectedContainers.add(actionsContainer);
     }
 
     // YouTube SPA swiping reuses the active renderer but changes the URL.

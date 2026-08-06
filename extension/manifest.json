@@ -3,13 +3,19 @@
   "name": "DopaQueue",
   "version": "0.3.0",
   "description": "Save anything from the web — videos, reels, images, articles, screenshots — with reminders and notes. Watch distraction-free.",
-  "permissions": ["activeTab", "storage", "tabs", "alarms", "notifications", "identity", "contextMenus", "scripting", "background"],
+  "permissions": ["activeTab", "storage", "tabs", "alarms", "notifications", "identity", "contextMenus", "scripting"],
   "host_permissions": [
-    "<all_urls>"
+    "*://*.youtube.com/*",
+    "*://*.youtu.be/*",
+    "*://*.instagram.com/*",
+    "*://*.tiktok.com/*",
+    "*://*.x.com/*",
+    "*://*.twitter.com/*",
+    "*://*.reddit.com/*",
+    "*://*.linkedin.com/*"
   ],
   "background": {
     "service_worker": "src/background/background.js",
-    "scripts": ["src/background/background.js"],
     "type": "module"
   },
   "action": {
@@ -20,6 +26,21 @@
       "128": "src/icons/icon128.png"
     }
   },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+D",
+        "mac": "Command+Shift+D"
+      }
+    },
+    "save-page": {
+      "description": "Save current page to DopaQueue",
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      }
+    }
+  },
   "content_scripts": [
     {
       "matches": ["*://www.youtube.com/*", "*://youtube.com/*", "*://m.youtube.com/*"],
@@ -28,7 +49,15 @@
       "world": "MAIN"
     },
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.instagram.com/*",
+        "*://*.tiktok.com/*",
+        "*://*.x.com/*",
+        "*://*.twitter.com/*",
+        "*://*.reddit.com/*",
+        "*://*.linkedin.com/*"
+      ],
       "js": ["src/content/content.js"],
       "run_at": "document_idle"
     }
@@ -36,7 +65,12 @@
   "web_accessible_resources": [
     {
       "resources": ["dashboard.html"],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.instagram.com/*",
+        "*://*.tiktok.com/*",
+        "*://dopaqueue.com/*"
+      ]
     }
   ],
   "icons": {

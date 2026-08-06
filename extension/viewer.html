@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DopaQueue - Distraction-Free Viewer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --bg-elevated: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #84cc16;
+      --accent-hover: #a3e635;
+      --border: #334155;
+    }
+    
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f8fafc;
+        --bg-elevated: #ffffff;
+        --text: #0f172a;
+        --text-muted: #64748b;
+        --accent: #65a30d;
+        --accent-hover: #84cc16;
+        --border: #e2e8f0;
+      }
+    }
+    
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+    
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      min-height: 100vh;
+    }
+    
+    .fade-in {
+      animation: fadeIn 0.5s ease-out;
+    }
+    
+    .slide-up {
+      animation: slideUp 0.4s ease-out;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .focus-ring:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    
+    .scrollbar-hide::-webkit-scrollbar {
+      display: none;
+    }
+    .scrollbar-hide {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    
+    /* Reader mode styles */
+    .prose {
+      max-width: 800px;
+      margin: 0 auto;
+      line-height: 1.8;
+    }
+    
+    .prose h1, .prose h2, .prose h3 {
+      font-weight: 700;
+      line-height: 1.3;
+      margin-top: 2rem;
+      margin-bottom: 1rem;
+    }
+    
+    .prose h1 { font-size: 2.5rem; }
+    .prose h2 { font-size: 2rem; }
+    .prose h3 { font-size: 1.5rem; }
+    
+    .prose p {
+      margin-bottom: 1.5rem;
+      color: var(--text);
+    }
+    
+    .prose a {
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    
+    .prose a:hover {
+      color: var(--accent-hover);
+    }
+    
+    .prose blockquote {
+      border-left: 4px solid var(--accent);
+      padding-left: 1.5rem;
+      margin: 1.5rem 0;
+      font-style: italic;
+      color: var(--text-muted);
+    }
+    
+    .prose code {
+      background: var(--bg-elevated);
+      padding: 0.2rem 0.4rem;
+      border-radius: 0.25rem;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.9em;
+    }
+    
+    .prose pre {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      overflow-x: auto;
+      margin: 1.5rem 0;
+    }
+    
+    .prose pre code {
+      background: transparent;
+      padding: 0;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+    
+    .prose ul, .prose ol {
+      margin: 1.5rem 0;
+      padding-left: 2rem;
+    }
+    
+    .prose li {
+      margin: 0.5rem 0;
+    }
+    
+    .prose img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 0.75rem;
+      margin: 1.5rem 0;
+    }
+    
+    .prose hr {
+      border-color: var(--border);
+      margin: 2rem 0;
+    }
+    
+    /* Toolbar */
+    .toolbar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg-elevated);
+      border-top: 1px solid var(--border);
+      padding: 0.75rem 1rem;
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      z-index: 50;
+      transform: translateY(100%);
+      transition: transform 0.3s ease;
+    }
+    
+    .toolbar.visible {
+      transform: translateY(0);
+    }
+    
+    .toolbar-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.5rem 0.75rem;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .toolbar-btn:hover,
+    .toolbar-btn.active {
+      color: var(--accent);
+      background: rgba(132, 204, 22, 0.1);
+    }
+    
+    .toolbar-btn svg {
+      width: 1.25rem;
+      height: 1.25rem;
+    }
+    
+    /* Progress bar */
+    .reading-progress {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 3px;
+      background: var(--accent);
+      transform-origin: left;
+      transform: scaleX(0);
+      z-index: 100;
+      transition: transform 0.1s linear;
+    }
+    
+    /* Font size controls */
+    .font-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--bg-elevated);
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+    }
+    
+    .font-btn {
+      padding: 0.25rem 0.5rem;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 0.25rem;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: all 0.2s;
+    }
+    
+    .font-btn:hover {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #0f172a;
+    }
+    
+    .font-size-display {
+      min-width: 3rem;
+      text-align: center;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+    
+    /* Theme toggle */
+    .theme-toggle {
+      padding: 0.5rem;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+    
+    .theme-toggle:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    
+    /* Fullscreen */
+    .fullscreen-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    @media (max-width: 768px) {
+      .prose h1 { font-size: 2rem; }
+      .prose h2 { font-size: 1.5rem; }
+      .prose h3 { font-size: 1.25rem; }
+      
+      .toolbar {
+        gap: 0.5rem;
+        padding: 0.5rem;
+      }
+      
+      .toolbar-btn {
+        padding: 0.375rem 0.5rem;
+        font-size: 0.625rem;
+      }
+      
+      .toolbar-btn svg {
+        width: 1rem;
+        height: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Reading progress bar -->
+  <div class="reading-progress" id="progressBar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Reading progress"></div>
+  
+  <!-- Main content -->
+  <main class="min-h-screen">
+    <article class="prose mx-auto px-4 py-12 pt-20 pb-32 max-w-3xl" id="content">
+      <!-- Content will be injected here -->
+      <div class="text-center py-12">
+        <div class="animate-spin rounded-full h-10 w-10 border-3 border-lime-500 border-t-transparent mx-auto mb-4"></div>
+        <p class="text-slate-500">Loading content...</p>
+      </div>
+    </article>
+  </main>
+  
+  <!-- Floating toolbar -->
+  <div class="toolbar" id="toolbar" role="toolbar" aria-label="Reading controls">
+    <button class="toolbar-btn" id="fontDecrease" aria-label="Decrease font size" title="Decrease font size (A-)">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="8" y1="12" x2="16" y2="12"/>
+      </svg>
+      <span>A-</span>
+    </button>
+    
+    <div class="font-controls" style="margin: 0 0.5rem;">
+      <button class="font-btn" id="fontDecrease" aria-label="Decrease font size">-</button>
+      <span class="font-size-display" id="fontSizeDisplay">100%</span>
+      <button class="font-btn" id="fontIncrease" aria-label="Increase font size">+</button>
+    </div>
+    
+    <button class="toolbar-btn" id="themeToggle" aria-label="Toggle theme" title="Toggle dark/light mode">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="sun-icon">
+        <circle cx="12" cy="12" r="5"/>
+        <line x1="12" y1="1" x2="12" y2="3"/>
+        <line x1="12" y1="21" x2="12" y2="23"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="1" y1="12" x2="3" y2="12"/>
+        <line x1="21" y1="12" x2="23" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="moon-icon" style="display:none;">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+      <span>Theme</span>
+    </button>
+    
+    <button class="toolbar-btn" id="fullscreenToggle" aria-label="Toggle fullscreen" title="Fullscreen">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="2" width="20" height="20" rx="2"/>
+      </svg>
+      <span>Fullscreen</span>
+    </button>
+    
+    <button class="toolbar-btn" id="closeViewer" aria-label="Close viewer" title="Close">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+      <span>Close</span>
+    </button>
+  </div>
+  
+  <script>
+    // State
+    let fontSize = 100;
+    const minFontSize = 50;
+    const maxFontSize = 200;
+    const fontStep = 10;
+    let isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    let isFullscreen = false;
+    
+    // DOM elements
+    const content = document.getElementById('content');
+    const toolbar = document.getElementById('toolbar');
+    const progressBar = document.getElementById('progressBar');
+    const fontSizeDisplay = document.getElementById('fontSizeDisplay');
+    const fontDecreaseBtn = document.getElementById('fontDecrease');
+    const fontIncreaseBtn = document.getElementById('fontIncrease');
+    const themeToggle = document.getElementById('themeToggle');
+    const fullscreenToggle = document.getElementById('fullscreenToggle');
+    const closeViewer = document.getElementById('closeViewer');
+    const sunIcon = themeToggle.querySelector('.sun-icon');
+    const moonIcon = themeToggle.querySelector('.moon-icon');
+    
+    // Initialize
+    function init() {
+      // Load saved preferences
+      const savedFontSize = localStorage.getItem('viewerFontSize');
+      const savedTheme = localStorage.getItem('viewerTheme');
+      
+      if (savedFontSize) {
+        fontSize = parseInt(savedFontSize, 10);
+        updateFontSize();
+      }
+      
+      if (savedTheme !== null) {
+        isDark = savedTheme === 'dark';
+        applyTheme();
+      }
+      
+      // Load content from URL params or localStorage
+      loadContent();
+      
+      // Event listeners
+      setupEventListeners();
+      
+      // Show toolbar on scroll
+      let scrollTimeout;
+      window.addEventListener('scroll', () => {
+        toolbar.classList.add('visible');
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+          toolbar.classList.remove('visible');
+        }, 3000);
+        
+        // Update reading progress
+        updateProgressBar();
+      });
+      
+      // Keyboard shortcuts
+      document.addEventListener('keydown', handleKeydown);
+      
+      // Prevent toolbar from hiding when hovering
+      toolbar.addEventListener('mouseenter', () => toolbar.classList.add('visible'));
+      toolbar.addEventListener('mouseleave', () => {
+        if (!toolbar.matches(':hover')) {
+          toolbar.classList.remove('visible');
+        }
+      });
+    }
+    
+    function loadContent() {
+      // Get content from URL parameters or localStorage
+      const urlParams = new URLSearchParams(window.location.search);
+      const contentId = urlParams.get('id');
+      const contentType = urlParams.get('type') || 'article';
+      
+      if (contentId) {
+        // Load from localStorage
+        const saved = localStorage.getItem(`dopaqueue_${contentType}_${contentId}`);
+        if (saved) {
+          try {
+            const data = JSON.parse(saved);
+            renderContent(data);
+            return;
+          } catch (e) {
+            console.error('Failed to parse saved content:', e);
+          }
+        }
+      }
+      
+      // Fallback: try to get from opener (if opened from extension)
+      if (window.opener) {
+        try {
+          const openerContent = window.opener.localStorage.getItem(`dopaqueue_${contentType}_${contentId}`);
+          if (openerContent) {
+            const data = JSON.parse(openerContent);
+            renderContent(data);
+            return;
+          }
+        } catch (e) {
+          // Cross-origin or other error
+        }
+      }
+      
+      // Show error if no content
+      showError('No content found. Please open this viewer from the DopaQueue extension.');
+    }
+    
+    function renderContent(data) {
+      const { title, content: htmlContent, url, author, thumbnail, savedAt } = data;
+      
+      document.title = `${title} - DopaQueue Reader`;
+      
+      let metaHtml = '';
+      if (author || savedAt) {
+        metaHtml = `
+          <div class="mb-8 pb-6 border-b border-slate-700 dark:border-slate-200">
+            ${author ? `<p class="text-sm text-slate-400 dark:text-slate-500 mb-2">By ${escapeHtml(author)}</p>` : ''}
+            ${savedAt ? `<p class="text-sm text-slate-400 dark:text-slate-500">${formatDate(savedAt)}</p>` : ''}
+            ${url ? `<p class="text-sm text-slate-400 dark:text-slate-500 mt-2"><a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="underline hover:text-lime-400">View original</a></p>` : ''}
+          </div>
+        `;
+      }
+      
+      content.innerHTML = `
+        ${metaHtml}
+        <h1 class="text-3xl md:text-4xl font-bold mb-8 leading-tight">${escapeHtml(title)}</h1>
+        <div class="prose dark:prose-invert max-w-none">${htmlContent}</div>
+      `;
+      
+      // Trigger animations
+      requestAnimationFrame(() => {
+        content.querySelectorAll('h1, h2, h3, p, blockquote, pre, ul, ol, img').forEach((el, i) => {
+          el.style.animationDelay = `${i * 50}ms`;
+          el.classList.add('fade-in', 'slide-up');
+        });
+      });
+    }
+    
+    function showError(message) {
+      content.innerHTML = `
+        <div class="text-center py-12">
+          <svg class="w-16 h-16 mx-auto mb-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0z"/>
+          </svg>
+          <h2 class="text-xl font-semibold mb-2">Content Not Found</h2>
+          <p class="text-slate-400 dark:text-slate-500">${escapeHtml(message)}</p>
+          <button onclick="window.close()" class="mt-4 px-4 py-2 bg-lime-500 text-black rounded-lg font-medium hover:bg-lime-400 transition-colors">Close Window</button>
+        </div>
+      `;
+    }
+    
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    function formatDate(timestamp) {
+      const date = new Date(timestamp);
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+    
+    function updateFontSize() {
+      document.documentElement.style.fontSize = `${fontSize}%`;
+      fontSizeDisplay.textContent = `${fontSize}%`;
+      localStorage.setItem('viewerFontSize', fontSize.toString());
+    }
+    
+    function applyTheme() {
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+        sunIcon.style.display = 'none';
+        moonIcon.style.display = 'block';
+      } else {
+        document.documentElement.classList.remove('dark');
+        sunIcon.style.display = 'block';
+        moonIcon.style.display = 'none';
+      }
+      localStorage.setItem('viewerTheme', isDark ? 'dark' : 'light');
+    }
+    
+    function updateProgressBar() {
+      const scrollTop = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      const scrollPercent = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+      progressBar.style.transform = `scaleX(${scrollPercent / 100})`;
+      progressBar.setAttribute('aria-valuenow', Math.round(scrollPercent));
+    }
+    
+    function toggleFullscreen() {
+      if (!isFullscreen) {
+        if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+    
+    function handleKeydown(e) {
+      // Font size shortcuts
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === '=' || e.key === '+') {
+          e.preventDefault();
+          increaseFont();
+        } else if (e.key === '-') {
+          e.preventDefault();
+          decreaseFont();
+        } else if (e.key === '0') {
+          e.preventDefault();
+          resetFont();
+        } else if (e.key === 'f') {
+          e.preventDefault();
+          toggleFullscreen();
+        } else if (e.key === 't') {
+          e.preventDefault();
+          toggleTheme();
+        }
+      }
+      
+      // Escape to close
+      if (e.key === 'Escape') {
+        window.close();
+      }
+      
+      // Space to scroll down (but not in inputs)
+      if (e.key === ' ' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+        e.preventDefault();
+        window.scrollBy(0, window.innerHeight * 0.8);
+      }
+    }
+    
+    function increaseFont() {
+      if (fontSize < maxFontSize) {
+        fontSize += fontStep;
+        updateFontSize();
+      }
+    }
+    
+    function decreaseFont() {
+      if (fontSize > minFontSize) {
+        fontSize -= fontStep;
+        updateFontSize();
+      }
+    }
+    
+    function resetFont() {
+      fontSize = 100;
+      updateFontSize();
+    }
+    
+    function toggleTheme() {
+      isDark = !isDark;
+      applyTheme();
+    }
+    
+    function setupEventListeners() {
+      fontDecreaseBtn.addEventListener('click', decreaseFont);
+      fontIncreaseBtn.addEventListener('click', increaseFont);
+      themeToggle.addEventListener('click', toggleTheme);
+      fullscreenToggle.addEventListener('click', toggleFullscreen);
+      closeViewer.addEventListener('click', () => window.close());
+      
+      // Fullscreen change listener
+      document.addEventListener('fullscreenchange', () => {
+        isFullscreen = !!document.fullscreenElement;
+        fullscreenToggle.classList.toggle('active', isFullscreen);
+      });
+      
+      // Listen for messages from opener (extension)
+      window.addEventListener('message', (e) => {
+        if (e.data.type === 'DOPAQUEUE_VIEWER_CONTENT') {
+          renderContent(e.data.data);
+        }
+      });
+      
+      // Notify opener that viewer is ready
+      if (window.opener) {
+        window.opener.postMessage({ type: 'DOPAQUEUE_VIEWER_READY' }, '*');
+      }
+    }
+    
+    // Initialize on DOM ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>

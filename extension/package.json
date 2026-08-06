@@ -11,8 +11,9 @@
     "preview": "vite preview",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "test": "node ../../verify.js",
-    "test:watch": "node ../../verify.js --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
     "clean": "rm -rf dist",
     "package": "npm run build && node scripts/package-zip.js"
   },
@@ -47,9 +48,11 @@
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.2",
     "vaul": "^1.1.2",
-    "webextension-polyfill": "^0.12.0"
+    "webextension-polyfill": "^0.12.0",
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.0.0",
     "@types/archiver": "^8.0.0",
     "@types/chrome": "^0.2.2",
     "@types/node": "^26.1.1",
@@ -57,9 +60,11 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "archiver": "^8.0.0",
+    "jsdom": "^25.0.0",
     "oxlint": "^1.71.0",
     "typescript": "^7.0.2",
-    "vite": "^8.1.1"
+    "vite": "^8.1.1",
+    "vitest": "^2.1.0"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -10,7 +10,7 @@ import { QueueItem, GameState, AppSettings, ScrapeData } from '../types';
  * Merges a local array of items and a remote array of items based on `updatedAt`.
  * Returns the merged array.
  */
-function mergeArrays<T extends { id: string; updatedAt?: number }>(localArray: T[], remoteArray: T[]): T[] {
+export function mergeArrays<T extends { id: string; updatedAt?: number }>(localArray: T[], remoteArray: T[]): T[] {
   const map = new Map<string, T>();
   for (const item of remoteArray) {
     map.set(item.id, item);
@@ -27,7 +27,7 @@ function mergeArrays<T extends { id: string; updatedAt?: number }>(localArray: T
 /**
  * Merges two objects based on `updatedAt`.
  */
-function mergeObjects<T extends { updatedAt?: number }>(localObj: T | null, remoteObj: T | null): T | null {
+export function mergeObjects<T extends { updatedAt?: number }>(localObj: T | null, remoteObj: T | null): T | null {
   if (!remoteObj) return localObj;
   if (!localObj) return remoteObj;
   
@@ -89,7 +89,7 @@ async function syncObjectTable<T extends { updatedAt?: number }>(
 }
 
 // Merges the local scrape cache
-function mergeScrapeCache(localCache: Record<string, ScrapeData>, remoteRows: any[]): Record<string, ScrapeData> {
+export function mergeScrapeCache(localCache: Record<string, ScrapeData>, remoteRows: any[]): Record<string, ScrapeData> {
   const merged = { ...localCache };
   for (const row of remoteRows || []) {
     const existing = merged[row.url];
@@ -160,6 +160,17 @@ export async function syncWithCloud() {
 
   const userId = session.user.id;
 
+  // B21: Flush any pending sync queue items before the full sync starts
+  // so they don't get left behind (e.g. user was offline, now online).
+  try {
+    const flushed = await flushPendingSyncQueue();
+    if (flushed.success > 0) {
+      console.info('[DopaQueue] Flushed', flushed.success, 'pending sync items before full sync');
+    }
+  } catch (e) {
+    console.warn('[DopaQueue] flushPendingSyncQueue failed:', e);
+  }
+
   const jobs = [
     { key: 'queue', run: () => syncArrayTable('queue', userId, getQueue, setQueue) },
     { key: 'notes', run: () => syncArrayTable('notes', userId, getNotes, setNotes) },
@@ -197,24 +208,98 @@ export async function syncWithCloud() {
  * Always-on sync: upserts a single QueueItem's metadata to the Supabase `queue` table.
  * Blobs (screenshots, article content) are NEVER synced — they remain in local IndexedDB only.
  * Called from background.ts SAVE_ITEM handler when autoSyncEnabled = true and user is logged in.
+ * B21: If upsert fails for any reason (offline, auth, rate-limit), the item is queued
+ * for later retry via flushPendingSyncQueue(), preventing silent data loss.
  */
 export async function autoSyncItem(item: QueueItem): Promise<void> {
   try {
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    if (!session?.user?.id) return; // Not logged in — skip silently
-
-    // Strip blob data if accidentally present — blobs are local-only
-    const safeItem = { ...item, blobId: undefined };
-
-    const { error } = await supabaseClient
-      .from('queue')
-      .upsert({ ...safeItem, user_id: session.user.id }, { onConflict: 'id' });
-
-    if (error) {
-      console.warn('[DopaQueue] autoSyncItem upsert failed:', error.message);
-    }
+    await _autoSyncItemInternal(item);
   } catch (e) {
-    // Non-fatal — always-on sync failures should not interrupt the save flow
-    console.warn('[DopaQueue] autoSyncItem error:', e);
+    // B21: Silent auto-sync failed — queue for a later retry
+    console.warn('[DopaQueue] autoSyncItem failed (queued for retry):', e);
+    try {
+      await queueForSync(item);
+    } catch {
+      // If even queueing fails, just drop — save still succeeded locally.
+    }
+  }
+}
+// If autoSyncItem fails due to network (offline, auth token expired, rate-limit),
+// enqueue the item for later retry. This prevents silent data loss.
+const SYNC_QUEUE_KEY = 'dq_pending_sync_items_v1';
+
+/**
+ * Get the current pending sync queue from chrome.storage.local.
+ * Returns a Promise that resolves to the array of pending items.
+ */
+export async function getPendingSyncQueue(): Promise<QueueItem[]> {
+  if (typeof chrome === 'undefined' || !chrome.storage) return [];
+  return new Promise((resolve) => {
+    chrome.storage.local.get([SYNC_QUEUE_KEY], (res) => {
+      resolve(Array.isArray(res[SYNC_QUEUE_KEY]) ? res[SYNC_QUEUE_KEY] : []);
+    });
+  });
+}
+
+/**
+ * Append items to the pending sync queue.
+ */
+async function queueForSync(item: QueueItem): Promise<void> {
+  if (typeof chrome === 'undefined' || !chrome.storage) return;
+  const queue = await getPendingSyncQueue();
+  // Dedupe by id
+  const filtered = queue.filter((i: QueueItem) => i.id !== item.id);
+  filtered.push(item);
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [SYNC_QUEUE_KEY]: filtered }, resolve);
+  });
+}
+
+/**
+ * Remove an item from the pending sync queue once it's successfully synced.
+ */
+async function dequeueSyncedItem(id: string): Promise<void> {
+  if (typeof chrome === 'undefined' || !chrome.storage) return;
+  const queue = await getPendingSyncQueue();
+  const filtered = queue.filter((i: QueueItem) => i.id !== id);
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [SYNC_QUEUE_KEY]: filtered }, resolve);
+  });
+}
+
+/**
+ * Attempt to flush the pending sync queue.
+ * Called after successful login or periodically when online.
+ */
+export async function flushPendingSyncQueue(): Promise<{ success: number; failed: number }> {
+  const queue = await getPendingSyncQueue();
+  let success = 0, failed = 0;
+  for (const item of queue) {
+    try {
+      await _autoSyncItemInternal(item);
+      await dequeueSyncedItem(item.id);
+      success++;
+    } catch {
+      failed++;
+    }
+  }
+  return { success, failed };
+}
+
+/**
+ * Implementation: actual Supabase upsert with no retry logic.
+ * Used by flushPendingSyncQueue to avoid infinite recursion.
+ */
+async function _autoSyncItemInternal(item: QueueItem): Promise<void> {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session?.user?.id) return;
+
+  const safeItem = { ...item, blobId: undefined };
+  const { error } = await supabaseClient
+    .from('queue')
+    .upsert({ ...safeItem, user_id: session.user.id }, { onConflict: 'id' });
+
+  if (error) {
+    throw new Error(`autoSyncItem upsert failed: ${error.message}`);
   }
 }

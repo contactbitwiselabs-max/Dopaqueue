@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useTransition, useOptimistic } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid,
   LineChart, Line
@@ -20,6 +20,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/ca
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { FadeIn, SlideUp, StaggerList, StaggerItem } from '../../components/motion';
+import { useI18n } from '../../shared/i18n';
 
 const RANGE_OPTIONS = [
   { key: 'hour', label: 'Hour' },
@@ -31,9 +32,16 @@ const RANGE_OPTIONS = [
 ];
 
 export default function DigitalWellbeing() {
+  const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<any[]>([]);
   const [flowLog, setFlowLog] = useState<any[]>([]);
   const [range, setRange] = useState('week');
+
+  // C2: React 19 useTransition for non-blocking range changes
+  const [isPending, startTransition] = useTransition();
+  
+  // C2: React 19 useOptimistic for optimistic range updates
+  const [optimisticRange, setOptimisticRange] = useOptimistic<string>(range);
 
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -63,8 +71,8 @@ export default function DigitalWellbeing() {
     }
   }, []);
 
-  const sessions = useMemo(() => filterSessionsByRange(allSessions, range), [allSessions, range]);
-  const chartData = useMemo(() => buildChartData(sessions, range), [sessions, range]);
+  const sessions = useMemo(() => filterSessionsByRange(allSessions, optimisticRange), [allSessions, optimisticRange]);
+  const chartData = useMemo(() => buildChartData(sessions, optimisticRange), [sessions, optimisticRange]);
   const attentionDecay = useMemo(() => computeAttentionDecay(sessions), [sessions]);
   const heatmap = useMemo(() => computeVulnerabilityHeatmap(sessions), [sessions]);
   const platformSplit = useMemo(() => computePlatformSplit(sessions), [sessions]);
@@ -99,10 +107,10 @@ export default function DigitalWellbeing() {
       <SlideUp className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold flex items-center gap-2">
-            <Shield className="w-8 h-8 text-lime-400" /> Digital Wellbeing
+            <Shield className="w-8 h-8 text-lime-400" /> {t('dashboard.analysis')}
           </h2>
           <p className="text-sm text-[var(--dq-text-muted)] mt-1">
-            Enterprise-grade pattern detection for your short-form video consumption
+            {t('dashboard.analysis')}
           </p>
         </div>
 
@@ -111,14 +119,15 @@ export default function DigitalWellbeing() {
           {RANGE_OPTIONS.map(opt => (
             <button
               key={opt.key}
-              onClick={() => setRange(opt.key)}
+              onClick={() => startTransition(() => { setRange(opt.key); setOptimisticRange(opt.key); })}
               className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-                range === opt.key
+                optimisticRange === opt.key
                   ? 'bg-lime-400 text-black shadow-lg'
                   : 'text-[var(--dq-text-muted)] hover:text-[var(--dq-text)] hover:bg-white/5'
               }`}
             >
               {opt.label}
+              {isPending && optimisticRange === opt.key && <span className="ml-1 animate-pulse">⏳</span>}
             </button>
           ))}
         </div>

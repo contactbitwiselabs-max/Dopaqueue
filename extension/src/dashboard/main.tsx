@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { MotionConfig } from 'framer-motion';
 import App from './App.tsx';
 import '../index.css';
 import { ToastProvider } from '../components/ui/Toast.jsx';
@@ -28,9 +29,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
       <ThemeProvider>
-        <ToastProvider>
-          <App />
-        </ToastProvider>
+        <MotionConfig reducedMotion="user">
+          <ToastProvider>
+            <App />
+          </ToastProvider>
+        </MotionConfig>
       </ThemeProvider>
     </ErrorBoundary>
   </React.StrictMode>,

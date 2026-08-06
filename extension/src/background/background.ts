@@ -19,11 +19,58 @@ import {
   ensureChannelSaved,
   getQueue,
   getSettings,
+  localGameState,
 } from '../shared/storage.js';
 import { autoSyncItem } from '../shared/sync.js';
 
 const BUDGET_TICK_ALARM = 'budgetTick';
 const REVIEW_DECK_ALARM = 'reviewDeckTick';
+
+// Allow-list for PAGE_FETCH proxy requests (B5/S4: prevent SSRF + data exfiltration).
+// Only YouTube-related hosts that the extension legitimately needs to fetch from.
+const PAGE_FETCH_ALLOWED_HOSTS = new Set([
+  'youtube.com',
+  'www.youtube.com',
+  'm.youtube.com',
+  'youtu.be',
+  'i.ytimg.com',
+  'img.youtube.com',
+  'googlevideo.com',
+  'manifest.googlevideo.com',
+  'rr1---sn-googlevideo.com',
+  'studios.youtube.com',
+]);
+
+// Also reject private/internal IP ranges to prevent SSRF
+function isPrivateIp(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '0.0.0.0' ||
+    hostname.startsWith('127.') ||
+    hostname.startsWith('10.') ||
+    hostname.startsWith('169.254.') ||
+    hostname.startsWith('192.168.') ||
+    hostname.endsWith('.local') ||
+    hostname.endsWith('.internal') ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+  );
+}
+
+function isPageFetchAllowed(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    if (isPrivateIp(parsed.hostname)) return false;
+    // Check exact match first, then subdomain match
+    if (PAGE_FETCH_ALLOWED_HOSTS.has(parsed.hostname)) return true;
+    for (const allowed of PAGE_FETCH_ALLOWED_HOSTS) {
+      if (parsed.hostname.endsWith('.' + allowed)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 const BADGE_COLORS = {
   thriving: '#22c55e',
@@ -98,7 +145,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   await initStorage();
 
   if (info.menuItemId === 'dq-save-page' && tab) {
-    const domain = new URL(tab.url || 'https://example.com').hostname.replace(/^www\./, '');
+    const domain = (() => { try { return new URL(tab.url || 'https://example.com').hostname.replace(/^www\./, ''); } catch { return ''; } })();
     const entry = {
       id: crypto.randomUUID(),
       url: tab.url || '',
@@ -121,29 +168,31 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 
   if (info.menuItemId === 'dq-save-image' && info.srcUrl) {
-    const domain = tab?.url ? new URL(tab.url).hostname.replace(/^www\./, '') : '';
-    // Send message to content script to enrich with alt text / caption
-    // If content script not reachable, fall back to direct save
+    const domain = tab?.url ? (() => { try { return new URL(tab.url).hostname.replace(/^www\./, ''); } catch { return ''; } })() : '';
+    const entry = {
+      id: crypto.randomUUID(),
+      url: info.srcUrl,
+      title: 'Saved Image',
+      thumbnail: info.srcUrl,
+      platform: detectPlatformFromUrl(tab?.url || ''),
+      contentType: 'image',
+      type: 'image',
+      sourceDomain: domain,
+      savedAt: Date.now(),
+      watched: false,
+    };
+    // B2: Always save the queue item directly here. The content-script
+    // enrichment path (alt text, caption extraction) can run in parallel
+    // and update the item via SAVE_ITEM later — never rely on it for the
+    // initial queue write, or the user sees "saved!" but nothing is queued.
     try {
       if (tab?.id) {
-        chrome.tabs.sendMessage(tab.id, { type: 'SAVE_IMAGE_FROM_CONTEXT', srcUrl: info.srcUrl });
+        // Ask content script for enrichment metadata (alt text, page title)
+        // but DON'T block the actual save on a response.
+        chrome.tabs.sendMessage(tab.id, { type: 'SAVE_IMAGE_FROM_CONTEXT', srcUrl: info.srcUrl, entryId: entry.id }).catch(() => {});
       }
-    } catch {
-      // Direct save fallback
-      const entry = {
-        id: crypto.randomUUID(),
-        url: info.srcUrl,
-        title: 'Saved Image',
-        thumbnail: info.srcUrl,
-        platform: detectPlatformFromUrl(tab?.url || ''),
-        contentType: 'image',
-        type: 'image',
-        sourceDomain: domain,
-        savedAt: Date.now(),
-        watched: false,
-      };
-      addToQueue(entry);
-    }
+    } catch { /* content script not reachable — we still saved above */ }
+    addToQueue(entry);
     chrome.notifications.create({
       type: 'basic',
       iconUrl: chrome.runtime.getURL('src/icons/icon48.png'),
@@ -190,6 +239,34 @@ function detectPlatformFromUrl(url: string): string {
 chrome.runtime.onStartup.addListener(async () => {
   ensureBudgetAlarm();
   await refreshBadge();
+});
+
+// D2: Handle keyboard shortcut "save-page" (Ctrl/Cmd+Shift+S)
+chrome.commands?.onCommand?.addListener(async (command: string) => {
+  if (command !== 'save-page') return;
+  await initStorage();
+  const tab = await getActiveFocusedTab();
+  if (!tab || !tab.url) return;
+  const domain = (() => { try { return new URL(tab.url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
+  const entry = {
+    id: crypto.randomUUID(),
+    url: tab.url,
+    title: (tab.title || tab.url).slice(0, 200),
+    thumbnail: tab.favIconUrl || null,
+    platform: detectPlatformFromUrl(tab.url),
+    contentType: 'link',
+    type: 'link',
+    sourceDomain: domain,
+    savedAt: Date.now(),
+    watched: false,
+  };
+  addToQueue(entry);
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('src/icons/icon48.png'),
+    title: 'DopaQueue',
+    message: `Page saved: "${(tab.title || '').slice(0, 50)}"`,
+  });
 });
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
@@ -305,6 +382,17 @@ async function budgetTick() {
   // storage, so re-check the daily reset on every tick rather than only
   // at initStorage() time.
   checkDailyReset();
+  // B8: Re-read fresh gameState from chrome.storage.local in case another
+  // context (popup/dashboard) wrote a different state since worker startup.
+  try {
+    const fresh = await chrome.storage.local.get(STORAGE_KEYS.GAME);
+    if (fresh && fresh[STORAGE_KEYS.GAME]) {
+      // Merge fresh values over in-memory state (preserves any changes this worker made)
+      Object.assign(localGameState, fresh[STORAGE_KEYS.GAME]);
+    }
+  } catch (e) {
+    // Fall back to in-memory state if storage read fails
+  }
   const tab = await getActiveFocusedTab();
   const inMindlessScroll = isMindlessScrollUrl(tab && tab.url);
 
@@ -385,7 +473,20 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === 'GET_TIMER_STATE') {
+  // S11: Sender validation — only accept messages from our extension's
+  // content scripts, popup, or background contexts. Reject anything else
+  // to prevent external pages from spoofing save/scrape messages.
+  if (sender && sender.id && sender.id !== chrome.runtime.id) {
+    // Message from a different extension — ignore for safety
+    return false;
+  }
+
+  // S11: Validate the message envelope before any handler runs
+  if (!message || typeof message !== 'object' || typeof message.type !== 'string') {
+    return false;
+  }
+
+  if (message.type === 'GET_TIMER_STATE') {
     const tabId = sender?.tab?.id || null;
     const key = tabId ? timerKey(tabId) : null;
     if (!key) { sendResponse({ tabId: null, activeSession: null, todayTotal: 0 }); return false; }
@@ -507,6 +608,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // CORS-safe fetch on behalf of the content script (e.g. caption
     // tracks). The service worker isn't subject to the page's CORS/CSP
     // for hosts declared in host_permissions.
+    // B5/S4: Validate URL against allow-list to prevent SSRF.
+    if (!isPageFetchAllowed(message.url)) {
+      sendResponse({ ok: false, error: 'URL not allowed' });
+      return false;
+    }
     fetch(message.url, { credentials: 'omit' })
       .then((res) => res.text())
       .then((text) => sendResponse({ ok: true, text }))
@@ -634,6 +740,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         // Crop using OffscreenCanvas
         const rect = message.rect;
+        // B12: Default devicePixelRatio to 1 if missing — prevents NaN crop
+        const dpr = (typeof rect.devicePixelRatio === 'number' && rect.devicePixelRatio > 0)
+          ? rect.devicePixelRatio
+          : 1;
         const res = await fetch(fullDataUrl);
         const blob = await res.blob();
         const bitmap = await createImageBitmap(blob);
@@ -642,8 +752,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('No 2d context');
         
-        // Draw the cropped area
-        ctx.drawImage(bitmap, rect.x * rect.devicePixelRatio, rect.y * rect.devicePixelRatio, rect.width * rect.devicePixelRatio, rect.height * rect.devicePixelRatio, 0, 0, rect.width, rect.height);
+        // Draw the cropped area (B12: use safe dpr)
+          ctx.drawImage(bitmap, rect.x * dpr, rect.y * dpr, rect.width * dpr, rect.height * dpr, 0, 0, rect.width, rect.height);
         
         const croppedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
         
@@ -768,18 +878,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function fetchBase64Image(url) {
   try {
+    // S4: Restrict to https/http and reject private IPs
+    if (!isPageFetchAllowed(url)) {
+      console.warn('DopaQueue background: fetchBase64Image rejected URL (not allow-listed):', url);
+      return null;
+    }
     const res = await fetch(url, { credentials: 'omit' });
     if (!res.ok) return null;
     const arrayBuffer = await res.arrayBuffer();
     const contentType = res.headers.get('content-type') || 'image/jpeg';
     const bytes = new Uint8Array(arrayBuffer);
     if (bytes.byteLength > 5000000) return null;
-    const chunkSize = 0x8000;
-    const chunks = [];
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize)));
+    // B13: Safe base64 encoding that doesn't overflow engine arg limits.
+    // Use FileReader if available (service workers have it), else chunk manually.
+    if (typeof FileReader !== 'undefined') {
+      const blob = new Blob([bytes], { type: contentType });
+      return await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
     }
-    const base64 = btoa(chunks.join(''));
+    // Fallback: chunk-based base64 with small chunk size (safe for V8)
+    const chunkSize = 0x2000; // 8KB chunks
+    let base64 = '';
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      // String.fromCharCode with spread on small chunks is safe
+      base64 += btoa(String.fromCharCode(...chunk));
+    }
     return `data:${contentType};base64,${base64}`;
   } catch (err) {
     console.error('DopaQueue background: fetchBase64Image error', err);
@@ -985,8 +1113,11 @@ async function fetchTranscriptFallback(videoId) {
   }
 }
 
-// Cover the edge case where the service worker was asleep and this
+// B16: Cover the edge case where the service worker was asleep and this
 // module just spun back up in response to an event.
+// Note: ensureBudgetAlarm and refreshBadge are safe to call at module top-level
+// because they are idempotent and handle uninitialized storage gracefully.
+// We DO NOT call initStorage() here — that runs on first event, not at import.
 ensureBudgetAlarm();
-refreshBadge();
+refreshBadge().catch(() => { /* SW may not have storage yet — onInstalled will retry */ });
 

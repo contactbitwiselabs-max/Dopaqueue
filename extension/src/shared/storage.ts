@@ -18,6 +18,44 @@ import {
 } from './validation';
 import { QueueItem, GameState, AppSettings, PomodoroState, AIConfig, ScrapeData, SavedCollection } from '../types';
 
+// C15: Bump CURRENT_SCHEMA_VERSION whenever STORAGE_KEYS values or the shape
+// of persisted data change in a way that's not backwards-compatible. The
+// migrateSchema() helper below can then transform old shapes on load.
+export const CURRENT_SCHEMA_VERSION = 1;
+
+// S5: Obfuscation for API keys in chrome.storage.local.
+// Chrome storage is not encrypted at rest — these keys can be read by anyone
+// with access to the user's profile. For production, use chrome.storage.session
+// (ephemeral) or wrap in a passphrase via WebCrypto. This adds defense-in-depth.
+// IMPORTANT: AI API keys are ASCII-only (sk-*, AIza*, ghp_*), but the encoder
+// is correct for any input — uses full UTF-16 codepoints, not single bytes.
+const KEY_OBFUSCATION_PREFIX = 'dq_enc_v1_';
+function obfuscateKey(plain: string): string {
+  const mask = [0xA3, 0x7F, 0x1D, 0x9E, 0x42, 0xB6, 0x55, 0x3C];
+  let result = KEY_OBFUSCATION_PREFIX;
+  for (let i = 0; i < plain.length; i++) {
+    const cp = plain.charCodeAt(i); // full UTF-16 codepoint (0-65535)
+    const b0 = (cp & 0xff) ^ mask[i % mask.length];
+    const b1 = ((cp >>> 8) & 0xff) ^ mask[(i + 1) % mask.length];
+    result += b0.toString(16).padStart(2, '0') + b1.toString(16).padStart(2, '0');
+  }
+  return result;
+}
+function deobfuscateKey(encoded: string): string {
+  if (!encoded || !encoded.startsWith(KEY_OBFUSCATION_PREFIX)) return encoded;
+  const hex = encoded.slice(KEY_OBFUSCATION_PREFIX.length);
+  const mask = [0xA3, 0x7F, 0x1D, 0x9E, 0x42, 0xB6, 0x55, 0x3C];
+  const chars: string[] = [];
+  // Each source char → 4 hex chars (2 bytes).
+  for (let i = 0, k = 0; i < hex.length; i += 4, k++) {
+    const b0 = parseInt(hex.slice(i, i + 2), 16);
+    const b1 = parseInt(hex.slice(i + 2, i + 4), 16);
+    const cp = (b1 ^ mask[(k + 1) % mask.length]) << 8 | (b0 ^ mask[k % mask.length]);
+    chars.push(String.fromCharCode(cp));
+  }
+  return chars.join('');
+}
+
 // --- Pub/Sub ---
 type ListenerCallback = (value: any) => void;
 const listeners = new Map<string, Set<ListenerCallback>>();
@@ -98,7 +136,17 @@ export async function initStorage(): Promise<void> {
       STORAGE_KEYS.AI_CONFIG,
       STORAGE_KEYS.CONFIG,
       STORAGE_KEYS.COLLECTIONS,
+      'dq_schema_version', // C15: track migration state
     ], (res: any) => {
+      // C15: run any necessary migrations before validating shapes.
+      // Currently no-op (we're at v1, no prior versions exist in the wild).
+      const onDiskVersion = typeof res?.dq_schema_version === 'number' ? res.dq_schema_version : 1;
+      if (onDiskVersion < CURRENT_SCHEMA_VERSION) {
+        // Future: if (onDiskVersion <= 1) migrateV1ToV2(res); ...
+        res.dq_schema_version = CURRENT_SCHEMA_VERSION;
+        chrome.storage.local.set({ dq_schema_version: CURRENT_SCHEMA_VERSION });
+      }
+
       // Check for errors or undefined responses to prevent crashes
       if (chrome.runtime.lastError) {
         console.error('initStorage error:', chrome.runtime.lastError);
@@ -139,61 +187,120 @@ export async function initStorage(): Promise<void> {
       notify(STORAGE_KEYS.NOTES, localNotes);
       notify(STORAGE_KEYS.GAME, localGameState);
       notify(STORAGE_KEYS.SETTINGS, localSettings);
+      // C10: Install cross‑context listeners after storage is hydrated
+      installStorageListeners();
       resolve();
     });
   });
 }
 
-// Listen for cross-context changes (e.g. extension saves a video while dashboard is open)
-if (typeof chrome !== 'undefined' && chrome.storage) {
+// B22: Track recent self-writes so chrome.storage.onChanged doesn't double-fire
+// notify() for changes that originated in this same JS context. Without this,
+// subscribers (React useEffect → subscribe(QUEUE, ...)) receive two state
+// updates per save, causing thrash and duplicate re-renders.
+const selfWriteTimestamps = new Map<string, number>();
+
+/** Mark a key as just-written by us. The onChanged listener will skip matching
+ *  changes for ~50ms (long enough to swallow Chrome's storage event). */
+function markSelfWrite(key: string) {
+  selfWriteTimestamps.set(key, Date.now());
+}
+
+function isSelfWrite(key: string): boolean {
+  const ts = selfWriteTimestamps.get(key);
+  if (!ts) return false;
+  // Within 50ms → treat as self-write. Older changes from other contexts are real.
+  return Date.now() - ts < 50;
+}
+
+/**
+ * Install the Chrome storage.onChanged listener. This is a side‑effectful registration that
+ * used to run at module import time. We now expose it as a function so callers can invoke it
+ * lazily (e.g. after `initStorage`). The listener tracks self‑writes (B22) and updates the
+ * in‑memory caches, emitting `notify` events for any external changes.
+ */
+export function installStorageListeners(): void {
+  if (typeof chrome === 'undefined' || !chrome.storage) return;
+  // B22: Guard against double‑registration when module is imported multiple times (HMR, tests).
+  if ((chrome.storage.onChanged as any).__dqInstalled) return;
+  (chrome.storage.onChanged as any).__dqInstalled = true;
+
   chrome.storage.onChanged.addListener((changes: Record<string, chrome.storage.StorageChange>, area) => {
-    if (area === 'local') {
-      if (changes[STORAGE_KEYS.QUEUE]) {
-        localQueue = Array.isArray(changes[STORAGE_KEYS.QUEUE].newValue)
-          ? changes[STORAGE_KEYS.QUEUE].newValue.map((item: any) => validateQueueItem(item)).filter(Boolean) as QueueItem[]
-          : [];
-        notify(STORAGE_KEYS.QUEUE, localQueue);
-      }
-      if (changes[STORAGE_KEYS.NOTES]) {
-        localNotes = Array.isArray(changes[STORAGE_KEYS.NOTES].newValue)
-          ? changes[STORAGE_KEYS.NOTES].newValue
-          : [];
-        notify(STORAGE_KEYS.NOTES, localNotes);
-      }
-      if (changes[STORAGE_KEYS.GAME]) {
-        localGameState = { ...DEFAULT_GAME_STATE, ...(changes[STORAGE_KEYS.GAME].newValue || {}) };
-        notify(STORAGE_KEYS.GAME, localGameState);
-      }
-      if (changes[STORAGE_KEYS.SETTINGS]) {
-        localSettings = validateSettings({ ...DEFAULT_SETTINGS, ...(changes[STORAGE_KEYS.SETTINGS].newValue || {}) }) as AppSettings;
-        notify(STORAGE_KEYS.SETTINGS, localSettings);
-      }
-      if (changes[STORAGE_KEYS.WHITELIST]) {
-        localWhitelist = Array.isArray(changes[STORAGE_KEYS.WHITELIST].newValue)
-          ? changes[STORAGE_KEYS.WHITELIST].newValue
-          : [];
-        notify(STORAGE_KEYS.WHITELIST, localWhitelist);
-      }
-      if (changes[STORAGE_KEYS.SCRAPE_CACHE]) {
-        localCache = (changes[STORAGE_KEYS.SCRAPE_CACHE].newValue || {}) as Record<string, ScrapeData>;
-        notify(STORAGE_KEYS.SCRAPE_CACHE, localCache);
-      }
-      if (changes[STORAGE_KEYS.POMODORO]) {
-        localPomodoro = {
-          active: false,
-          remainingSeconds: 1500,
-          label: 'Focus Block',
-          ...(changes[STORAGE_KEYS.POMODORO].newValue || {}),
-        };
-        notify(STORAGE_KEYS.POMODORO, localPomodoro);
-      }
+    if (area !== 'local') return;
+    if (changes[STORAGE_KEYS.QUEUE] && !isSelfWrite(STORAGE_KEYS.QUEUE)) {
+      localQueue = Array.isArray(changes[STORAGE_KEYS.QUEUE].newValue)
+        ? changes[STORAGE_KEYS.QUEUE].newValue.map((item: any) => validateQueueItem(item)).filter(Boolean) as QueueItem[]
+        : [];
+      notify(STORAGE_KEYS.QUEUE, localQueue);
+    }
+    if (changes[STORAGE_KEYS.NOTES] && !isSelfWrite(STORAGE_KEYS.NOTES)) {
+      localNotes = Array.isArray(changes[STORAGE_KEYS.NOTES].newValue)
+        ? changes[STORAGE_KEYS.NOTES].newValue
+        : [];
+      notify(STORAGE_KEYS.NOTES, localNotes);
+    }
+    if (changes[STORAGE_KEYS.GAME] && !isSelfWrite(STORAGE_KEYS.GAME)) {
+      localGameState = { ...DEFAULT_GAME_STATE, ...(changes[STORAGE_KEYS.GAME].newValue || {}) };
+      notify(STORAGE_KEYS.GAME, localGameState);
+    }
+    if (changes[STORAGE_KEYS.SETTINGS] && !isSelfWrite(STORAGE_KEYS.SETTINGS)) {
+      localSettings = validateSettings({ ...DEFAULT_SETTINGS, ...(changes[STORAGE_KEYS.SETTINGS].newValue || {}) }) as AppSettings;
+      notify(STORAGE_KEYS.SETTINGS, localSettings);
+    }
+    if (changes[STORAGE_KEYS.WHITELIST] && !isSelfWrite(STORAGE_KEYS.WHITELIST)) {
+      localWhitelist = Array.isArray(changes[STORAGE_KEYS.WHITELIST].newValue)
+        ? changes[STORAGE_KEYS.WHITELIST].newValue
+        : [];
+      notify(STORAGE_KEYS.WHITELIST, localWhitelist);
+    }
+    if (changes[STORAGE_KEYS.SCRAPE_CACHE] && !isSelfWrite(STORAGE_KEYS.SCRAPE_CACHE)) {
+      localCache = (changes[STORAGE_KEYS.SCRAPE_CACHE].newValue || {}) as Record<string, ScrapeData>;
+      notify(STORAGE_KEYS.SCRAPE_CACHE, localCache);
+    }
+    if (changes[STORAGE_KEYS.POMODORO] && !isSelfWrite(STORAGE_KEYS.POMODORO)) {
+      localPomodoro = {
+        active: false,
+        remainingSeconds: 1500,
+        label: 'Focus Block',
+        ...(changes[STORAGE_KEYS.POMODORO].newValue || {}),
+      };
+      notify(STORAGE_KEYS.POMODORO, localPomodoro);
     }
   });
 }
 
-function storageSet(key: string, value: any) {
-  if (typeof chrome === 'undefined' || !chrome.storage) return;
-  chrome.storage.local.set({ [key]: value });
+// Existing listener registration removed – callers must invoke `installStorageListeners()`.
+
+
+// B15: Track pending storage writes so we can await final commit.
+// Background service worker can die between a set() and its actual disk commit.
+const pendingWrites = new Set<Promise<void>>();
+
+export function storageSet(key: string, value: any): Promise<void> {
+  if (typeof chrome === 'undefined' || !chrome.storage) return Promise.resolve();
+  // B22: Mark before the async write so the onChanged listener can recognize
+  // and skip the resulting event (it's fired synchronously from set()).
+  markSelfWrite(key);
+  const promise = new Promise<void>((resolve, reject) => {
+    chrome.storage.local.set({ [key]: value }, () => {
+      pendingWrites.delete(promise);
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message || 'storage write failed'));
+      } else {
+        resolve();
+      }
+    });
+  });
+  pendingWrites.add(promise);
+  return promise;
+}
+
+/** Wait for all pending storage writes to flush. Use before sw shutdown. */
+export async function flushStorage(): Promise<void> {
+  if (pendingWrites.size === 0) return;
+  try {
+    await Promise.all(pendingWrites);
+  } catch { /* best effort */ }
 }
 
 // --- Queue ---
@@ -220,7 +327,9 @@ export function addToQueue(entry: Partial<QueueItem>): QueueItem | null {
   
   validatedEntry.id = validatedEntry.id || crypto.randomUUID();
   validatedEntry.updatedAt = Date.now();
-  validatedEntry.savedAt = validatedEntry.savedAt || new Date().toISOString();
+  // B14: Always use number (Date.now()) for savedAt — never ISO string.
+  // Background, content scripts, and callers pass Date.now().
+  validatedEntry.savedAt = typeof validatedEntry.savedAt === 'number' ? validatedEntry.savedAt : Date.now();
   
   localQueue = [...localQueue, validatedEntry];
   storageSet(STORAGE_KEYS.QUEUE, localQueue);
@@ -555,7 +664,7 @@ export function savePomodoroState(state: Partial<PomodoroState>): PomodoroState 
 export function getAIConfig(): AIConfig {
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
     return localSettings.aiProvider && localSettings.aiApiKey
-      ? { provider: localSettings.aiProvider as any, apiKey: localSettings.aiApiKey }
+      ? { provider: localSettings.aiProvider as any, apiKey: deobfuscateKey(localSettings.aiApiKey) }
       : { provider: 'local', apiKey: '' };
   }
   return { provider: 'local', apiKey: '' };
@@ -572,13 +681,15 @@ export async function setAIConfig(config: AIConfig): Promise<AIConfig> {
   const updatedSettings = {
     ...localSettings,
     aiProvider: validatedConfig.provider,
-    aiApiKey: validatedConfig.apiKey,
+    // S5: Obfuscate the API key before persisting
+    aiApiKey: validatedConfig.apiKey ? obfuscateKey(validatedConfig.apiKey) : '',
     updatedAt: Date.now(),
   };
   
   localSettings = validateSettings(updatedSettings) as AppSettings;
   storageSet(STORAGE_KEYS.SETTINGS, localSettings);
   
+  // Return plain key to caller for in-memory use only
   return validatedConfig;
 }
 

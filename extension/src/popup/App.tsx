@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useTransition, useOptimistic } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard, Check, AlertCircle, Cloud, LogIn, ExternalLink,
@@ -14,7 +14,8 @@ import {
   STORAGE_KEYS, getPlantStatus, PLANT_THRESHOLDS, resolveThumbnailUrl
 } from '../shared/constants.js';
 import { validateUrl, validateQueueItem } from '../shared/validation.js';
-import { supabaseClient } from '../shared/supabase.js';
+import { getPendingSyncQueue } from '../shared/sync.js';
+
 import { saveBlob } from '../shared/blobStore.js';
 import { autoTagItemWithChromeAI, suggestUrgencyWithChromeAI, isChromeAILanguageModelAvailable } from '../shared/ai.js';
 
@@ -28,6 +29,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../com
 import { SaveIcon, ExternalLinkIcon, PlantIcon } from '../components/ui/animated-icons';
 import { SlideUp, FadeIn, HoverCard, ScaleIn, BounceButton, PulseDot } from '../components/motion';
 import { ThemeToggle } from '../shared/theme';
+import { useI18n } from '../shared/i18n';
 
 import type { QueueItem, GameState, ContentType } from '../types';
 
@@ -43,7 +45,7 @@ function detectContentType(url: string): ContentType {
   if (/reddit\.com/i.test(url)) return 'post';
   if (/linkedin\.com/i.test(url)) return 'post';
   if (/\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?|$)/i.test(url)) return 'image';
-  return 'link'; // default — user can switch to 'article'
+  return 'link';
 }
 
 const CONTENT_TYPE_LABEL: Record<string, string> = {
@@ -52,7 +54,6 @@ const CONTENT_TYPE_LABEL: Record<string, string> = {
 };
 
 type SaveMode = 'auto' | 'article' | 'screenshot' | 'link';
-
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 function formatTimeAgo(ts: number): string {
@@ -65,6 +66,7 @@ function formatTimeAgo(ts: number): string {
 }
 
 export default function App() {
+  const { t } = useI18n();
   const [currentUrl, setCurrentUrl] = useState('');
   const [currentTitle, setCurrentTitle] = useState('');
   const [currentThumbnail, setCurrentThumbnail] = useState('');
@@ -92,19 +94,42 @@ export default function App() {
   const [pendingCollection, setPendingCollection] = useState('');
   const [collections, setCollections] = useState<any[]>([]);
   const [pendingUrgency, setPendingUrgency] = useState<string>('');
+  const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+
+  // C2: React 19 useTransition for non-blocking state updates
+  const [isPending, startTransition] = useTransition();
+  
+  // C2: React 19 useOptimistic for optimistic UI updates
+  const [optimisticQueue, setOptimisticQueue] = useOptimistic<QueueItem[]>(
+    queue,
+    (currentQueue, newItem: QueueItem) => [newItem, ...currentQueue]
+  );
+  
+  // Display queue combines regular queue with optimistic updates (deduped by id)
+  const displayQueue = [...queue, ...optimisticQueue.filter(oq => !queue.some(q => q.id === oq.id))];
 
   useEffect(() => {
     const init = async () => {
       await initStorage();
+      // B21: Load pending sync count after storage is ready
+      try {
+        const pending = await getPendingSyncQueue();
+        setPendingSyncCount(pending.length);
+      } catch {
+        setPendingSyncCount(0);
+      }
       setQueue(getSavedVideos());
       const gs = getGameState();
       setGameState(gs);
 
+      // B3: Awaitable storage read so the terms check resolves BEFORE any
+      // subsequent render can race ahead and render the save UI unguarded.
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        chrome.storage.local.get(['dq_terms_accepted', 'dq_collections'], (res) => {
-          setTermsAccepted(Boolean(res?.dq_terms_accepted));
-          setCollections(Array.isArray(res?.dq_collections) ? res.dq_collections : []);
+        const res = await new Promise<Record<string, any>>((resolve) => {
+          chrome.storage.local.get(['dq_terms_accepted', 'dq_collections'], (r) => resolve(r || {}));
         });
+        setTermsAccepted(Boolean(res?.dq_terms_accepted));
+        setCollections(Array.isArray(res?.dq_collections) ? res.dq_collections : []);
       } else {
         setTermsAccepted(true);
       }
@@ -275,6 +300,12 @@ export default function App() {
       };
 
       await addToQueue(item as QueueItem);
+      
+      // C2: Use optimistic update for immediate UI feedback
+      startTransition(() => {
+        setOptimisticQueue(item as QueueItem);
+      });
+      
       setQueue(getSavedVideos());
       setGameState(getGameState());
       setPendingTags([]);
@@ -289,14 +320,6 @@ export default function App() {
     }
   };
 
-
-  const alreadySaved = queue.some(v => v.url === currentUrl);
-  const budgetTotal = gameState?.budgetMinutesTotal ?? 60;
-  const budgetUsed = gameState?.budgetMinutesUsed ?? 0;
-  const budgetRemaining = Math.max(0, budgetTotal - budgetUsed);
-  const health = Math.max(0, Math.min(100, Math.round((budgetRemaining / (budgetTotal || 1)) * 100)));
-  const plantStatus = health > 70 ? 'thriving' : health > 40 ? 'okay' : health > 20 ? 'wilting' : 'dead';
-
   const addTag = () => {
     const t = tagInput.trim().replace(/^#/, '');
     if (t && !pendingTags.includes(t)) setPendingTags(prev => [...prev, t]);
@@ -307,6 +330,13 @@ export default function App() {
     const url = chrome.runtime.getURL('dashboard.html') + (tab ? `?tab=${tab}` : '');
     chrome?.tabs?.create({ url });
   };
+
+  const alreadySaved = queue.some(v => v.url === currentUrl) || optimisticQueue.some(v => v.url === currentUrl);
+  const budgetTotal = gameState?.budgetMinutesTotal ?? 60;
+  const budgetUsed = gameState?.budgetMinutesUsed ?? 0;
+  const budgetRemaining = Math.max(0, budgetTotal - budgetUsed);
+  const health = Math.max(0, Math.min(100, Math.round((budgetRemaining / (budgetTotal || 1)) * 100)));
+  const plantStatus = health > 70 ? 'thriving' : health > 40 ? 'okay' : health > 20 ? 'wilting' : 'dead';
 
   if (loading) {
     return (
@@ -356,360 +386,366 @@ export default function App() {
   }
 
   return (
-    <TooltipProvider>
-      <div className="w-[380px] min-h-[480px] max-h-[600px] bg-[var(--dq-bg)] text-[var(--dq-text)] flex flex-col overflow-hidden font-sans">
+    <>
+      <TooltipProvider>
+        <div className="w-[380px] min-h-[480px] max-h-[600px] bg-[var(--dq-bg)] text-[var(--dq-text)] flex flex-col overflow-hidden font-sans">
 
-        {/* Header */}
-        <div className="px-4 pt-4 pb-3 border-b border-[var(--dq-border)] flex items-center justify-between">
-          <motion.div className="flex items-center gap-2" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
-            <Leaf className="w-5 h-5 text-lime-500" />
-            <span className="font-black text-base gradient-text">DopaQueue</span>
-          </motion.div>
-          <div className="flex items-center gap-1">
-            <ThemeToggle />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <HoverCard>
-                  <div className="flex items-center gap-1 px-1.5 py-1 rounded-lg bg-[var(--dq-surface)] border border-[var(--dq-border)] cursor-default">
-                    <PlantIcon health={health} size={12} />
-                    <span className="text-[10px] font-semibold" style={{ color: health > 70 ? '#86efac' : health > 40 ? '#fde68a' : '#6b7280' }}>{health}%</span>
-                  </div>
-                </HoverCard>
-              </TooltipTrigger>
-              <TooltipContent>Plant health — {plantStatus}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 px-1.5 flex items-center gap-1" onClick={() => openDashboard()}>
-                  <LayoutDashboard className="w-3.5 h-3.5 text-[var(--dq-text-muted)]" />
-                  <span className="text-[10px] text-[var(--dq-text-muted)] font-medium">Dashboard</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Open Dashboard</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-
-          {/* Current page preview */}
-          <ScaleIn>
-            <div className="glass-card overflow-hidden">
-              {resolveThumbnailUrl(currentUrl, currentThumbnail) && (
-                <div className="relative h-28 overflow-hidden">
-                  <img src={resolveThumbnailUrl(currentUrl, currentThumbnail)!} alt={currentTitle} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/90 via-transparent to-transparent" />
-                  <div className="absolute bottom-2 left-2">
-                    <Badge variant={contentType as any} className="text-[10px]">{CONTENT_TYPE_LABEL[contentType]}</Badge>
-                  </div>
-                  {alreadySaved && (
-                    <div className="absolute top-2 right-2">
-                      <Badge variant="success" className="text-[10px]">✓ Saved</Badge>
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="p-3">
-                <p className="text-sm font-semibold text-[var(--dq-text)] line-clamp-2 leading-snug mb-1">
-                  {currentTitle || 'No title detected'}
-                </p>
-                <p className="text-[10px] text-[var(--dq-text-muted)] truncate">{currentUrl || 'No page detected'}</p>
-              </div>
-            </div>
-          </ScaleIn>
-
-          {/* Save type toggle */}
-          <SlideUp delay={0.02}>
-            <div className="flex gap-1 p-1 rounded-xl bg-[var(--dq-surface)] border border-[var(--dq-border)]">
-              {(['auto', 'article', 'screenshot', 'link'] as SaveMode[]).map((mode) => {
-                const labels: Record<SaveMode, string> = {
-                  auto: `✦ ${CONTENT_TYPE_LABEL[contentType] ?? 'Auto'}`,
-                  article: '📄 Article',
-                  screenshot: '📷 Screenshot',
-                  link: '🔗 Link',
-                };
-                return (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setSaveMode(mode)}
-                    className={`flex-1 text-[10px] py-1 rounded-lg font-semibold transition-all ${
-                      saveMode === mode
-                        ? 'bg-lime-500 text-zinc-900'
-                        : 'text-[var(--dq-text-muted)] hover:text-[var(--dq-text)]'
-                    }`}
-                  >
-                    {labels[mode]}
-                  </button>
-                );
-              })}
-            </div>
-          </SlideUp>
-
-          {/* Tags input */}
-          <SlideUp delay={0.05}>
-            <div className="space-y-2">
-
-              {isAiProcessing && (
-                <div className="flex items-center gap-2 text-lime-400 text-xs mb-2">
-                  <Sparkles size={12} className="animate-pulse" /> Chrome AI analyzing content...
-                </div>
-              )}
-              {aiUrgency > 0 && (
-                <div className="flex items-center gap-2 text-orange-400 text-xs mb-2">
-                  <Flame size={12} /> AI Urgency Score: {aiUrgency}/5
-                </div>
-              )}
-
-              {/* Auto-detected hashtag suggestions */}
-              {scrapedTags !== null && (
-                <div>
-                  <p className="text-[9px] font-semibold text-[var(--dq-text-subtle)] uppercase tracking-wider mb-1.5">
-                    {scrapedTags.length > 0 ? '✦ Auto-detected tags — click to add' : '✦ No hashtags found on this page'}
-                  </p>
-                  {scrapedTags.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {scrapedTags.map(tag => {
-                        const already = pendingTags.includes(tag);
-                        return (
-                          <button
-                            key={tag}
-                            type="button"
-                            onClick={() => {
-                              if (!already) setPendingTags(prev => [...prev, tag]);
-                            }}
-                            className={`text-[9px] px-2 py-0.5 rounded-full border transition-colors ${
-                              already
-                                ? 'bg-lime-500/20 text-lime-400 border-lime-500/40 cursor-default'
-                                : 'bg-[var(--dq-surface)] text-[var(--dq-text-muted)] border-white/10 hover:bg-lime-500/15 hover:text-lime-400 hover:border-lime-500/30 cursor-pointer'
-                            }`}
-                          >
-                            #{tag}{already ? ' ✓' : ' +'}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-[9px] text-[var(--dq-text-subtle)] italic">Add tags manually below.</p>
-                  )}
-                </div>
-              )}
-
-              {/* Selected / pending tags */}
-              <div className="flex flex-wrap gap-1.5">
-                <AnimatePresence>
-                  {pendingTags.map(tag => (
-                    <motion.button
-                      key={tag}
-                      initial={{ scale: 0, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0, opacity: 0 }}
-                      onClick={() => setPendingTags(prev => prev.filter(t => t !== tag))}
-                      className="text-[10px] px-2 py-0.5 rounded-full bg-lime-500/15 text-lime-400 border border-lime-500/25 hover:bg-red-500/10 hover:text-red-400 transition-colors"
-                    >
-                      #{tag} ×
-                    </motion.button>
-                  ))}
-                </AnimatePresence>
-              </div>
-
-              {/* Manual tag input */}
-              <div className="flex gap-2">
-                <Input
-                  leftIcon={<span className="text-[var(--dq-text-muted)] text-xs">#</span>}
-                  placeholder="Add tag and press Enter..."
-                  value={tagInput}
-                  onChange={e => setTagInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
-                  className="text-xs h-8"
-                />
-                <Button size="sm" variant="ghost" onClick={addTag} className="shrink-0 h-8 px-3">Add</Button>
-              </div>
-
-              {/* Note */}
-              <div>
-                <label className="text-[9px] font-semibold text-[var(--dq-text-subtle)] uppercase tracking-wider mb-1 block">Note (optional)</label>
-                <textarea
-                  value={pendingNote}
-                  onChange={(e) => setPendingNote(e.target.value)}
-                  placeholder="Add a note..."
-                  rows={2}
-                  className="w-full text-xs rounded-lg bg-[var(--dq-surface)] border border-[var(--dq-border)] text-[var(--dq-text)] placeholder:text-[var(--dq-text-muted)] px-3 py-2 resize-none focus:outline-none focus:border-lime-500/50 transition-colors"
-                />
-              </div>
-
-              {/* Collection */}
-              {collections.length > 0 && (
-                <div>
-                  <label className="text-[9px] font-semibold text-[var(--dq-text-subtle)] uppercase tracking-wider mb-1 block">Collection</label>
-                  <select
-                    value={pendingCollection}
-                    onChange={(e) => setPendingCollection(e.target.value)}
-                    className="w-full text-xs rounded-lg bg-[var(--dq-surface)] border border-[var(--dq-border)] text-[var(--dq-text)] px-3 py-2 focus:outline-none focus:border-lime-500/50 transition-colors"
-                  >
-                    <option value="">None</option>
-                    {collections.map((col: any) => (
-                      <option key={col.id} value={col.name}>{col.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-          </SlideUp>
-
-          {/* Save button */}
-          <SlideUp delay={0.1}>
-            <AnimatePresence mode="wait">
-              {saveStatus === 'saved' ? (
-                <motion.div
-                  key="saved"
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.8, opacity: 0 }}
-                  className="flex items-center justify-center gap-2 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold"
-                >
-                  <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 500, damping: 20 }}>
-                    <Check className="w-5 h-5" />
-                  </motion.div>
-                  Saved to Queue!
-                </motion.div>
-              ) : saveStatus === 'error' ? (
-                <motion.div
-                  key="error"
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.8, opacity: 0 }}
-                  className="flex items-center gap-2 h-11 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 px-4 text-sm"
-                >
-                  <AlertCircle className="w-4 h-4 shrink-0" /> {errorMsg}
-                </motion.div>
-              ) : (
-                <motion.div key="save">
-                  {saveMode === 'screenshot' ? (
-                    <div className="flex gap-2">
-                      <Button
-                        className="flex-1 h-11 text-sm gap-2 bg-[var(--dq-surface)] border hover:bg-lime-500/10 hover:border-lime-500 hover:text-lime-400 text-[var(--dq-text)] transition-colors"
-                        onClick={() => handleScreenshotCapture('CAPTURE_SCREENSHOT_VISIBLE')}
-                        loading={saveStatus === 'saving'}
-                        disabled={saveStatus === 'saving' || !currentUrl}
-                      >
-                        Full Page
-                      </Button>
-                      <Button
-                        className="flex-1 h-11 text-sm gap-2"
-                        variant="premium"
-                        onClick={() => handleScreenshotCapture('CAPTURE_SCREENSHOT_AREA')}
-                        loading={saveStatus === 'saving'}
-                        disabled={saveStatus === 'saving' || !currentUrl}
-                      >
-                        Select Area
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button
-                      className="w-full h-11 text-sm gap-2"
-                      variant={alreadySaved ? 'secondary' : 'premium'}
-                      onClick={handleSave}
-                      loading={saveStatus === 'saving'}
-                      disabled={saveStatus === 'saving' || !currentUrl}
-                    >
-                      {!alreadySaved && <SaveIcon size={16} />}
-                      {alreadySaved ? '✓ Already Saved' : 'Save to Queue'}
-                    </Button>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </SlideUp>
-
-          {/* Daily Scroll Quota & Focus Plant */}
-          <SlideUp delay={0.15}>
-            <div className="glass-card p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <PlantIcon health={health} size={16} />
-                  <span className="text-xs font-semibold text-[var(--dq-text-muted)]">Daily Scroll Quota</span>
-                </div>
-                <span className="text-xs font-medium text-[var(--dq-text-muted)]">
-                  {budgetRemaining}m / {budgetTotal}m left
-                </span>
-              </div>
-              <Progress value={health} className="h-1.5" />
-              <div className="flex justify-between text-[10px] text-[var(--dq-text-subtle)] items-center">
-                <span>Used: {budgetUsed}m</span>
-                <button
-                  type="button"
-                  onClick={() => openDashboard('settings')}
-                  className="text-[10px] text-lime-400 hover:underline cursor-pointer"
-                >
-                  Edit limit in Settings →
-                </button>
-                <span>{gameState?.streak ?? 0} day streak 🔥</span>
-              </div>
-            </div>
-          </SlideUp>
-
-          {/* Recent queue */}
-          <SlideUp delay={0.2}>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-[var(--dq-text-muted)] uppercase tracking-wider">Recently Saved</span>
-                <span className="text-[10px] text-[var(--dq-text-subtle)]">{queue.length} total</span>
-              </div>
-              <div className="space-y-2">
-                <AnimatePresence>
-                  {[...queue].sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()).slice(0, 4).map((item, i) => (
-                    <motion.div
-                      key={item.id}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 10 }}
-                      transition={{ delay: i * 0.05 }}
-                      className="flex items-center gap-2.5 p-2 rounded-xl bg-[var(--dq-surface)]/50 border border-[var(--dq-border)]/50 hover:border-[var(--dq-lime-border)] hover:bg-[var(--dq-surface)] transition-colors group"
-                    >
-                      {resolveThumbnailUrl(item.url, item.thumbnail) ? (
-                        <img src={resolveThumbnailUrl(item.url, item.thumbnail)!} alt="" referrerPolicy="no-referrer" className="w-9 h-6 rounded object-cover shrink-0 bg-[var(--dq-surface)]" />
-                      ) : (
-                        <div className="w-9 h-6 rounded bg-[var(--dq-surface)] shrink-0 flex items-center justify-center text-[var(--dq-text-muted)] text-[8px]">
-                          {detectContentType(item.url).slice(0, 1).toUpperCase()}
-                        </div>
+          {/* Header */}
+          <div className="px-4 pt-4 pb-3 border-b border-[var(--dq-border)] flex items-center justify-between">
+            <motion.div className="flex items-center gap-2" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
+              <Leaf className="w-5 h-5 text-lime-500" />
+              <span className="font-black text-base gradient-text">DopaQueue</span>
+            </motion.div>
+            <div className="flex items-center gap-1">
+              <ThemeToggle />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <HoverCard>
+                    <div className="flex items-center gap-1 px-1.5 py-1 rounded-lg bg-[var(--dq-surface)] border border-[var(--dq-border)] cursor-default">
+                      <PlantIcon health={health} size={12} />
+                      {/* B21: pending sync badge */}
+                      {pendingSyncCount > 0 && (
+                        <Badge variant="outline" className="ml-1 h-4 min-w-[1rem] px-0.5 text-xs">
+                          {pendingSyncCount}
+                        </Badge>
                       )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-medium text-[var(--dq-text-subtle)] truncate">{item.title}</p>
-                        <p className="text-[9px] text-[var(--dq-text-muted)]">{formatTimeAgo(item.savedAt)}</p>
+
+                      <span className="text-[10px] font-semibold" style={{ color: health > 70 ? '#86efac' : health > 40 ? '#fde68a' : '#6b7280' }}>{health}%</span>
+                    </div>
+                  </HoverCard>
+                </TooltipTrigger>
+                <TooltipContent>{t('plant.' + plantStatus)}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 px-1.5 flex items-center gap-1" onClick={() => openDashboard()}>
+                    <LayoutDashboard className="w-3.5 h-3.5 text-[var(--dq-text-muted)]" />
+                    <span className="text-[10px] text-[var(--dq-text-muted)] font-medium">Dashboard</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Open Dashboard</TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+            {/* Current page preview */}
+            <ScaleIn>
+              <div className="glass-card overflow-hidden">
+                {resolveThumbnailUrl(currentUrl, currentThumbnail) && (
+                  <div className="relative h-28 overflow-hidden">
+                    <img src={resolveThumbnailUrl(currentUrl, currentThumbnail)!} alt={currentTitle} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/90 via-transparent to-transparent" />
+                    <div className="absolute bottom-2 left-2">
+                      <Badge variant={contentType as any} className="text-[10px]">{CONTENT_TYPE_LABEL[contentType]}</Badge>
+                    </div>
+                    {alreadySaved && (
+                      <div className="absolute top-2 right-2">
+                        <Badge variant="success" className="text-[10px]">{t('save.already')}</Badge>
                       </div>
-                      <ExternalLinkIcon size={12} className="text-[var(--dq-text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => chrome.tabs?.create({ url: item.url })} />
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-                {queue.length === 0 && (
-                  <div className="text-center py-4 text-[var(--dq-text-muted)] text-xs">
-                    No videos saved yet
+                    )}
+                  </div>
+                )}
+                <div className="p-3">
+                  <p className="text-sm font-semibold text-[var(--dq-text)] line-clamp-2 leading-snug mb-1">
+                    {currentTitle || t('error.generic')}
+                  </p>
+                  <p className="text-[10px] text-[var(--dq-text-muted)] truncate">{currentUrl || t('error.generic')}</p>
+                </div>
+              </div>
+            </ScaleIn>
+
+            {/* Save type toggle */}
+            <SlideUp delay={0.02}>
+              <div className="flex gap-1 p-1 rounded-xl bg-[var(--dq-surface)] border border-[var(--dq-border)]">
+                {(['auto', 'article', 'screenshot', 'link'] as SaveMode[]).map((mode) => {
+                  const labels: Record<SaveMode, string> = {
+                    auto: `✦ ${CONTENT_TYPE_LABEL[contentType] ?? 'Auto'}`,
+                    article: '📄 Article',
+                    screenshot: '📷 Screenshot',
+                    link: '🔗 Link',
+                  };
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setSaveMode(mode)}
+                      className={`flex-1 text-[10px] py-1 rounded-lg font-semibold transition-all ${
+                        saveMode === mode
+                          ? 'bg-lime-500 text-zinc-900'
+                          : 'text-[var(--dq-text-muted)] hover:text-[var(--dq-text)]'
+                      }`}
+                    >
+                      {labels[mode]}
+                    </button>
+                  );
+                })}
+              </div>
+            </SlideUp>
+
+            {/* Tags input */}
+            <SlideUp delay={0.05}>
+              <div className="space-y-2">
+
+                {isAiProcessing && (
+                  <div className="flex items-center gap-2 text-lime-400 text-xs mb-2">
+                    <Sparkles size={12} className="animate-pulse" /> {t('toast.saved')}
+                  </div>
+                )}
+                {aiUrgency > 0 && (
+                  <div className="flex items-center gap-2 text-orange-400 text-xs mb-2">
+                    <Flame size={12} /> AI Urgency Score: {aiUrgency}/5
+                  </div>
+                )}
+
+                {/* Auto-detected hashtag suggestions */}
+                {scrapedTags !== null && (
+                  <div>
+                    <p className="text-[9px] font-semibold text-[var(--dq-text-subtle)] uppercase tracking-wider mb-1.5">
+                      {scrapedTags.length > 0 ? t('filter.saved') : t('filter.all')}
+                    </p>
+                    {scrapedTags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {scrapedTags.map(tag => {
+                          const already = pendingTags.includes(tag);
+                          return (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => {
+                                if (!already) setPendingTags(prev => [...prev, tag]);
+                              }}
+                              className={`text-[9px] px-2 py-0.5 rounded-full border transition-colors ${
+                                already
+                                  ? 'bg-lime-500/20 text-lime-400 border-lime-500/40 cursor-default'
+                                  : 'bg-[var(--dq-surface)] text-[var(--dq-text-muted)] border-white/10 hover:bg-lime-500/15 hover:text-lime-400 hover:border-lime-500/30 cursor-pointer'
+                              }`}
+                            >
+                              #{tag}{already ? ' ✓' : ' +'}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-[9px] text-[var(--dq-text-subtle)] italic">{t('action.add')}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Selected / pending tags */}
+                <div className="flex flex-wrap gap-1.5">
+                  <AnimatePresence>
+                    {pendingTags.map(tag => (
+                      <motion.button
+                        key={tag}
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0, opacity: 0 }}
+                        onClick={() => setPendingTags(prev => prev.filter(t => t !== tag))}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-lime-500/15 text-lime-400 border border-lime-500/25 hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                      >
+                        #{tag} ×
+                      </motion.button>
+                    ))}
+                  </AnimatePresence>
+                </div>
+
+                {/* Manual tag input */}
+                <div className="flex gap-2">
+                  <Input
+                    leftIcon={<span className="text-[var(--dq-text-muted)] text-xs">#</span>}
+                    placeholder="Add tag and press Enter..."
+                    value={tagInput}
+                    onChange={e => setTagInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+                    className="text-xs h-8"
+                  />
+                  <Button size="sm" variant="ghost" onClick={addTag} className="shrink-0 h-8 px-3">Add</Button>
+                </div>
+
+                {/* Note */}
+                <div>
+                  <label className="text-[9px] font-semibold text-[var(--dq-text-subtle)] uppercase tracking-wider mb-1 block">Note (optional)</label>
+                  <textarea
+                    value={pendingNote}
+                    onChange={(e) => setPendingNote(e.target.value)}
+                    placeholder="Add a note..."
+                    rows={2}
+                    className="w-full text-xs rounded-lg bg-[var(--dq-surface)] border border-[var(--dq-border)] text-[var(--dq-text)] placeholder:text-[var(--dq-text-muted)] px-3 py-2 resize-none focus:outline-none focus:border-lime-500/50 transition-colors"
+                  />
+                </div>
+
+                {/* Collection */}
+                {collections.length > 0 && (
+                  <div>
+                    <label className="text-[9px] font-semibold text-[var(--dq-text-subtle)] uppercase tracking-wider mb-1 block">Collection</label>
+                    <select
+                      value={pendingCollection}
+                      onChange={(e) => setPendingCollection(e.target.value)}
+                      className="w-full text-xs rounded-lg bg-[var(--dq-surface)] border border-[var(--dq-border)] text-[var(--dq-text)] px-3 py-2 focus:outline-none focus:border-lime-500/50 transition-colors"
+                    >
+                      <option value="">None</option>
+                      {collections.map((col: any) => (
+                        <option key={col.id} value={col.name}>{col.name}</option>
+                      ))}
+                    </select>
                   </div>
                 )}
               </div>
-            </div>
-          </SlideUp>
-        </div>
+            </SlideUp>
 
-        {/* Footer */}
-        <div className="px-4 py-2.5 border-t border-[var(--dq-border)] flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            {user ? (
-              <>
-                <PulseDot color="#84cc16" size={6} />
-                <span className="text-[10px] text-[var(--dq-text-muted)] truncate max-w-[140px]">{user.email}</span>
-              </>
-            ) : (
-              <button onClick={() => chrome?.tabs?.create({ url: chrome.runtime.getURL('dashboard.html') + '?auth=true' })} className="text-[10px] text-[var(--dq-text-muted)] hover:text-lime-400 flex items-center gap-1 transition-colors">
-                <LogIn className="w-3 h-3" /> Sign in to sync
-              </button>
-            )}
+            {/* Save button */}
+            <SlideUp delay={0.1}>
+              <AnimatePresence mode="wait">
+                {saveStatus === 'saved' ? (
+                  <motion.div
+                    key="saved"
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.8, opacity: 0 }}
+                    className="flex items-center justify-center gap-2 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold"
+                  >
+                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 500, damping: 20 }}>
+                      <Check className="w-5 h-5" />
+                    </motion.div>
+                    Saved to Queue!
+                  </motion.div>
+                ) : saveStatus === 'error' ? (
+                  <motion.div
+                    key="error"
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.8, opacity: 0 }}
+                    className="flex items-center gap-2 h-11 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 px-4 text-sm"
+                  >
+                    <AlertCircle className="w-4 h-4 shrink-0" /> {errorMsg}
+                  </motion.div>
+                ) : (
+                  <motion.div key="save">
+                    {saveMode === 'screenshot' ? (
+                      <div className="flex gap-2">
+                        <Button
+                          className="flex-1 h-11 text-sm gap-2 bg-[var(--dq-surface)] border hover:bg-lime-500/10 hover:border-lime-500 hover:text-lime-400 text-[var(--dq-text)] transition-colors"
+                          onClick={() => handleScreenshotCapture('CAPTURE_SCREENSHOT_VISIBLE')}
+                          loading={saveStatus === 'saving'}
+                          disabled={saveStatus === 'saving' || !currentUrl}
+                        >
+                          Full Page
+                        </Button>
+                        <Button
+                          className="flex-1 h-11 text-sm gap-2"
+                          variant="premium"
+                          onClick={() => handleScreenshotCapture('CAPTURE_SCREENSHOT_AREA')}
+                          loading={saveStatus === 'saving'}
+                          disabled={saveStatus === 'saving' || !currentUrl}
+                        >
+                          Select Area
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        className="w-full h-11 text-sm gap-2"
+                        variant={alreadySaved ? 'secondary' : 'premium'}
+                        onClick={handleSave}
+                        loading={saveStatus === 'saving'}
+                        disabled={saveStatus === 'saving' || !currentUrl}
+                      >
+                        {!alreadySaved && <SaveIcon size={16} />}
+                        {alreadySaved ? t('save.already') : t('save.button')}
+                      </Button>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </SlideUp>
+
+            {/* Daily Scroll Quota & Focus Plant */}
+            <SlideUp delay={0.15}>
+              <div className="glass-card p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <PlantIcon health={health} size={16} />
+                    <span className="text-xs font-semibold text-[var(--dq-text-muted)]">{t('quota.total')}</span>
+                  </div>
+                  <span className="text-xs font-medium text-[var(--dq-text-muted)]">
+                    {budgetRemaining}m / {budgetTotal}m {t('quota.remaining')}
+                  </span>
+                </div>
+                <Progress value={health} className="h-1.5" />
+                <div className="flex justify-between text-[10px] text-[var(--dq-text-subtle)] items-center">
+                  <span>{t('quota.used')}: {budgetUsed}m</span>
+                  <button
+                    type="button"
+                    onClick={() => openDashboard('settings')}
+                    className="text-[10px] text-lime-400 hover:underline cursor-pointer"
+                  >
+                    {t('settings.budget')}
+                  </button>
+                </div>
+              </div>
+            </SlideUp>
+
+            {/* Recently Saved */}
+            <SlideUp delay={0.2}>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-[var(--dq-text-muted)] uppercase tracking-wider">{t('dashboard.videos')}</span>
+                  <span className="text-[10px] text-[var(--dq-text-subtle)]">{displayQueue.length} {t('filter.all')}</span>
+                </div>
+                <div className="space-y-2">
+                  <AnimatePresence>
+                    {[...displayQueue].sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()).slice(0, 4).map((item, i) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 10 }}
+                        transition={{ delay: i * 0.05 }}
+                        className="flex items-center gap-2.5 p-2 rounded-xl bg-[var(--dq-surface)]/50 border border-[var(--dq-border)]/50 hover:border-[var(--dq-lime-border)] hover:bg-[var(--dq-surface)] transition-colors group"
+                      >
+                        {resolveThumbnailUrl(item.url, item.thumbnail) ? (
+                          <img src={resolveThumbnailUrl(item.url, item.thumbnail)!} alt="" referrerPolicy="no-referrer" className="w-9 h-6 rounded object-cover shrink-0 bg-[var(--dq-surface)]" />
+                        ) : (
+                          <div className="w-9 h-6 rounded bg-[var(--dq-surface)] shrink-0 flex items-center justify-center text-[var(--dq-text-muted)] text-[8px]">
+                            {detectContentType(item.url).slice(0, 1).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-medium text-[var(--dq-text-subtle)] truncate">{item.title}</p>
+                          <p className="text-[9px] text-[var(--dq-text-muted)]">{formatTimeAgo(item.savedAt)}</p>
+                        </div>
+                        <ExternalLinkIcon size={12} className="text-[var(--dq-text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => chrome.tabs?.create({ url: item.url })} />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                  {displayQueue.length === 0 && (
+                    <div className="text-center py-4 text-[var(--dq-text-muted)] text-xs">
+                      {t('dashboard.videos')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </SlideUp>
+          </div>
+
+          {/* Footer */}
+          <div className="px-4 py-2.5 border-t border-[var(--dq-border)] flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              {user ? (
+                <>
+                  <PulseDot color="#84cc16" size={6} />
+                  <span className="text-[10px] text-[var(--dq-text-muted)] truncate max-w-[140px]">{user.email}</span>
+                </>
+              ) : (
+                <button onClick={() => chrome?.tabs?.create({ url: chrome.runtime.getURL('dashboard.html') + '?auth=true' })} className="text-[10px] text-[var(--dq-text-muted)] hover:text-lime-400 flex items-center gap-1 transition-colors">
+                  <LogIn className="w-3 h-3" /> {t('auth.signin')} {t('action.sync')}
+                </button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    </TooltipProvider>
+      </TooltipProvider>
+    </>
   );
 }
-
-

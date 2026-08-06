@@ -66,8 +66,16 @@ export function validateUrl(url: any, options: UrlValidationOptions = {}): strin
     let parsed: URL;
     try {
       // Handle URLs without protocol (e.g., youtube.com/watch?v=...)
-      if (!cleanedUrl.includes('://')) {
+      // Also handle non-HTTP protocols like mailto:, tel:, etc.
+      const hasHttpProtocol = /^https?:\/\//i.test(cleanedUrl);
+      const hasOtherProtocol = /^[a-z][a-z0-9+.-]*:/i.test(cleanedUrl) && !hasHttpProtocol;
+      
+      if (!hasHttpProtocol && !hasOtherProtocol) {
+        // No protocol or unknown protocol - assume HTTPS
         parsed = new URL(`https://${cleanedUrl}`);
+      } else if (hasOtherProtocol) {
+        // Has a non-HTTP protocol (mailto:, tel:, etc.) - reject for security
+        return null;
       } else {
         parsed = new URL(cleanedUrl);
       }

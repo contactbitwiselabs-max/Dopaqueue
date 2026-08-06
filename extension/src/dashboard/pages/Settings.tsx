@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useTransition, useOptimistic } from 'react';
 import { LogOut, Cloud, Download, Folder, AlertCircle, Check } from 'lucide-react';
 import { User } from '@supabase/supabase-js';
 import {
@@ -22,6 +22,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '../../components/ui/avatar'
 import { Switch } from '../../components/ui/switch';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../../components/ui/card';
 import { ExportFormat } from '../../types';
+import { useI18n } from '../../shared/i18n';
 
 interface SettingsPageProps {
   user?: User | null;
@@ -32,6 +33,7 @@ interface SettingsPageProps {
 }
 
 export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp, onSync: onSyncProp, isSyncing: isSyncingProp, onStatus }: SettingsPageProps) {
+  const { t } = useI18n();
   const [user, setUser] = useState<User | null>(userProp || null);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'success' | 'error' | null>(null);
@@ -47,6 +49,12 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
   const [budgetMinutesTotal, setBudgetMinutesTotal] = useState(60);
   const [savedBudgetMsg, setSavedBudgetMsg] = useState(false);
   const [clearKeyword, setClearKeyword] = useState('');
+
+  // C2: React 19 useTransition for non-blocking updates
+  const [isPending, startTransition] = useTransition();
+  
+  // C2: React 19 useOptimistic for optimistic UI updates
+  const [optimisticBudget, setOptimisticBudget] = useOptimistic<number>(budgetMinutesTotal);
 
   useEffect(() => {
     async function loadUserAndSettings() {
@@ -78,7 +86,10 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
   }, [userProp]);
 
   const handleSaveBudget = () => {
-    updateGameState({ budgetMinutesTotal });
+    setOptimisticBudget(budgetMinutesTotal);
+    startTransition(() => {
+      updateGameState({ budgetMinutesTotal });
+    });
     setSavedBudgetMsg(true);
     setTimeout(() => setSavedBudgetMsg(false), 2500);
   };
@@ -230,12 +241,12 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-3xl font-bold text-[var(--dq-text)]">Settings</h2>
+        <h2 className="text-3xl font-bold text-[var(--dq-text)]">{t('settings.title')}</h2>
       </div>
 
       <Card className="glass-card">
         <CardHeader>
-          <CardTitle>Account</CardTitle>
+          <CardTitle>{t('auth.signin')}</CardTitle>
           <CardDescription>Manage your sign-in and profile.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -247,20 +258,20 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
                   <AvatarFallback>{(getUserEmail(user)?.[0] || 'U').toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div>
-                  <p className="text-sm text-[var(--dq-text-muted)]">Logged in as</p>
+                  <p className="text-sm text-[var(--dq-text-muted)]">{t('auth.signin')}</p>
                   <p className="text-lg font-medium text-[var(--dq-text)]">{getUserName(user)}</p>
                   <p className="text-sm text-[var(--dq-text-subtle)]">{getUserEmail(user)}</p>
                 </div>
               </div>
               <Button variant="destructive" onClick={handleSignOut} className="gap-2">
                 <LogOut className="w-4 h-4" />
-                Sign Out
+                {t('action.signout')}
               </Button>
             </div>
           ) : (
             <Button variant="premium" onClick={handleSignIn} className="gap-2">
               <Cloud className="w-4 h-4" />
-              Sign In with Google
+              {t('auth.google')}
             </Button>
           )}
         </CardContent>
@@ -268,8 +279,8 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
 
       <Card className="glass-card">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Cloud className="w-5 h-5 text-lime-400" /> Cloud Sync</CardTitle>
-          <CardDescription>Sync your queue across devices.</CardDescription>
+          <CardTitle className="flex items-center gap-2"><Cloud className="w-5 h-5 text-lime-400" /> {t('settings.sync')}</CardTitle>
+          <CardDescription>{t('settings.sync')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
@@ -278,7 +289,7 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
               onCheckedChange={handleToggleSyncEnabled}
               disabled={!isLoggedIn(user)}
             />
-            <span className="text-[var(--dq-text)] text-sm">Enable cloud backup and sync</span>
+            <span className="text-[var(--dq-text)] text-sm">{t('settings.sync')}</span>
           </div>
 
           <Button
@@ -289,13 +300,13 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
             className="gap-2"
           >
             {!isActuallySyncing && <Cloud className="w-4 h-4" />}
-            {isActuallySyncing ? 'Syncing...' : 'Sync Now'}
+            {isActuallySyncing ? t('toast.synced') : t('action.sync')}
           </Button>
 
           {syncStatus === 'success' && (
             <div className="flex items-center gap-2 p-3 rounded-xl bg-lime-500/10 border border-lime-500/20 text-lime-400 text-sm font-medium">
               <Check className="w-4 h-4" />
-              Synced successfully!
+              {t('toast.synced')}
             </div>
           )}
 
@@ -307,7 +318,7 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
           )}
 
           {lastSyncTime && (
-            <p className="text-xs text-[var(--dq-text-muted)]">Last synced: {lastSyncTime.toLocaleString()}</p>
+            <p className="text-xs text-[var(--dq-text-muted)]">{t('settings.sync')}: {lastSyncTime.toLocaleString()}</p>
           )}
         </CardContent>
       </Card>
@@ -315,10 +326,14 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
       <Card className="glass-card">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Daily Scroll Limit</CardTitle>
-            {savedBudgetMsg && <span className="text-xs text-lime-400 font-medium">✓ Saved</span>}
+            <CardTitle>{t('settings.budget')}</CardTitle>
+            {(savedBudgetMsg || isPending) && (
+              <span className="text-xs text-lime-400 font-medium">
+                {savedBudgetMsg ? `✓ ${t('action.save')}` : t('action.save')}
+              </span>
+            )}
           </div>
-          <CardDescription>Adjust your daily scrolling budget in minutes.</CardDescription>
+          <CardDescription>{t('settings.budget')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
@@ -326,14 +341,14 @@ export default function SettingsPage({ user: userProp, onSignOut: onSignOutProp,
               type="number"
               min="10"
               max="1440"
-              value={budgetMinutesTotal}
+              value={optimisticBudget}
               onChange={(e) => setBudgetMinutesTotal(parseInt(e.target.value) || 0)}
               className="w-24 text-center"
             />
-            <span className="text-sm text-[var(--dq-text-muted)]">minutes / day</span>
+            <span className="text-sm text-[var(--dq-text-muted)]">{t('settings.budget')}</span>
           </div>
           <Button variant="secondary" onClick={handleSaveBudget}>
-            Update Limit
+            {t('action.save')} {t('settings.budget')}
           </Button>
         </CardContent>
       </Card>

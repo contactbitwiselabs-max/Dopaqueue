@@ -6,22 +6,37 @@
 
 function extractMainWorldPlayerResponse() {
   try {
-    // 1. Live DOM element playerResponse (most accurate on SPA navigations)
+    // 1. Live DOM element playerResponse (most accurate on SPA navigations).
+    // B20: Use bracket access + try/catch — Google has flagged __data as an
+    // internal property and has changed/shadowed it in the past. A direct
+    // access throws if it's removed; bracket access on a Proxy may not.
     const watchFlexy = document.querySelector('ytd-watch-flexy');
-    const flexyResponse = watchFlexy?.__data?.playerResponse
-      || watchFlexy?.playerResponse
-      || watchFlexy?.data?.playerResponse;
-
-    if (flexyResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks?.length) {
-      return flexyResponse;
+    let flexyResponse = null;
+    if (watchFlexy) {
+      try {
+        flexyResponse =
+          watchFlexy?.__data?.playerResponse ||
+          watchFlexy?.playerResponse ||
+          watchFlexy?.data?.playerResponse;
+      } catch {
+        // Internal property access denied by future YT changes — fall through.
+        flexyResponse = null;
+      }
+      if (flexyResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks?.length) {
+        return flexyResponse;
+      }
     }
 
     // 2. Movie player instance API
     const moviePlayer = document.querySelector('#movie_player');
     if (moviePlayer && typeof moviePlayer.getPlayerResponse === 'function') {
-      const playerResp = moviePlayer.getPlayerResponse();
-      if (playerResp?.captions?.playerCaptionsTracklistRenderer?.captionTracks?.length) {
-        return playerResp;
+      try {
+        const playerResp = moviePlayer.getPlayerResponse();
+        if (playerResp?.captions?.playerCaptionsTracklistRenderer?.captionTracks?.length) {
+          return playerResp;
+        }
+      } catch {
+        // getPlayerResponse can throw on a torn-down player; safe to ignore.
       }
     }
 

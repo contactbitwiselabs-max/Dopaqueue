@@ -24,6 +24,10 @@ export const STORAGE_KEYS = {
   AI_CONFIG: 'dq_ai_config',
   CONFIG: 'dq_config',
   COLLECTIONS: 'dq_collections',
+  // C20: licensing keys now share the canonical map (was duplicated in licensing.ts)
+  LICENSE: 'dq_license',
+  USAGE: 'dq_usage',
+  SUBSCRIPTION: 'dq_subscription',
 };
 
 /** Human-readable display names for platforms */

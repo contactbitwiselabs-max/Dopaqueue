@@ -286,24 +286,138 @@ interface PlantIconProps {
   health: number; // 0-100
   size?: number;
   className?: string;
+  showGrowthStages?: boolean;
 }
 
-export function PlantIcon({ health, size = 24, className = '' }: PlantIconProps) {
-  const color = health > 70 ? '#86efac' : health > 40 ? '#fde68a' : health > 20 ? '#fb923c' : '#6b7280';
+export function PlantIcon({ health, size = 24, className = '', showGrowthStages = false }: PlantIconProps) {
+  // Calculate growth stage based on health
+  // 0-20: Seed (0-20%)
+  // 20-40: Sprout (20-40%)
+  // 40-70: Growing (40-70%)
+  // 70-100: Blooming (70-100%)
+  
+  const stage = health > 70 ? 'blooming' : health > 40 ? 'growing' : health > 20 ? 'sprout' : 'seed';
   const pulse = health > 70;
-
+  
+  // Calculate growth progress within stage
+  const getStageProgress = (health: number) => {
+    if (health <= 20) return health / 20; // seed to sprout
+    if (health <= 40) return (health - 20) / 20; // sprout to growing
+    if (health <= 70) return (health - 40) / 30; // growing to blooming
+    return Math.min(1, (health - 70) / 30); // blooming
+  };
+  
+  const progress = getStageProgress(health);
+  
   return (
     <motion.span
       className={`inline-flex items-center justify-center ${className}`}
       animate={pulse ? { scale: [1, 1.05, 1] } : {}}
       transition={pulse ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : {}}
-      style={{ width: size, height: size, color }}
+      style={{ width: size, height: size }}
     >
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 22V12" />
-        <path d="M12 12C12 12 8 9 8 5a4 4 0 018 0c0 4-4 7-4 7z" />
-        <path d="M12 12C12 12 16 9 16 5" />
-        <path d="M8 22h8" />
+        {/* Pot - always visible */}
+        <motion.path
+          d="M8 22h8"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        />
+        <motion.path
+          d="M7 22L7 16"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+        />
+        <motion.path
+          d="M17 22L17 16"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+        />
+        <motion.path
+          d="M7 16L17 16"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.5, delay: 0.4 }}
+        />
+        
+        {/* Seed stage (0-20%) */}
+        <motion.path
+          d="M12 12C12 12 8 9 8 5a4 4 0 018 0c0 4-4 7-4 7z"
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.5 }}
+        />
+        <motion.path
+          d="M12 12C12 12 16 9 16 5"
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.6 }}
+        />
+        
+        {/* Sprout stage (20-40%) - animated based on progress */}
+        <motion.path
+          d="M12 16C12 16 8 14 8 10a4 4 0 018 0c0 4-4 6-4 6z"
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.7 }}
+        />
+        <motion.path
+          d="M12 16C12 16 16 14 16 10"
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.8 }}
+        />
+        
+        {/* Growing stage (40-70%) - more leaves */}
+        <motion.path
+          d="M12 20V10"
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.9 }}
+        />
+        <motion.path
+          d="M8 16c0-2 2-4 4-4s4 2 4 4"
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 1.0 }}
+        />
+        <motion.path
+          d="M16 16c0-2-2-4-4-4s-4 2-4 4"
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 1.1 }}
+        />
+        <motion.path
+          d="M12 10c0-2 2-4 4-4s4 2 4 4"
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 1.2 }}
+        />
+        
+        {/* Blooming stage (70-100%) - flower */}
+        <motion.path
+          d="M12 8a4 4 0 01-4 4 4 4 0 018 0 4 4 0 01-4-4z"
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 1.3 }}
+        />
+        <motion.path
+          d="M12 8a4 4 0 00-4 4 4 4 0 008 0 4 4 0 00-8-4z"
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 1.4 }}
+        />
+        <motion.circle
+          cx={12}
+          cy={8}
+          r={2}
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 1.5 }}
+        />
       </svg>
     </motion.span>
   );
