@@ -15,6 +15,7 @@ import {
 } from '../shared/constants.js';
 import { validateUrl, validateQueueItem } from '../shared/validation.js';
 import { getPendingSyncQueue } from '../shared/sync.js';
+import { supabaseClient } from '../shared/supabase';
 
 import { saveBlob } from '../shared/blobStore.js';
 import { autoTagItemWithChromeAI, suggestUrgencyWithChromeAI, isChromeAILanguageModelAvailable } from '../shared/ai.js';
@@ -228,8 +229,14 @@ export default function App() {
 
       // Handle full screenshot immediately (area screenshot is handled in background.ts)
       if (type === 'CAPTURE_SCREENSHOT_VISIBLE' && response.dataUrl) {
-        const res = await fetch(response.dataUrl);
-        const blob = await res.blob();
+        // Convert base64 data URL to Blob in-memory (avoids CSP connect-src blocking fetch on data: URIs)
+        const dataUrl: string = response.dataUrl;
+        const [header, base64] = dataUrl.split(',');
+        const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: mimeType });
         const blobId = await saveBlob(blob, 'image/jpeg');
 
         const item: Omit<QueueItem, 'id'> = {

@@ -36,7 +36,7 @@ export function AISummary({
   onCopy,
   isPro = false,
   className = '',
-}: AISummaryProps {
+}: AISummaryProps) {
   const { t } = useI18n();
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);

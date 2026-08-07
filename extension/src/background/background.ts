@@ -27,8 +27,9 @@ const BUDGET_TICK_ALARM = 'budgetTick';
 const REVIEW_DECK_ALARM = 'reviewDeckTick';
 
 // Allow-list for PAGE_FETCH proxy requests (B5/S4: prevent SSRF + data exfiltration).
-// Only YouTube-related hosts that the extension legitimately needs to fetch from.
+// Covers all platforms the extension legitimately scrapes metadata/thumbnails from.
 const PAGE_FETCH_ALLOWED_HOSTS = new Set([
+  // YouTube
   'youtube.com',
   'www.youtube.com',
   'm.youtube.com',
@@ -39,7 +40,33 @@ const PAGE_FETCH_ALLOWED_HOSTS = new Set([
   'manifest.googlevideo.com',
   'rr1---sn-googlevideo.com',
   'studios.youtube.com',
+  // Instagram
+  'instagram.com',
+  'www.instagram.com',
+  'cdninstagram.com',
+  'scontent.cdninstagram.com',
+  // TikTok
+  'tiktok.com',
+  'www.tiktok.com',
+  'p16-sign.tiktokcdn.com',
+  'p19-sign.tiktokcdn.com',
+  // Twitter / X
+  'twitter.com',
+  'x.com',
+  'pbs.twimg.com',
+  'video.twimg.com',
+  // Reddit
+  'reddit.com',
+  'www.reddit.com',
+  'i.redd.it',
+  'v.redd.it',
+  'preview.redd.it',
+  // LinkedIn
+  'linkedin.com',
+  'www.linkedin.com',
+  'media.licdn.com',
 ]);
+
 
 // Also reject private/internal IP ranges to prevent SSRF
 function isPrivateIp(hostname: string): boolean {
@@ -717,10 +744,69 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const tab = await getActiveFocusedTab();
         if (!tab?.id) { sendResponse({ ok: false, error: 'No active tab' }); return; }
 
-        // Inject the overlay content script
+        // Inject the overlay as an inline function — avoids hashed file-path issues in MV3.
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          files: ['src/content/features/screenshotCapture.js'],
+          func: () => {
+            // Don't inject twice
+            if (document.getElementById('dq-screenshot-overlay')) return;
+
+            const overlay = document.createElement('div');
+            overlay.id = 'dq-screenshot-overlay';
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;cursor:crosshair;background:rgba(0,0,0,0.35);user-select:none;';
+
+            const selection = document.createElement('div');
+            selection.id = 'dq-screenshot-selection';
+            selection.style.cssText = 'position:absolute;border:2px solid #a3e635;background:rgba(163,230,53,0.08);box-shadow:0 0 0 9999px rgba(0,0,0,0.3);pointer-events:none;display:none;';
+
+            const hint = document.createElement('div');
+            hint.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-family:system-ui,sans-serif;font-size:15px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,0.8);pointer-events:none;text-align:center;line-height:1.5;';
+            hint.textContent = 'Drag to select the area to capture\nPress Esc to cancel';
+
+            overlay.appendChild(selection);
+            overlay.appendChild(hint);
+            document.body.appendChild(overlay);
+
+            let startX = 0, startY = 0, dragging = false;
+
+            function getRect(x1, y1, x2, y2) {
+              return { x: Math.min(x1,x2), y: Math.min(y1,y2), width: Math.abs(x2-x1), height: Math.abs(y2-y1) };
+            }
+            function updateSel(cx, cy) {
+              const r = getRect(startX, startY, cx, cy);
+              selection.style.left = r.x + 'px'; selection.style.top = r.y + 'px';
+              selection.style.width = r.width + 'px'; selection.style.height = r.height + 'px';
+            }
+            function cleanup() {
+              document.removeEventListener('keydown', onEsc);
+              overlay.remove();
+            }
+            function onEsc(e) {
+              if (e.key === 'Escape') { cleanup(); chrome.runtime.sendMessage({ type: 'SCREENSHOT_AREA_CANCELLED' }); }
+            }
+
+            overlay.addEventListener('mousedown', (e) => {
+              if (e.button !== 0) return;
+              dragging = true; startX = e.clientX; startY = e.clientY;
+              hint.style.display = 'none'; selection.style.display = 'block';
+              updateSel(e.clientX, e.clientY);
+            });
+            overlay.addEventListener('mousemove', (e) => { if (dragging) updateSel(e.clientX, e.clientY); });
+            overlay.addEventListener('mouseup', (e) => {
+              if (!dragging) return;
+              dragging = false;
+              const rect = getRect(startX, startY, e.clientX, e.clientY);
+              cleanup();
+              if (rect.width < 10 || rect.height < 10) {
+                chrome.runtime.sendMessage({ type: 'SCREENSHOT_AREA_CANCELLED' }); return;
+              }
+              chrome.runtime.sendMessage({
+                type: 'SCREENSHOT_AREA_SELECTED',
+                rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height), devicePixelRatio: window.devicePixelRatio || 1 },
+              });
+            });
+            document.addEventListener('keydown', onEsc);
+          },
         });
 
         sendResponse({ ok: true, status: 'overlay_injected' });
@@ -730,6 +816,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
+
 
   if (message?.type === 'SCREENSHOT_AREA_SELECTED') {
     (async () => {
