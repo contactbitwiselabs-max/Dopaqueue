@@ -51,13 +51,15 @@ import type { QueueItem, Channel, StatusMessage, ContentType, UrgencyLevel, Expo
 
 // ─── Helpers ──────────────────────────────────────────────────────â”€
 
-function detectContentType(url: string): ContentType {
-  if (!url) return 'video';
+function detectContentType(url: string, explicitType?: string): ContentType {
+  if (explicitType && (TYPE_CONFIG as any)[explicitType]) return explicitType as ContentType;
+  if (!url) return 'link';
   if (/youtube\.com\/shorts\//i.test(url)) return 'short';
   if (/instagram\.com\/reel/i.test(url)) return 'reel';
   if (/instagram\.com\/p\//i.test(url)) return 'post';
   if (/twitter\.com/i.test(url) || /x\.com/i.test(url) || /reddit\.com/i.test(url) || /linkedin\.com/i.test(url)) return 'post';
-  return 'video';
+  if (/(youtube\.com|youtu\.be|tiktok\.com|vimeo\.com|twitch\.tv)/i.test(url)) return 'video';
+  return 'link';
 }
 
 const TYPE_CONFIG = {
@@ -364,7 +366,7 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
 
   const scrape = getScrapeResult(video.url) || {};
   const [transcriptText, setTranscriptText] = useState(video.transcript || scrape.transcript || '');
-  const type = detectContentType(video.url);
+  const type = detectContentType(video.url, video.contentType || video.type as string);
   const typeCfg = (type && (TYPE_CONFIG as any)[type]) ? (TYPE_CONFIG as any)[type] : TYPE_CONFIG.video;
 
   const handleTranscriptSave = () => {
@@ -873,8 +875,8 @@ export default function App() {
       const name = scrape.channel || scrape.author || v.channel || v.channelName || v.author || null;
       const authorUrl = scrape.authorUrl || v.authorUrl || '';
       const authorImage = scrape.authorImage || null;
-      const platform = scrape.platform || v.platform || detectContentType(v.url) || null;
-      const cType = scrape.contentType || detectContentType(v.url) || 'post';
+      const platform = scrape.platform || v.platform || detectContentType(v.url, v.contentType || v.type as string) || null;
+      const cType = scrape.contentType || detectContentType(v.url, v.contentType || v.type as string) || 'post';
       if (!name) return;
       const key = name.toLowerCase();
       if (channelMap.has(key)) {
@@ -977,7 +979,7 @@ export default function App() {
 
   const handleExport = (video: QueueItem, format: ExportFormat) => {
     const scrape = getScrapeResult(video.url);
-    const item = { title: video.title, url: video.url, type: detectContentType(video.url), genre: (scrape as any)?.genre || 'Unknown', channel: (scrape as any)?.channel || 'Unknown', savedAt: video.savedAt, transcript: (scrape as any)?.transcript || '', tags: video.tags || [], urgency: video.urgency };
+    const item = { title: video.title, url: video.url, type: detectContentType(video.url, video.contentType || video.type as string), genre: (scrape as any)?.genre || 'Unknown', channel: (scrape as any)?.channel || 'Unknown', savedAt: video.savedAt, transcript: (scrape as any)?.transcript || '', tags: video.tags || [], urgency: video.urgency };
     const handlers: Record<ExportFormat, () => [string, string, string]> = {
       markdown: () => [exportToMarkdown([item], video.title), buildExportFilename('markdown', video.title), 'text/markdown'],
       csv: () => [exportToCSV([item]), buildExportFilename('csv', video.title), 'text/csv'],
@@ -990,7 +992,7 @@ export default function App() {
   };
 
   const filteredVideos = videos.filter(v => {
-    if (filterType !== 'all' && detectContentType(v.url) !== filterType) return false;
+    if (filterType !== 'all' && detectContentType(v.url, v.contentType || v.type as string) !== filterType) return false;
     if (filterUrgency !== 'all' && (v.urgency || 'Unscheduled') !== filterUrgency) return false;
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -1023,7 +1025,7 @@ export default function App() {
     return sortOrder === 'newest' ? tb - ta : ta - tb;
   });
 
-  const typeCounts = videos.reduce((acc, v) => { const t = detectContentType(v.url); acc[t] = (acc[t] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const typeCounts = videos.reduce((acc, v) => { const t = detectContentType(v.url, v.contentType || v.type as string); acc[t] = (acc[t] || 0) + 1; return acc; }, {} as Record<string, number>);
   const urgencyCounts = videos.reduce((acc, v) => { const u = v.urgency || 'Unscheduled'; acc[u] = (acc[u] || 0) + 1; return acc; }, {} as Record<string, number>);
 
   if (!authChecked) {
@@ -1292,7 +1294,7 @@ export default function App() {
                             const scrape = getScrapeResult(video.url) || {};
                             let key = 'Other';
                             if (groupBy === 'collection') key = video.collection || 'Uncategorized';
-                            else if (groupBy === 'type') key = (TYPE_CONFIG as any)[detectContentType(video.url)]?.label || 'Other';
+                            else if (groupBy === 'type') key = (TYPE_CONFIG as any)[detectContentType(video.url, video.contentType || video.type as string)]?.label || 'Other';
                             else if (groupBy === 'platform') key = (scrape as any).platform || video.platform || 'Web';
                             
                             if (!acc[key]) acc[key] = [];

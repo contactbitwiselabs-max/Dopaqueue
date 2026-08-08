@@ -42,6 +42,7 @@ export interface StringValidationOptions {
 export interface UrlValidationOptions {
   requireVideoPlatform?: boolean;
   allowAny?: boolean;
+  allowDataUrl?: boolean;
 }
 
 /**
@@ -64,6 +65,12 @@ export function validateUrl(url: any, options: UrlValidationOptions = {}): strin
     
     // Parse URL
     let parsed: URL;
+    
+    // Check for data URLs first if allowed
+    if (options.allowDataUrl && cleanedUrl.startsWith('data:image/')) {
+      return cleanedUrl; // Data URLs are already sanitized if they are basic images
+    }
+
     try {
       // Handle URLs without protocol (e.g., youtube.com/watch?v=...)
       // Also handle non-HTTP protocols like mailto:, tel:, etc.
@@ -251,7 +258,7 @@ export function validatePlatform(platform: any): string | null {
  * @returns {string|null} Validated content type or null
  */
 export function validateContentType(contentType: any): string | null {
-  const allowedTypes = new Set(['video', 'short', 'reel', 'post', 'link', 'channel']);
+  const allowedTypes = new Set(['video', 'short', 'reel', 'post', 'link', 'channel', 'article', 'image', 'screenshot']);
   
   if (!contentType || typeof contentType !== 'string') {
     return null;
@@ -297,7 +304,7 @@ export function validateQueueItem(item: any): Partial<QueueItem> | null {
   }
 
   // Validate URL (required)
-  const url = validateUrl(item.url, { requireVideoPlatform: true });
+  const url = validateUrl(item.url, { requireVideoPlatform: false, allowAny: true });
   if (!url) {
     return null;
   }
@@ -311,7 +318,7 @@ export function validateQueueItem(item: any): Partial<QueueItem> | null {
     authorUrl: validateUrl(item.authorUrl) || null,
     thumbnail: (typeof item.thumbnail === 'string' && item.thumbnail.startsWith('data:')) ? item.thumbnail : (validateUrl(item.thumbnail) || null),
     platform: validatePlatform(item.platform) || null,
-    contentType: validateContentType(item.contentType) || 'video',
+    contentType: validateContentType(item.contentType) || 'link',
     transcript: validateString(item.transcript, { maxLength: 50000, allowEmpty: true }) || null,
     notes: validateNote(item.notes) || null,
     tags: validateTags(item.tags, 10) || [],

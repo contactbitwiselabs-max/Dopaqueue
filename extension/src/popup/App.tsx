@@ -17,7 +17,7 @@ import { validateUrl, validateQueueItem } from '../shared/validation.js';
 import { getPendingSyncQueue } from '../shared/sync.js';
 import { supabaseClient } from '../shared/supabase';
 
-import { saveBlob } from '../shared/blobStore.js';
+import { saveBlob, compressDataUrl } from '../shared/blobStore.js';
 import { autoTagItemWithChromeAI, suggestUrgencyWithChromeAI, isChromeAILanguageModelAvailable } from '../shared/ai.js';
 
 import { Button } from '../components/ui/button';
@@ -211,64 +211,130 @@ export default function App() {
   }, []);
 
   const handleScreenshotCapture = async (type: 'CAPTURE_SCREENSHOT_VISIBLE' | 'CAPTURE_SCREENSHOT_AREA') => {
-    const sanitizedUrl = validateUrl(currentUrl, { allowAny: true });
-    if (!sanitizedUrl) return;
-
     setSaveStatus('saving');
     try {
-      const response = await chrome.runtime.sendMessage({ type });
-      
-      if (!response?.ok) {
-        throw new Error(response?.error || 'Screenshot failed or cancelled');
+      // Get the active tab directly from the popup context (no background needed)
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (!tab?.windowId || !tab?.id) {
+        throw new Error('No active tab found');
       }
 
-      if (response.status === 'overlay_injected') {
-        window.close();
-        return;
-      }
+      if (type === 'CAPTURE_SCREENSHOT_VISIBLE') {
+        // Capture directly from the popup — no background message needed
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
 
-      // Handle full screenshot immediately (area screenshot is handled in background.ts)
-      if (type === 'CAPTURE_SCREENSHOT_VISIBLE' && response.dataUrl) {
-        // Convert base64 data URL to Blob in-memory (avoids CSP connect-src blocking fetch on data: URIs)
-        const dataUrl: string = response.dataUrl;
-        const [header, base64] = dataUrl.split(',');
-        const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
-        const binary = atob(base64);
+        // Convert base64 to Blob
+        const [header, b64] = dataUrl.split(',');
+        const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const binary = atob(b64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        const blob = new Blob([bytes], { type: mimeType });
+        const blob = new Blob([bytes], { type: mime });
+
+        // Save to IndexedDB
         const blobId = await saveBlob(blob, 'image/jpeg');
+        const tinyThumb = await compressDataUrl(dataUrl, 0.6, 200);
 
-        const item: Omit<QueueItem, 'id'> = {
-          url: sanitizedUrl,
-          title: currentTitle || sanitizedUrl,
-          thumbnail: currentThumbnail,
-          savedAt: Date.now(),
-          type: 'screenshot',
-          tags: pendingTags,
-          note: pendingNote || undefined,
-          collection: pendingCollection || undefined,
-          author: currentAuthor,
-          authorUrl: currentAuthorUrl,
-          platform: currentPlatform,
+        const url = tab.url || '';
+        const domain = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
+
+        const entry = {
+          id: crypto.randomUUID(),
+          url,
+          title: tab.title ? `Screenshot - ${tab.title}` : 'Screenshot',
+          thumbnail: tinyThumb || tab.favIconUrl || null,
+          platform: 'web',
           contentType: 'screenshot',
-          urgency: (pendingUrgency as any) || (aiUrgency ? `${aiUrgency}` : undefined),
-          sourceDomain: (() => { try { return new URL(sanitizedUrl).hostname.replace(/^www\./, ''); } catch { return ''; } })(),
+          type: 'screenshot',
+          tags: [],
+          sourceDomain: domain,
           blobId,
+          savedAt: Date.now(),
+          watched: false,
         };
-
-        await addToQueue(item as QueueItem);
+        await addToQueue(entry as any);
         setQueue(getSavedVideos());
-        setGameState(getGameState());
-        setSaveStatus('saved');
+        setSaveStatus('success');
         setTimeout(() => setSaveStatus('idle'), 3000);
+
+      } else {
+        // Area selection: inject the overlay UI into the page
+        // The popup closes so the user can see the page and select an area.
+        // We listen for the result message before closing.
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            if (document.getElementById('dq-screenshot-overlay')) return;
+
+            const overlay = document.createElement('div');
+            overlay.id = 'dq-screenshot-overlay';
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;cursor:crosshair;background:rgba(0,0,0,0.35);user-select:none;';
+
+            const selection = document.createElement('div');
+            selection.id = 'dq-screenshot-selection';
+            selection.style.cssText = 'position:absolute;border:2px solid #a3e635;background:rgba(163,230,53,0.08);box-shadow:0 0 0 9999px rgba(0,0,0,0.3);pointer-events:none;display:none;';
+
+            const hint = document.createElement('div');
+            hint.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-family:system-ui,sans-serif;font-size:15px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,0.8);pointer-events:none;text-align:center;line-height:1.5;';
+            hint.textContent = 'Drag to select the area to capture\nPress Esc to cancel';
+
+            overlay.appendChild(selection);
+            overlay.appendChild(hint);
+            document.body.appendChild(overlay);
+
+            let startX = 0, startY = 0, dragging = false;
+
+            function getRect(x1, y1, x2, y2) {
+              return { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) };
+            }
+            function updateSel(cx, cy) {
+              const r = getRect(startX, startY, cx, cy);
+              selection.style.left = r.x + 'px'; selection.style.top = r.y + 'px';
+              selection.style.width = r.width + 'px'; selection.style.height = r.height + 'px';
+            }
+            function cleanup() {
+              document.removeEventListener('keydown', onEsc);
+              overlay.remove();
+            }
+            function onEsc(e) {
+              if (e.key === 'Escape') { cleanup(); chrome.runtime.sendMessage({ type: 'SCREENSHOT_AREA_CANCELLED' }); }
+            }
+
+            overlay.addEventListener('mousedown', (e) => {
+              if (e.button !== 0) return;
+              dragging = true; startX = e.clientX; startY = e.clientY;
+              hint.style.display = 'none'; selection.style.display = 'block';
+              updateSel(e.clientX, e.clientY);
+            });
+            overlay.addEventListener('mousemove', (e) => { if (dragging) updateSel(e.clientX, e.clientY); });
+            overlay.addEventListener('mouseup', (e) => {
+              if (!dragging) return;
+              dragging = false;
+              const rect = getRect(startX, startY, e.clientX, e.clientY);
+              cleanup();
+              if (rect.width < 10 || rect.height < 10) {
+                chrome.runtime.sendMessage({ type: 'SCREENSHOT_AREA_CANCELLED' }); return;
+              }
+              chrome.runtime.sendMessage({
+                type: 'SCREENSHOT_AREA_SELECTED',
+                rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height), devicePixelRatio: window.devicePixelRatio || 1 },
+              });
+            });
+            document.addEventListener('keydown', onEsc);
+          },
+        });
+
+        // Close the popup so the user can interact with the page overlay
+        setSaveStatus('idle');
+        window.close();
       }
     } catch (err: any) {
       setSaveStatus('error');
-      setErrorMsg(err.message || 'Failed to capture.');
+      setErrorMsg(err.message || 'Failed to capture screenshot.');
       setTimeout(() => setSaveStatus('idle'), 3000);
     }
   };
+
 
   const handleSave = async () => {
     if (!currentUrl) { setSaveStatus('error'); setErrorMsg('No URL detected.'); return; }

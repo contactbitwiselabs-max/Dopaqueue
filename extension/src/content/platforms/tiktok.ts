@@ -48,7 +48,7 @@ function injectTikTokStyle() {
     .dq-tiktok-save-btn.saved svg { fill: #a3e635; stroke: #a3e635; }
     .dq-tiktok-save-btn.saved span { color: #a3e635; }
   `;
-  document.head.appendChild(style);
+  (document.head || document.documentElement).appendChild(style);
 }
 
 function injectOnVideoPage() {
@@ -120,7 +120,7 @@ function scrapeAndSaveTikTok() {
     thumbnail,
     author,
     authorUrl,
-    platform: 'tiktok',
+    platform: 'TikTok',
     contentType: 'video',
     tags: tags.slice(0, 15),
     fromContentScript: true,

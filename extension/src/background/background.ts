@@ -45,6 +45,7 @@ const PAGE_FETCH_ALLOWED_HOSTS = new Set([
   'www.instagram.com',
   'cdninstagram.com',
   'scontent.cdninstagram.com',
+  'fbcdn.net',
   // TikTok
   'tiktok.com',
   'www.tiktok.com',
@@ -216,7 +217,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       if (tab?.id) {
         // Ask content script for enrichment metadata (alt text, page title)
         // but DON'T block the actual save on a response.
-        chrome.tabs.sendMessage(tab.id, { type: 'SAVE_IMAGE_FROM_CONTEXT', srcUrl: info.srcUrl, entryId: entry.id }).catch(() => {});
+        chrome.tabs.sendMessage(tab.id, { type: 'SAVE_IMAGE_FROM_CONTEXT', srcUrl: info.srcUrl, entryId: entry.id }).catch(() => { });
       }
     } catch { /* content script not reachable — we still saved above */ }
     addToQueue(entry);
@@ -513,6 +514,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  let responded = false;
+  const safeSendResponse = (data: any) => {
+    if (!responded) {
+      responded = true;
+      try { sendResponse(data); } catch (e) { console.error('Failed to send response', e); }
+    }
+  };
+
   if (message.type === 'GET_TIMER_STATE') {
     const tabId = sender?.tab?.id || null;
     const key = tabId ? timerKey(tabId) : null;
@@ -609,7 +618,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         cache.lastAttempts = cache.lastAttempts.slice(-10);
         cacheScrapeResult(message.url, cache);
       });
-    } catch (e) {}
+    } catch (e) { }
     return false;
   }
 
@@ -665,16 +674,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // ─── Unified SAVE_ITEM handler ─────────────────────────────────────────────
   // All content scripts, context menus, and popup saves flow through here.
-  if (message?.type === 'SAVE_ITEM') {
+  if (message?.type === 'SAVE_ITEM' || message?.type === 'SAVE_INSTAGRAM_ITEM') {
+    // Internal fallback timeout in case something hangs
+    setTimeout(() => {
+      safeSendResponse({ ok: false, error: 'Background internal timeout: initStorage or saving hung for >2.5s' });
+    }, 2500);
+
     initStorage().then(async () => {
       const url = message.url;
-      if (!url) { sendResponse({ ok: false, error: 'No URL' }); return; }
+      if (!url) { safeSendResponse({ ok: false, error: 'No URL' }); return; }
 
       const domain = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
-      const contentType = message.contentType || message.type || 'link';
+      // Use explicit contentType from message; fall back to 'link' for content script saves,
+      // NOT to message.type which would be 'SAVE_ITEM' or 'SAVE_INSTAGRAM_ITEM'.
+      const contentType = message.contentType || 'link';
 
+      // Merge tags: content scripts may send either 'tags' or 'scrapedTags'
+      const rawTags = Array.isArray(message.tags) ? message.tags
+        : Array.isArray(message.scrapedTags) ? message.scrapedTags
+        : [];
+
+      const generateId = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
+      
       const entry = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         url,
         title: (message.title || url).slice(0, 200),
         thumbnail: message.thumbnail || null,
@@ -683,7 +706,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         platform: message.platform || detectPlatformFromUrl(url),
         contentType,
         type: contentType,
-        tags: Array.isArray(message.tags) ? message.tags : [],
+        tags: rawTags,
         note: message.note || null,
         collection: message.collection || null,
         urgency: message.urgency || null,
@@ -698,6 +721,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       };
 
       const saved = addToQueue(entry);
+
+      if (!saved) {
+        safeSendResponse({ ok: false, error: 'Validation failed in addToQueue' });
+        return;
+      }
 
       // Cache scrape result for platforms with metadata
       if (message.platform || message.author || message.thumbnail) {
@@ -718,7 +746,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         autoSyncItem(saved).catch(err => console.warn('DopaQueue: autoSyncItem failed', err));
       }
 
-      sendResponse({ ok: true, entry: saved });
+      // Notify user when save originated from an injected button (not the popup, which shows its own UI)
+      if (message.fromContentScript) {
+        try {
+          chrome.notifications.create({
+            type: 'basic',
+            iconUrl: chrome.runtime.getURL('src/icons/icon48.png'),
+            title: 'DopaQueue',
+            message: `Saved: "${entry.title.slice(0, 60)}"`,
+          });
+        } catch (err) {
+          console.warn('[DopaQueue] Failed to create notification:', err);
+        }
+      }
+
+      safeSendResponse({ ok: true, entry: saved });
+    }).catch((err) => {
+      console.error('[DopaQueue] Unhandled error in SAVE_ITEM:', err);
+      safeSendResponse({ ok: false, error: err?.message || 'Unknown error saving item' });
     });
     return true;
   }
@@ -728,11 +773,60 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       try {
         const tab = await getActiveFocusedTab();
-        if (!tab?.windowId) { sendResponse({ ok: false, error: 'No active window' }); return; }
-        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 85 });
-        sendResponse({ ok: true, dataUrl });
+        if (!tab?.windowId) { safeSendResponse({ ok: false, error: 'No active window' }); return; }
+        safeSendResponse({ ok: true }); // Immediately unblock popup
+        
+        const fullDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
+        
+        // Manually parse base64 to avoid fetch issues
+        const [header, base64] = fullDataUrl.split(',');
+        const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: mimeType });
+
+        // Save blob
+        const { saveBlob, compressDataUrl } = await import('../shared/blobStore.js');
+        const blobId = await saveBlob(blob, 'image/jpeg');
+        const tinyThumb = await compressDataUrl(fullDataUrl, 0.6, 200);
+
+        const url = tab.url || '';
+        const domain = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
+
+        const entry = {
+          id: crypto.randomUUID(),
+          url,
+          title: tab.title ? `Screenshot - ${tab.title}` : 'Screenshot',
+          thumbnail: tinyThumb || tab.favIconUrl || null,
+          platform: detectPlatformFromUrl(url),
+          contentType: 'screenshot',
+          type: 'screenshot',
+          tags: [],
+          sourceDomain: domain,
+          blobId,
+          savedAt: Date.now(),
+          watched: false,
+        };
+
+        const { addToQueue, getSettings } = await import('../shared/storage.js');
+        addToQueue(entry);
+
+        const settings = getSettings();
+        if (settings.autoSyncEnabled) {
+          const { autoSyncItem } = await import('../shared/sync.js');
+          autoSyncItem(entry).catch(e => console.warn('Sync failed', e));
+        }
+
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: chrome.runtime.getURL('src/icons/icon48.png'),
+          title: 'DopaQueue',
+          message: 'Full page screenshot saved to Queue!',
+        });
+        broadcastState();
       } catch (err) {
-        sendResponse({ ok: false, error: String(err) });
+        console.error('Visible screenshot error:', err);
       }
     })();
     return true;
@@ -742,7 +836,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       try {
         const tab = await getActiveFocusedTab();
-        if (!tab?.id) { sendResponse({ ok: false, error: 'No active tab' }); return; }
+        if (!tab?.id) { safeSendResponse({ ok: false, error: 'No active tab' }); return; }
+
+        safeSendResponse({ ok: true, status: 'overlay_injected' });
 
         // Inject the overlay as an inline function — avoids hashed file-path issues in MV3.
         await chrome.scripting.executeScript({
@@ -770,7 +866,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             let startX = 0, startY = 0, dragging = false;
 
             function getRect(x1, y1, x2, y2) {
-              return { x: Math.min(x1,x2), y: Math.min(y1,y2), width: Math.abs(x2-x1), height: Math.abs(y2-y1) };
+              return { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) };
             }
             function updateSel(cx, cy) {
               const r = getRect(startX, startY, cx, cy);
@@ -808,10 +904,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             document.addEventListener('keydown', onEsc);
           },
         });
-
-        sendResponse({ ok: true, status: 'overlay_injected' });
       } catch (err) {
-        sendResponse({ ok: false, error: String(err) });
+        console.error('Screenshot area init error:', err);
       }
     })();
     return true;
@@ -821,42 +915,55 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'SCREENSHOT_AREA_SELECTED') {
     (async () => {
       try {
-        const tab = await getActiveFocusedTab();
-        if (!tab?.windowId) { sendResponse({ ok: false }); return; }
+        const tab = sender.tab || (await getActiveFocusedTab());
+        if (!tab?.windowId) { safeSendResponse({ ok: false, error: 'No active tab/window' }); return; }
         const fullDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
-        
+
         // Crop using OffscreenCanvas
         const rect = message.rect;
-        // B12: Default devicePixelRatio to 1 if missing — prevents NaN crop
         const dpr = (typeof rect.devicePixelRatio === 'number' && rect.devicePixelRatio > 0)
           ? rect.devicePixelRatio
           : 1;
-        const res = await fetch(fullDataUrl);
-        const blob = await res.blob();
+        // Manually convert dataUrl to Blob to avoid fetch() issues in MV3 Service Workers
+        const [header, base64] = fullDataUrl.split(',');
+        const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: mimeType });
         const bitmap = await createImageBitmap(blob);
-        
-        const canvas = new OffscreenCanvas(rect.width, rect.height);
+
+        const cropW = Math.round(rect.width * dpr);
+        const cropH = Math.round(rect.height * dpr);
+        const canvas = new OffscreenCanvas(cropW, cropH);
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('No 2d context');
-        
-        // Draw the cropped area (B12: use safe dpr)
-          ctx.drawImage(bitmap, rect.x * dpr, rect.y * dpr, rect.width * dpr, rect.height * dpr, 0, 0, rect.width, rect.height);
-        
+
+        ctx.drawImage(bitmap, rect.x * dpr, rect.y * dpr, rect.width * dpr, rect.height * dpr, 0, 0, cropW, cropH);
+
         const croppedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
-        
-        // Save blob
-        const { saveBlob } = await import('../shared/blobStore.js');
+
+        // Save full image blob to IndexedDB
+        const { saveBlob, compressDataUrl } = await import('../shared/blobStore.js');
         const blobId = await saveBlob(croppedBlob, 'image/jpeg');
+
+        // Create tiny 2KB thumbnail for instant UI display
+        const croppedDataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string) || '');
+          reader.readAsDataURL(croppedBlob);
+        });
+        const tinyThumb = await compressDataUrl(croppedDataUrl, 0.6, 200);
 
         // Create and save QueueItem
         const url = tab.url || '';
         const domain = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
-        
+
         const entry = {
           id: crypto.randomUUID(),
           url,
-          title: tab.title || 'Screenshot',
-          thumbnail: tab.favIconUrl || null,
+          title: tab.title ? `Screenshot - ${tab.title}` : 'Screenshot',
+          thumbnail: tinyThumb || tab.favIconUrl || null,
           platform: detectPlatformFromUrl(url),
           contentType: 'screenshot',
           type: 'screenshot',
@@ -869,7 +976,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         const { addToQueue, getSettings } = await import('../shared/storage.js');
         addToQueue(entry);
-        
+
         const settings = getSettings();
         if (settings.autoSyncEnabled) {
           const { autoSyncItem } = await import('../shared/sync.js');
@@ -883,10 +990,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           message: 'Area screenshot saved to Queue!',
         });
 
-        sendResponse({ ok: true });
+        safeSendResponse({ ok: true });
+        broadcastState();
       } catch (err) {
-        console.error('Screenshot error:', err);
-        sendResponse({ ok: false, error: String(err) });
+        console.error('Error processing area screenshot:', err);
+        safeSendResponse({ ok: false, error: String(err) });
       }
     })();
     return true;

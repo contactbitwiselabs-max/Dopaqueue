@@ -31,7 +31,7 @@ export function initTextPlatformButtons() {
       height: 16px;
     }
   `;
-  document.head.appendChild(style);
+  (document.head || document.documentElement).appendChild(style);
 
   setInterval(injectButtons, 1000);
 }
@@ -197,7 +197,7 @@ function scrapeAndSaveLinkedIn(postNode) {
 
 function sendToBackground(metadata) {
   chrome.runtime.sendMessage({
-    type: 'SAVE_INSTAGRAM_ITEM', // We reuse the generic queue save message
+    type: 'SAVE_ITEM',
     ...metadata
   });
 }

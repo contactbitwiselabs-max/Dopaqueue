@@ -98,23 +98,53 @@ export async function compressDataUrl(
   }
 }
 
-/** Save a blob and return the generated blobId. */
+/** Save a blob (data URL, plain text, or Blob object) and return the generated blobId. */
 export async function saveBlob(
-  itemId: string,
-  type: BlobType,
-  data: string,
-  mimeType?: string
+  arg1: any,
+  arg2?: any,
+  arg3?: any,
+  arg4?: any
 ): Promise<string> {
   const db = await openDB();
   const id = `blob_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  
+  let itemId = '';
+  let type: BlobType = 'screenshot';
+  let dataStr = '';
+  let mimeType: string | undefined = undefined;
+
+  if (arg1 instanceof Blob || (typeof arg1 === 'string' && (arg1.startsWith('data:') || arg1.length > 300))) {
+    // Called as: saveBlob(blobOrDataUrl, mimeType?, type?, itemId?)
+    if (arg1 instanceof Blob) {
+      mimeType = (arg2 as string) || arg1.type || 'image/jpeg';
+      dataStr = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string) || '');
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(arg1);
+      });
+    } else {
+      dataStr = arg1;
+      mimeType = (arg2 as string) || 'image/jpeg';
+    }
+    type = (arg3 as BlobType) || 'screenshot';
+    itemId = arg4 || '';
+  } else {
+    // Called as: saveBlob(itemId, type, data, mimeType?)
+    itemId = (arg1 as string) || '';
+    type = (arg2 as BlobType) || 'screenshot';
+    dataStr = arg3 || '';
+    mimeType = arg4;
+  }
+
   const entry: BlobEntry = {
     id,
     itemId,
     type,
-    data,
+    data: dataStr,
     mimeType,
     createdAt: Date.now(),
-    sizeBytes: data.length,
+    sizeBytes: dataStr ? dataStr.length : 0,
   };
 
   return new Promise((resolve, reject) => {

@@ -83,10 +83,11 @@ export function initScrollTimer() {
         const style = document.createElement('style');
         style.id = 'dq-pulse-style';
         style.innerHTML = `@keyframes dq-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }`;
-        document.head.appendChild(style);
+        (document.head || document.documentElement).appendChild(style);
       }
 
-      document.body.appendChild(existing);
+      const parentEl = document.body || document.documentElement;
+      if (parentEl) parentEl.appendChild(existing);
     }
     existing.style.display = 'flex';
     widgetEl = existing;

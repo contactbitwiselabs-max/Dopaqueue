@@ -171,6 +171,7 @@ async function strategyB_background(videoId) {
 }
 
 async function strategyC_timedtextApi(videoId) {
+  if (!videoId || videoId === 'null') return null;
   const candidates = [
     `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=json3&lang=en&kind=asr`,
     `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=json3&lang=en`,
@@ -361,6 +362,7 @@ export function scrapeYouTubeMetadataOnly() {
 export async function scrapeYouTube() {
   const metadata = scrapeYouTubeMetadataOnly();
   const videoId = extractVideoId(metadata.url);
+  if (!videoId || videoId === 'null') return metadata;
 
   const racePromise = Promise.any([
     mustFindTranscript(strategyD_livePlayerAPI(videoId)),
@@ -469,8 +471,14 @@ export function injectYouTubeShortsButtons() {
       wrapper.appendChild(label);
 
       // Method to update visual state based on saved status
-      wrapper.dqSetSaved = (isSaved) => {
-        wrapper.dataset.saved = isSaved;
+      wrapper.dqSetSaved = (isSaved: boolean, errorMsg: string | null = null) => {
+        wrapper.dataset.saved = isSaved.toString();
+        if (errorMsg) {
+          label.textContent = errorMsg.substring(0, 15); // Show first 15 chars of error on the button
+          iconBox.style.background = 'rgba(231, 76, 60, 0.2)'; // Red error state
+          iconBox.innerHTML = `<svg class="dq-svg-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="#e74c3c"/></svg>`;
+          return;
+        }
         if (isSaved) {
           iconBox.style.background = 'rgba(132, 204, 22, 0.2)';
           iconBox.innerHTML = `
@@ -502,26 +510,49 @@ export function injectYouTubeShortsButtons() {
         if (wrapper.dataset.saved === 'true') return;
 
         label.textContent = 'Saving...';
-        const urlToSave = location.href;
-        
-        // Use fast synchronous metadata to instantly update UI and save
-        let scraped = null;
-        try {
-          scraped = scrapeYouTubeMetadataOnly();
-        } catch (e) {
-          console.error('[Dopaqueue] Error scraping youtube:', e);
-        }
-        
-        chrome.runtime.sendMessage({
-          type: 'SAVE_INSTAGRAM_ITEM',
-          ...scraped,
-          platform: 'YouTube',
-          url: scraped?.url || urlToSave
-        }, () => {
-          if (location.href === urlToSave) {
-            wrapper.dqSetSaved(true);
+
+        // Safety Timer: Still active in the background. If nothing happens for 4.5s, 
+        // it resets the button to "Save".
+        const safetyTimer = setTimeout(() => {
+          if (label && label.textContent === 'Saving...') {
+            wrapper.dqSetSaved(false, 'Timeout 4.5s');
           }
-        });
+        }, 4500);
+        
+        const urlToSave = location.href;
+        let scraped: any;
+        try {
+          scraped = scrapeYouTubeMetadataOnly(); // synchronous fast scrape
+        } catch (scrapeErr: any) {
+          clearTimeout(safetyTimer);
+          wrapper.dqSetSaved(false, 'Scrape Fail');
+          return;
+        }
+
+        try {
+          chrome.runtime.sendMessage({
+            type: 'SAVE_ITEM',
+            ...scraped,
+            platform: 'YouTube',
+            contentType: 'video',
+            tags: Array.isArray(scraped?.scrapedTags) ? scraped.scrapedTags : [],
+            url: scraped?.url || urlToSave,
+            fromContentScript: true,
+          }, (response) => {
+            clearTimeout(safetyTimer);
+            if (chrome.runtime.lastError || (response && !response.ok)) {
+              const errMsg = chrome.runtime.lastError?.message || response?.error || 'Unknown Error';
+              console.error('[Dopaqueue] Error saving youtube item:', errMsg);
+              wrapper.dqSetSaved(false, errMsg);
+            } else {
+              wrapper.dqSetSaved(true);
+            }
+          });
+        } catch (error: any) {
+          clearTimeout(safetyTimer);
+          console.error('[Dopaqueue] Send message failed:', error);
+          wrapper.dqSetSaved(false, 'Send Fail');
+        }
         
         // Fire and forget the full scrape to capture transcript for background DB
         (async () => {
@@ -533,7 +564,11 @@ export function injectYouTubeShortsButtons() {
       });
 
       // Inject perfectly above the like button
-      actionsContainer.insertBefore(wrapper, targetAnchor);
+      if (targetAnchor.parentNode) {
+        targetAnchor.parentNode.insertBefore(wrapper, targetAnchor);
+      } else {
+        actionsContainer.appendChild(wrapper);
+      }
       // B19: Mark container so we don't inject again on re-render
       injectedContainers.add(actionsContainer);
     }

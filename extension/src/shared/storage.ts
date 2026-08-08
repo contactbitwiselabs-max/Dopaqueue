@@ -137,7 +137,7 @@ export async function initStorage(): Promise<void> {
       STORAGE_KEYS.CONFIG,
       STORAGE_KEYS.COLLECTIONS,
       'dq_schema_version', // C15: track migration state
-    ], (res: any) => {
+    ]).then((res: any) => {
       // C15: run any necessary migrations before validating shapes.
       // Currently no-op (we're at v1, no prior versions exist in the wild).
       const onDiskVersion = typeof res?.dq_schema_version === 'number' ? res.dq_schema_version : 1;
@@ -361,7 +361,7 @@ export function updateQueueItem(id: string, patch: Partial<QueueItem>): QueueIte
     validatedPatch.authorUrl = validateUrl(patch.authorUrl) || null;
   }
   if (patch.thumbnail !== undefined) {
-    validatedPatch.thumbnail = validateUrl(patch.thumbnail) || null;
+    validatedPatch.thumbnail = validateUrl(patch.thumbnail, { allowDataUrl: true }) || null;
   }
   if (patch.platform !== undefined) {
     validatedPatch.platform = validateString(patch.platform, { maxLength: 20, allowEmpty: true }) || null;
@@ -526,7 +526,7 @@ export function cacheScrapeResult(url: string, data: Partial<ScrapeData>): Recor
     channel: validateString(data.channel, { maxLength: 100, allowEmpty: true }) || null,
     author: validateString(data.author, { maxLength: 100, allowEmpty: true }) || null,
     authorUrl: validateUrl(data.authorUrl) || null,
-    thumbnail: validateUrl(data.thumbnail) || null,
+    thumbnail: validateUrl(data.thumbnail, { allowDataUrl: true }) || null,
     title: validateString(data.title, { maxLength: 200, allowEmpty: true }) || null,
     transcript: validateString(data.transcript, { maxLength: 50000, allowEmpty: true }) || null,
     genre: validateString(data.genre, { maxLength: 50, allowEmpty: true }) || null,

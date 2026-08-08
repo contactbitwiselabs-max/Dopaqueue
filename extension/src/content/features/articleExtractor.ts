@@ -144,7 +144,7 @@ function sanitizeHtml(html: string): string {
     }
   });
 
-  return doc.body.innerHTML;
+  return doc.body ? doc.body.innerHTML : '';
 }
 
 // ── Message listener ────────────────────────────────────────────────

@@ -52,7 +52,8 @@ export function checkMindfulFlowBreaker() {
     </div>
   `;
 
-  document.documentElement.appendChild(overlay);
+  const parentNode = document.body || document.documentElement;
+  if (parentNode) parentNode.appendChild(overlay);
   requestAnimationFrame(() => { overlay.style.opacity = '1'; });
 
   document.getElementById('dq-open-library').addEventListener('click', () => {

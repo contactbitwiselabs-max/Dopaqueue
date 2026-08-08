@@ -121,19 +121,33 @@ export async function universalScrapeAll(targetUrl, containerEl = null) {
   const localVideo = container.querySelector('video');
   if (localVideo?.poster && !localVideo.poster.startsWith('blob:')) rawImgUrl = localVideo.poster;
   if (!rawImgUrl) {
-    const localImg = container.querySelector('img[src*="http"]');
-    if (localImg?.src) rawImgUrl = localImg.src;
+    const images = Array.from(container.querySelectorAll('img[src*="http"]')) as HTMLImageElement[];
+    let bestImg = null;
+    let maxArea = 0;
+    for (const img of images) {
+      if (img.alt && img.alt.toLowerCase().includes('profile')) continue;
+      if (img.src && img.src.includes('/ps/')) continue;
+      const area = img.clientWidth * img.clientHeight;
+      if (area > maxArea) {
+        maxArea = area;
+        bestImg = img;
+      }
+    }
+    if (!bestImg) bestImg = images.find(img => !(img.alt || '').toLowerCase().includes('profile'));
+    if (bestImg?.src) rawImgUrl = bestImg.src;
   }
   if (!rawImgUrl) {
-    const ogImg = document.querySelector('meta[property="og:image"]');
+    const ogImg = document.querySelector('meta[property="og:image"]') as HTMLMetaElement;
     if (ogImg?.content) rawImgUrl = ogImg.content;
   }
   if (!rawImgUrl) {
-    const twitterImg = document.querySelector('meta[name="twitter:image"]');
+    const twitterImg = document.querySelector('meta[name="twitter:image"]') as HTMLMetaElement;
     if (twitterImg?.content) rawImgUrl = twitterImg.content;
   }
 
-  const thumbnail = await getPermanentThumbnail(rawImgUrl);
+  // Use getPermanentThumbnail to fetch a base64 copy that won't expire.
+  // This uses the background script to bypass CORS and prevents broken images.
+  const thumbnail = await getPermanentThumbnail(rawImgUrl) || rawImgUrl;
 
   // 1. Author (do this first so we can exclude author name from title search)
   let author = null;
@@ -234,13 +248,12 @@ export async function universalScrapeAll(targetUrl, containerEl = null) {
 
   let authorImage = container.querySelector<HTMLImageElement>('header img, a[role="link"] img, img[data-testid="user-avatar"]')?.src || document.querySelector<HTMLImageElement>('header img, img[alt*="profile picture"]')?.src || null;
 
-  const permThumb = await fetchImageAsDataUrlInPage(thumbnail || rawImgUrl);
   const scrapedTags = scrapeHashtagsFromPage(container);
 
   return {
     url,
     title,
-    thumbnail: permThumb,
+    thumbnail,
     author,
     authorUrl,
     authorImage,
@@ -248,6 +261,7 @@ export async function universalScrapeAll(targetUrl, containerEl = null) {
     channel: author,
     contentType,
     platform,
+    tags: scrapedTags,
     transcript: null,
     scrapedTags,
   };
@@ -281,15 +295,27 @@ export function scrapeMetadataOnly() {
   const localVideo = container.querySelector('video');
   if (localVideo?.poster && !localVideo.poster.startsWith('blob:')) rawImgUrl = localVideo.poster;
   if (!rawImgUrl) {
-    const localImg = container.querySelector('img[src*="http"]');
-    if (localImg?.src) rawImgUrl = localImg.src;
+    const images = Array.from(container.querySelectorAll('img[src*="http"]')) as HTMLImageElement[];
+    let bestImg = null;
+    let maxArea = 0;
+    for (const img of images) {
+      if (img.alt && img.alt.toLowerCase().includes('profile')) continue;
+      if (img.src && img.src.includes('/ps/')) continue;
+      const area = img.clientWidth * img.clientHeight;
+      if (area > maxArea) {
+        maxArea = area;
+        bestImg = img;
+      }
+    }
+    if (!bestImg) bestImg = images.find(img => !(img.alt || '').toLowerCase().includes('profile'));
+    if (bestImg?.src) rawImgUrl = bestImg.src;
   }
   if (!rawImgUrl) {
-    const ogImg = document.querySelector('meta[property="og:image"]');
+    const ogImg = document.querySelector('meta[property="og:image"]') as HTMLMetaElement;
     if (ogImg?.content) rawImgUrl = ogImg.content;
   }
   if (!rawImgUrl) {
-    const twitterImg = document.querySelector('meta[name="twitter:image"]');
+    const twitterImg = document.querySelector('meta[name="twitter:image"]') as HTMLMetaElement;
     if (twitterImg?.content) rawImgUrl = twitterImg.content;
   }
   // 1. Author (do this first to filter title)
@@ -411,7 +437,7 @@ export function initInstagramButtons() {
         animation: dqIconBounce 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
       }
     `;
-    document.head.appendChild(styleSheet);
+    (document.head || document.documentElement).appendChild(styleSheet);
   }
 
   const observer = new MutationObserver(() => {
@@ -564,6 +590,15 @@ export function initInstagramButtons() {
 
         if (!isSaved) {
           label.textContent = 'Saving...';
+          
+          // Bulletproof fallback: force reset after 4.5s if still stuck
+          const safetyTimer = setTimeout(() => {
+            if (label && label.textContent === 'Saving...') {
+              console.warn('[DopaQueue] Safety timer triggered. Forcing UI reset.');
+              setUnsavedUI();
+            }
+          }, 4500);
+
           let scraped = null;
           try {
             scraped = await universalScrapeAll(currentUrl, isReelActionRow ? null : postContainer);
@@ -572,17 +607,37 @@ export function initInstagramButtons() {
           }
           // Fallback: if full scrape failed (container not ready), use sync metadata scraper
           if (!scraped) {
-            const meta = scrapeMetadataOnly();
-            if (meta) scraped = { ...meta, thumbnail: null };
+            try {
+              const meta = scrapeMetadataOnly();
+              if (meta) scraped = { ...meta, thumbnail: null };
+            } catch (fallbackErr) {
+              console.error('[Dopaqueue] Fallback scrape failed:', fallbackErr);
+            }
           }
-          chrome.runtime.sendMessage({
-            type: 'SAVE_INSTAGRAM_ITEM',
-            ...(scraped || {}),
-            url: scraped?.url || currentUrl
-          }, () => {
-            setSavedUI();
-            lastCheckedUrl = currentUrl;
-          });
+          try {
+            chrome.runtime.sendMessage({
+              type: 'SAVE_ITEM',
+              ...(scraped || {}),
+              url: scraped?.url || currentUrl,
+              fromContentScript: true,
+            }, (response) => {
+              clearTimeout(safetyTimer);
+              if (chrome.runtime.lastError || (response && !response.ok)) {
+                const errMsg = chrome.runtime.lastError?.message || response?.error || 'Unknown Error';
+                alert('DopaQueue Debug - Background Error: ' + errMsg);
+                console.error('[Dopaqueue] Error saving instagram item:', errMsg);
+                setUnsavedUI();
+              } else {
+                setSavedUI();
+                lastCheckedUrl = currentUrl;
+              }
+            });
+          } catch (error: any) {
+            clearTimeout(safetyTimer);
+            alert('DopaQueue Debug - Catch Error: ' + (error?.message || error));
+            console.error('[Dopaqueue] Send message failed:', error);
+            setUnsavedUI();
+          }
         }
       });
 
@@ -639,25 +694,54 @@ export function initInstagramButtons() {
         btnContainer.style.pointerEvents = 'none';
         btnContainer.innerHTML = `
           <div style="display: flex; align-items: center; gap: 10px; color: #f4f4f5;">
-            <span>â³ Saving with permanent thumbnail...</span>
+            <span>⏳ Saving with permanent thumbnail...</span>
           </div>
         `;
 
         const scraped = await universalScrapeAll(postUrl);
 
-        chrome.runtime.sendMessage({
-          type: 'SAVE_INSTAGRAM_ITEM',
-          ...scraped,
-        }, () => {
-          btnContainer.style.background = 'rgba(34, 197, 94, 0.18)';
-          btnContainer.style.borderColor = 'rgba(34, 197, 94, 0.5)';
-          btnContainer.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 10px; color: #4ade80;">
-              <span style="font-size: 18px;">âœ…</span>
-              <span style="font-weight: 700;">Saved to DopaQueue Library!</span>
-            </div>
-          `;
-        });
+        try {
+          const response = await Promise.race([
+            chrome.runtime.sendMessage({
+              type: 'SAVE_ITEM',
+              ...scraped,
+            }),
+            new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for background script')), 4000))
+          ]);
+          if (chrome.runtime.lastError || (response && !response.ok)) {
+            console.error('[Dopaqueue] Error saving from dialog:', chrome.runtime.lastError || response?.error);
+            btnContainer.innerHTML = `
+              <div style="display: flex; align-items: center; gap: 10px; color: #ef4444;">
+                <span>❌ Save failed</span>
+              </div>
+            `;
+            setTimeout(() => {
+              btnContainer.style.opacity = '1';
+              btnContainer.style.pointerEvents = 'auto';
+              btnContainer.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <span style="font-size: 20px;">🌿</span>
+                  <div>
+                    <div style="color: #f4f4f5; font-weight: 600; font-size: 14px;">Save to DopaQueue</div>
+                    <div style="color: #a1a1aa; font-weight: 400; font-size: 12px;">Save post & permanent thumbnail intentionally</div>
+                  </div>
+                </div>
+                <span style="font-size: 11px; background: #84cc16; color: #09090b; padding: 4px 10px; border-radius: 8px; font-weight: 700; text-transform: uppercase;">Save</span>
+              `;
+            }, 2000);
+          } else {
+            btnContainer.style.background = 'rgba(34, 197, 94, 0.18)';
+            btnContainer.style.borderColor = 'rgba(34, 197, 94, 0.5)';
+            btnContainer.innerHTML = `
+              <div style="display: flex; align-items: center; gap: 10px; color: #4ade80;">
+                <span style="font-size: 18px;">✅</span>
+                <span style="font-weight: 700;">Saved securely</span>
+              </div>
+            `;
+          }
+        } catch (error) {
+          console.error('[Dopaqueue] Dialog message failed:', error);
+        }
       });
 
       const contentArea = dialog.querySelector('div[class*="content"]') || dialog.firstElementChild;
@@ -669,6 +753,9 @@ export function initInstagramButtons() {
     });
   });
 
-  observer.observe(document.body, { childList: true, subtree: true });
+  const targetNode = document.body || document.documentElement;
+  if (targetNode) {
+    observer.observe(targetNode, { childList: true, subtree: true });
+  }
 }
 

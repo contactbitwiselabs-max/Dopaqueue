@@ -38,6 +38,7 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_ENABLE_ANALYTICS': JSON.stringify(env.VITE_ENABLE_ANALYTICS || 'false'),
     },
     build: {
+      modulePreload: false,
       rollupOptions: {
         input: {
           popup: 'index.html',
