@@ -12,7 +12,8 @@ import {
 import {
   initStorage, getSavedVideos, getSavedChannels, subscribe,
   removeFromQueue, updateQueueItem, getScrapeResult, updateChannelGroup,
-  getWhitelist, saveWhitelist, isWhitelistedChannel, getPomodoroState, savePomodoroState
+  getWhitelist, saveWhitelist, isWhitelistedChannel, getPomodoroState, savePomodoroState,
+  getCollections
 } from '../shared/storage.js';
 import { getBlob } from '../shared/blobStore.js';
 import { ThemeToggle } from '../shared/theme.js';
@@ -24,7 +25,7 @@ import { exportToMarkdown, exportToCSV,  exportToJSON, exportToNotion, exportToO
 import { generateActionChecklist, autoTagItem, summarizeWithChromeAI, isChromeAIAvailable } from '../shared/ai.js';
 import { generateSharePayload, encodeShareLink } from '../shared/share.js';
 import { getMyCircle, createCircle, joinCircleByCode, getWeeklyMirrorReport } from '../shared/circles.js';
-import { SHARE_BASE_URL, resolveThumbnailUrl } from '../shared/constants.js';
+import { SHARE_BASE_URL, resolveThumbnailUrl, STORAGE_KEYS } from '../shared/constants.js';
 
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -47,8 +48,9 @@ import { StaggerList, StaggerItem, PageTransition, HoverCard, FadeIn, SlideUp, P
 import Settings from './pages/Settings.jsx';
 import DigitalWellbeing from './pages/DigitalWellbeing.jsx';
 import Collections from './pages/Collections.js';
+import Channels from './pages/Channels.js';
 
-import type { QueueItem, Channel, StatusMessage, ContentType, UrgencyLevel, ExportFormat } from '../types';
+import type { QueueItem, Channel, StatusMessage, ContentType, UrgencyLevel, ExportFormat, SavedCollection } from '../types';
 
 // ─── Helpers ──────────────────────────────────────────────────────â”€
 
@@ -329,18 +331,20 @@ function SmartThumbnail({ video, typeCfg }: { video: QueueItem; typeCfg?: any })
 // ─── Video Card ───────────────────────────────────────────────────
 interface VideoCardProps {
   video: QueueItem;
+  collections: SavedCollection[];
   onRemove: () => void;
-  onExport: (video: QueueItem, fmt: ExportFormat) => void;
+  onExport: (video: QueueItem, format: ExportFormat) => void;
   onReadArticle: () => void;
   onUpdateTags: (id: string, tags: string[]) => void;
   onUpdateNotes: (id: string, notes: string) => void;
   onUpdateTranscript: (id: string, transcript: string) => void;
   onSetUrgency: (id: string, urgency: UrgencyLevel) => void;
-  onSetExpiry: (id: string, expiryDate: number | null) => void;
-  scrapeVersion?: number; // bumped when scrape cache updates to force re-render
+  onSetExpiry: (id: string, expiry: number | null) => void;
+  onSetCollection: (id: string, collectionName: string | undefined) => void;
+  scrapeVersion: number;
 }
 
-function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onUpdateNotes, onUpdateTranscript, onSetUrgency, onSetExpiry, scrapeVersion: _sv }: VideoCardProps) {
+function VideoCard({ video, collections, onRemove, onExport, onReadArticle, onUpdateTags, onUpdateNotes, onUpdateTranscript, onSetUrgency, onSetExpiry, onSetCollection, scrapeVersion: _sv }: VideoCardProps) {
   const [copied, setCopied] = useState(false);
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState('');
@@ -645,6 +649,35 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
                 <CalendarIcon className="w-4 h-4 mr-2" />
                 Custom Expiry Time
               </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="xs" variant="glass" className="gap-1.5 ml-1 text-lime-400">
+                <Folder className="w-3.5 h-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Add to Collection</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {collections.length === 0 ? (
+                <DropdownMenuItem disabled>No collections found</DropdownMenuItem>
+              ) : (
+                collections.map(col => (
+                  <DropdownMenuItem key={col.id} onClick={() => onSetCollection(video.id, col.name)}>
+                    {video.collection === col.name ? '✓ ' : ''}{col.name}
+                  </DropdownMenuItem>
+                ))
+              )}
+              {video.collection && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-red-400" onClick={() => onSetCollection(video.id, undefined)}>
+                    Remove from Collection
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -994,6 +1027,7 @@ export default function App() {
     return 'videos';
   });
   const [videos, setVideos] = useState<QueueItem[]>([]);
+  const [collections, setCollections] = useState<SavedCollection[]>([]);
   const [channels, setChannels] = useState<any[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<'idle' | 'success' | 'error'>('idle');
@@ -1017,6 +1051,7 @@ export default function App() {
   const refreshData = useCallback(() => {
     const savedVideos = getSavedVideos();
     setVideos(savedVideos);
+    setCollections(getCollections());
 
     // Derive unique channels from saved videos via scrape cache
     const channelMap = new Map<string, { name: string; url: string; videoCount: number; savedAt: number; authorImage: string | null; platform: string | null; contentTypes: Set<string> }>();
@@ -1062,6 +1097,7 @@ export default function App() {
     }
     initStorage().then(() => { refreshData(); setAuthChecked(true); });
     const unsubQueue = subscribe('dq_queue', refreshData);
+    const unsubCollections = subscribe('dq_collections', refreshData);
     // Bump version counter when scrape cache updates so VideoCards re-read getScrapeResult
     // Using a separate counter (not refreshData) avoids stale-queue race conditions
     const unsubScrape = subscribe('dq_scrape_cache', () => setScrapeVersion(v => v + 1));
@@ -1072,7 +1108,7 @@ export default function App() {
       setUser(session?.user || null);
       if (session?.user) setShowAuth(false);
     });
-    return () => { unsubQueue(); unsubScrape(); authListener.subscription.unsubscribe(); };
+    return () => { unsubQueue(); unsubCollections(); unsubScrape(); authListener.subscription.unsubscribe(); };
   }, [refreshData]);
 
   useEffect(() => {
@@ -1101,6 +1137,11 @@ export default function App() {
   const handleSetExpiry = (id: string, expiryDate: number | null) => {
     updateQueueItem(id, { expiryDate });
     setVideos(prev => prev.map(v => v.id === id ? { ...v, expiryDate } : v));
+    refreshData();
+  };
+  const handleSetCollection = (id: string, collection: string | undefined) => {
+    updateQueueItem(id, { collection });
+    setVideos(prev => prev.map(v => v.id === id ? { ...v, collection } : v));
     refreshData();
   };
 
@@ -1249,7 +1290,7 @@ export default function App() {
   const navItems: { id: TabId; icon: React.ReactNode; label: string; count?: number }[] = [
     { id: 'videos', icon: <LayoutGrid />, label: 'Saved Content', count: videos.length },
     { id: 'collections', icon: <Folder />, label: 'Collections' },
-    { id: 'channels', icon: <Hash />, label: 'Channels', count: channels.length },
+    { id: 'channels', icon: <Hash />, label: 'Sources', count: channels.length },
     { id: 'analysis', icon: <BarChart2 />, label: 'Analysis' },
     { id: 'circles', icon: <Users />, label: 'Focus Circles' },
     { id: 'settings', icon: <SettingsIcon />, label: 'Settings' },
@@ -1435,6 +1476,7 @@ export default function App() {
                           <StaggerItem key={video.id}>
                             <VideoCard
                               video={video}
+                              collections={collections}
                               scrapeVersion={scrapeVersion}
                               onRemove={() => handleDelete(video.id)}
                               onExport={handleExport}
@@ -1444,6 +1486,7 @@ export default function App() {
                               onUpdateTranscript={handleUpdateTranscript}
                               onSetUrgency={handleSetUrgency}
                               onSetExpiry={handleSetExpiry}
+                              onSetCollection={handleSetCollection}
                             />
                           </StaggerItem>
                         ))}
@@ -1474,6 +1517,7 @@ export default function App() {
                                 <StaggerItem key={video.id}>
                                   <VideoCard
                                     video={video}
+                                    collections={collections}
                                     scrapeVersion={scrapeVersion}
                                     onRemove={() => handleDelete(video.id)}
                                     onExport={handleExport}
@@ -1483,6 +1527,7 @@ export default function App() {
                                     onUpdateTranscript={handleUpdateTranscript}
                                     onSetUrgency={handleSetUrgency}
                                     onSetExpiry={handleSetExpiry}
+                                    onSetCollection={handleSetCollection}
                                   />
                                 </StaggerItem>
                               ))}
@@ -1498,69 +1543,7 @@ export default function App() {
               {/* ─── Collections Tab ─── */}
               {activeTab === 'collections' && <Collections />}
 
-              {activeTab === 'channels' && (
-                <div>
-                  <SlideUp><h2 className="text-3xl font-bold mb-6">Saved Channels</h2></SlideUp>
-                  {channels.length === 0 ? (
-                    <FadeIn className="text-center py-24 text-[var(--dq-text-muted)] border border-dashed border-[var(--dq-border)] rounded-2xl">
-                      <Hash className="w-12 h-12 mx-auto mb-4 opacity-40" />
-                      <p className="font-medium">No channels detected yet.</p>
-                      <p className="text-sm mt-1 text-[var(--dq-text-subtle)]">Save some videos — channels will appear here automatically.</p>
-                    </FadeIn>
-                  ) : (
-                    <StaggerList className="grid gap-3">
-                      {channels.map(ch => (
-                        <StaggerItem key={ch.id}>
-                          <HoverCard 
-                            className="glass-card p-4 flex items-center justify-between group cursor-pointer hover:border-lime-500/30 transition-all"
-                            onClick={() => { setSearchQuery(ch.name); setActiveTab('videos'); }}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-11 h-11 rounded-full bg-lime-500/10 border border-lime-500/20 flex items-center justify-center text-lime-400 font-bold text-lg overflow-hidden shrink-0">
-                                {ch.authorImage ? (
-                                  <img src={ch.authorImage} alt={ch.name} className="w-full h-full object-cover" />
-                                ) : (
-                                  ch.name?.[0]?.toUpperCase() || '?'
-                                )}
-                              </div>
-                              <div>
-                                {ch.url ? (
-                                  <a href={ch.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="font-semibold text-sm hover:text-lime-300 transition-colors flex items-center gap-1">
-                                    {ch.name} <ExternalLink className="w-3 h-3 opacity-60" />
-                                  </a>
-                                ) : (
-                                  <p className="font-semibold text-sm text-[var(--dq-text)]">{ch.name}</p>
-                                )}
-                                <div className="text-xs text-[var(--dq-text-muted)] mt-1.5 flex items-center gap-2">
-                                  <span>Saves: {ch.videoCount ?? 1}</span>
-                                  {ch.platform && (
-                                    <Badge variant="glass" className="scale-90 origin-left px-2 py-0 bg-black/30 backdrop-blur-md">
-                                      {ch.platform}
-                                    </Badge>
-                                  )}
-                                  {ch.contentTypes && ch.contentTypes.length > 0 && (
-                                    <Badge variant="outline" className="scale-90 origin-left px-2 py-0 capitalize text-lime-400 border-lime-500/20">
-                                      {ch.contentTypes.join(', ')}
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={e => { e.stopPropagation(); setSearchQuery(ch.name); setActiveTab('videos'); }}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-[var(--dq-border)] bg-[var(--dq-bg)] hover:bg-lime-500/10 hover:text-lime-400 transition-colors"
-                              >
-                                View Queue
-                              </button>
-                            </div>
-                          </HoverCard>
-                        </StaggerItem>
-                      ))}
-                    </StaggerList>
-                  )}
-                </div>
-              )}
+              {activeTab === 'channels' && <Channels videos={videos} />}
 
               {/* ─── Analysis Tab ─── */}
               {activeTab === 'analysis' && <DigitalWellbeing videos={videos} />}

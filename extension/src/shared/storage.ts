@@ -266,6 +266,12 @@ export function installStorageListeners(): void {
       };
       notify(STORAGE_KEYS.POMODORO, localPomodoro);
     }
+    if (changes[STORAGE_KEYS.COLLECTIONS] && !isSelfWrite(STORAGE_KEYS.COLLECTIONS)) {
+      localCollections = Array.isArray(changes[STORAGE_KEYS.COLLECTIONS].newValue)
+        ? changes[STORAGE_KEYS.COLLECTIONS].newValue
+        : [];
+      notify(STORAGE_KEYS.COLLECTIONS, localCollections);
+    }
   });
 }
 
@@ -402,11 +408,17 @@ export function updateQueueItem(id: string, patch: Partial<QueueItem>): QueueIte
   if (patch.notifiedExpiry !== undefined) {
     validatedPatch.notifiedExpiry = Boolean(patch.notifiedExpiry);
   }
+  if ('collection' in patch) {
+    validatedPatch.collection = patch.collection === undefined || patch.collection === null
+      ? undefined
+      : String(patch.collection);
+  }
 
   localQueue = localQueue.map((item) => 
     item.id === id ? { ...item, ...validatedPatch, updatedAt: Date.now() } : item
   );
   storageSet(STORAGE_KEYS.QUEUE, localQueue);
+  notify(STORAGE_KEYS.QUEUE, localQueue);
   return localQueue.find(item => item.id === id) || null;
 }
 
@@ -707,6 +719,7 @@ export function addCollection(collection: Omit<SavedCollection, 'id' | 'createdA
   };
   localCollections = [...localCollections, newCol];
   storageSet(STORAGE_KEYS.COLLECTIONS, localCollections);
+  notify(STORAGE_KEYS.COLLECTIONS, localCollections);
   return newCol;
 }
 
@@ -715,19 +728,27 @@ export function updateCollection(id: string, patch: Partial<SavedCollection>): S
     c.id === id ? { ...c, ...patch, updatedAt: Date.now() } : c
   );
   storageSet(STORAGE_KEYS.COLLECTIONS, localCollections);
+  notify(STORAGE_KEYS.COLLECTIONS, localCollections);
   return localCollections.find(c => c.id === id) || null;
 }
 
 export function deleteCollection(id: string): void {
+  // Look up the collection name BEFORE removing it
+  const deletedCol = localCollections.find(c => c.id === id);
+  const deletedName = deletedCol?.name;
   localCollections = localCollections.filter(c => c.id !== id);
-  // Remove collection assignment from all items
-  localQueue = localQueue.map(item =>
-    item.collection === (localCollections.find(c => c.id === id)?.name)
-      ? { ...item, collection: undefined, updatedAt: Date.now() }
-      : item
-  );
+  // Remove collection assignment from all items that belonged to this collection
+  if (deletedName) {
+    localQueue = localQueue.map(item =>
+      item.collection === deletedName
+        ? { ...item, collection: undefined, updatedAt: Date.now() }
+        : item
+    );
+    storageSet(STORAGE_KEYS.QUEUE, localQueue);
+    notify(STORAGE_KEYS.QUEUE, localQueue);
+  }
   storageSet(STORAGE_KEYS.COLLECTIONS, localCollections);
-  storageSet(STORAGE_KEYS.QUEUE, localQueue);
+  notify(STORAGE_KEYS.COLLECTIONS, localCollections);
 }
 
 // --- Item Filters ---

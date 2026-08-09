@@ -32,7 +32,7 @@ const defaultMessages: Record<string, string> = {
   'dashboard.channels': 'Channels',
   'dashboard.analysis': 'Analysis',
   'dashboard.settings': 'Settings',
-  'dashboard.circles': 'Circles',
+  'dashboard.circles': 'Collections',
   'plant.thriving': 'Thriving',
   'plant.okay': 'Okay',
   'plant.wilting': 'Wilting',

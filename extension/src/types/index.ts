@@ -180,6 +180,7 @@ export interface SavedCollection {
   name: string;
   color?: string;   // hex color e.g. '#84cc16'
   icon?: string;    // emoji or lucide icon name
+  image?: string;   // preset image ID or URL
   createdAt: number;
   updatedAt?: number;
 }
