@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "Dopaqueue",
+    "slug": "dopaqueue-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dopaqueue.app"
+    },
+    "android": {
+      "package": "com.dopaqueue.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#15803d",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            { "scheme": "https" },
+            { "scheme": "http" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "plugins": [
+      [
+        "expo-share-intent",
+        {
+          "ios": {
+            "bundleId": "com.dopaqueue.app.ShareExtension"
+          }
+        }
+      ],
+      "react-native-android-widget"
+    ],
+    "scheme": "dopaqueue"
+  }
+}
