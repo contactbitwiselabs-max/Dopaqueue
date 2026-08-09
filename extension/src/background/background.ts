@@ -791,18 +791,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!tab?.windowId) { safeSendResponse({ ok: false, error: 'No active window' }); return; }
         safeSendResponse({ ok: true }); // Immediately unblock popup
 
-        const fullDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
+        const fullDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
 
         // Manually parse base64 to avoid fetch issues
         const [header, base64] = fullDataUrl.split(',');
-        const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const mimeType = header.match(/:(.*?);/)?.[1] || 'image/png';
         const binary = atob(base64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         const blob = new Blob([bytes], { type: mimeType });
 
         // Save blob
-        const blobId = await saveBlob(blob, 'image/jpeg');
+        const blobId = await saveBlob(blob, 'image/png');
         const tinyThumb = await compressDataUrl(fullDataUrl, 0.6, 200);
 
         const url = tab.url || '';
@@ -861,7 +861,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         // Convert base64 back to Blob
         const [header, base64] = fullBlobEntry.data.split(',');
-        const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const mimeType = header.match(/:(.*?);/)?.[1] || 'image/png';
         const binary = atob(base64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -879,7 +879,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!ctx) throw new Error('No 2d context');
         ctx.drawImage(bitmap, rect.x * dpr, rect.y * dpr, rect.width * dpr, rect.height * dpr, 0, 0, cropW, cropH);
 
-        const croppedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+        const croppedBlob = await canvas.convertToBlob({ type: 'image/png' });
 
         // 3. Create tiny thumbnail
         const thumbW = Math.min(200, cropW);
@@ -887,7 +887,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const thumbCanvas = new OffscreenCanvas(thumbW, thumbH);
         const thumbCtx = thumbCanvas.getContext('2d');
         if (thumbCtx) thumbCtx.drawImage(bitmap, rect.x * dpr, rect.y * dpr, rect.width * dpr, rect.height * dpr, 0, 0, thumbW, thumbH);
-        const thumbBlob = await thumbCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.6 });
+        const thumbBlob = await thumbCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.6 }); // Keep thumbnail as JPEG for size
 
         const thumbArrayBuffer = await thumbBlob.arrayBuffer();
         const thumbUint8 = new Uint8Array(thumbArrayBuffer);
@@ -895,10 +895,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         for (let i = 0; i < thumbUint8.length; i += 8192) {
           thumbB64 += String.fromCharCode(...thumbUint8.subarray(i, i + 8192));
         }
-        const tinyThumb = `data:image/jpeg;base64,${btoa(thumbB64)}`;
+        const tinyThumb = `data:image/jpeg;base64,${btoa(thumbB64)}`; // Thumbnail as JPEG
 
         // 4. Save cropped blob, delete original full blob
-        const newBlobId = await saveBlob(croppedBlob, 'image/jpeg');
+        const newBlobId = await saveBlob(croppedBlob, 'image/png');
         await deleteBlob(message.blobId).catch(() => { }); // cleanup original
 
         // 5. Save to Queue

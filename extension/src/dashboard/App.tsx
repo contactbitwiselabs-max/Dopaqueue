@@ -6,7 +6,8 @@ import {
   Clock, LogIn, X, AlertCircle, LogOut, RefreshCw, Film, Zap, Image,
   ChevronDown, Search, Users, ExternalLink, TrendingUp, Send,
   Timer, Pause, Play, BarChart2, FileDown, Plus, Folder, Sparkles,
-  Shield, Copy, Share2, Leaf, Edit2, FileText, CalendarIcon, Camera, Link2, LayoutGrid
+  Shield, Copy, Share2, Leaf, Edit2, FileText, CalendarIcon, Camera, Link2, LayoutGrid,
+  ZoomIn, ZoomOut, Maximize, Hand, MousePointer2
 } from 'lucide-react';
 import {
   initStorage, getSavedVideos, getSavedChannels, subscribe,
@@ -361,6 +362,13 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
   const [isExpiryDialogOpen, setIsExpiryDialogOpen] = useState(false);
   const [showScreenshotPreview, setShowScreenshotPreview] = useState(false);
   const [screenshotBlobData, setScreenshotBlobData] = useState<string | null>(null);
+  
+  // Pan and Zoom state
+  const [zoomLevel, setZoomLevel] = useState(0); // 0 means 'fit to screen'
+  const [isPanMode, setIsPanMode] = useState(true);
+  const [isDragging, setIsDragging] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const isScreenshot = (video.type === 'screenshot' || video.contentType === 'screenshot');
 
@@ -428,6 +436,44 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
     if (noteText.trim() !== (video.note || video.notes || '')) {
       onUpdateNotes(video.id, noteText.trim());
     }
+  };
+
+  // Zoom and Pan Handlers
+  const handleZoomIn = () => {
+    setZoomLevel(prev => (prev === 0 ? 100 : prev) + 25);
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => {
+      if (prev === 0) return 75;
+      const next = prev - 25;
+      return next < 25 ? 25 : next;
+    });
+  };
+
+  const handleZoomReset = () => {
+    setZoomLevel(0);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!isPanMode || zoomLevel === 0) return;
+    setIsDragging(true);
+    setPanStart({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !isPanMode || zoomLevel === 0) return;
+    const dx = e.clientX - panStart.x;
+    const dy = e.clientY - panStart.y;
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollLeft -= dx;
+      scrollContainerRef.current.scrollTop -= dy;
+    }
+    setPanStart({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseUpOrLeave = () => {
+    setIsDragging(false);
   };
 
   return (
@@ -569,9 +615,9 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
             <DropdownMenuContent align="start">
               <DropdownMenuLabel>Export as</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {(['markdown', 'csv', 'json', 'notion', 'obsidian'] as ExportFormat[]).map(fmt => (
+              {(['markdown', 'csv', 'json', 'notion', 'obsidian', ...(isScreenshot ? ['image'] : [])] as ExportFormat[]).map(fmt => (
                 <DropdownMenuItem key={fmt} onClick={() => onExport(video, fmt)}>
-                  {fmt.charAt(0).toUpperCase() + fmt.slice(1)}
+                  {fmt === 'image' ? 'Image (PNG)' : fmt.charAt(0).toUpperCase() + fmt.slice(1)}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -767,6 +813,27 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
                   {video.sourceDomain || new URL(video.url || 'about:blank').hostname.replace(/^www\./, '')} · {formatDateTime(video.savedAt)}
                 </DialogDescription>
               </div>
+
+              {/* Zoom & Pan Toolbar */}
+              <div className="flex items-center gap-1 bg-black/50 p-1 rounded-lg border border-zinc-800 mr-2">
+                <Button size="icon" variant="ghost" className={`w-7 h-7 ${isPanMode ? 'text-lime-400 bg-lime-500/10' : 'text-zinc-400'}`} onClick={() => setIsPanMode(true)} title="Hand Tool (Pan)">
+                  <Hand className="w-3.5 h-3.5" />
+                </Button>
+                <Button size="icon" variant="ghost" className={`w-7 h-7 ${!isPanMode ? 'text-lime-400 bg-lime-500/10' : 'text-zinc-400'}`} onClick={() => setIsPanMode(false)} title="Select Tool">
+                  <MousePointer2 className="w-3.5 h-3.5" />
+                </Button>
+                <div className="w-px h-4 bg-zinc-800 mx-1" />
+                <Button size="icon" variant="ghost" className="w-7 h-7 text-zinc-400" onClick={handleZoomOut} title="Zoom Out">
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="ghost" className="h-7 px-2 text-xs font-medium text-zinc-300 w-14" onClick={handleZoomReset} title="Fit to Screen">
+                  {zoomLevel === 0 ? 'Fit' : `${zoomLevel}%`}
+                </Button>
+                <Button size="icon" variant="ghost" className="w-7 h-7 text-zinc-400" onClick={handleZoomIn} title="Zoom In">
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+
               <a
                 href={video.url}
                 target="_blank"
@@ -777,15 +844,29 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
                 Visit page
               </a>
             </DialogHeader>
-            <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-zinc-950">
+            <div 
+              ref={scrollContainerRef}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUpOrLeave}
+              onMouseLeave={handleMouseUpOrLeave}
+              className={`flex-1 overflow-auto p-4 bg-zinc-950 select-none ${zoomLevel === 0 && 'flex items-center justify-center'} ${isPanMode ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
+            >
               {screenshotBlobData ? (
                 <img
                   src={screenshotBlobData}
                   alt={video.title || 'Screenshot'}
-                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                  draggable={false}
+                  className="rounded-lg shadow-2xl origin-top-left transition-transform duration-200"
+                  style={{
+                    maxWidth: zoomLevel === 0 ? '100%' : 'none',
+                    maxHeight: zoomLevel === 0 ? '100%' : 'none',
+                    width: zoomLevel === 0 ? undefined : `${zoomLevel}%`,
+                    objectFit: 'contain'
+                  }}
                 />
               ) : (
-                <div className="flex flex-col items-center gap-3 text-[var(--dq-text-muted)]">
+                <div className="flex flex-col items-center gap-3 text-[var(--dq-text-muted)] w-full justify-center mt-20">
                   <Camera className="w-12 h-12 opacity-30" />
                   <p className="text-sm">Screenshot image unavailable</p>
                 </div>
@@ -1046,17 +1127,28 @@ export default function App() {
 
   const handleSignOut = async () => { await supabaseClient.auth.signOut(); setUser(null); };
 
-  const handleExport = (video: QueueItem, format: ExportFormat) => {
+  const handleExport = async (video: QueueItem, format: ExportFormat) => {
+    if (format === 'image' && video.blobId) {
+      const blob = await getBlob(video.blobId);
+      if (blob?.data) {
+        const a = document.createElement('a');
+        a.href = blob.data;
+        a.download = `${video.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'screenshot'}.png`;
+        a.click();
+      }
+      return;
+    }
+    
     const scrape = getScrapeResult(video.url);
     const item = { title: video.title, url: video.url, type: detectContentType(video.url, video.contentType || video.type as string), genre: (scrape as any)?.genre || 'Unknown', channel: (scrape as any)?.channel || 'Unknown', savedAt: video.savedAt, transcript: (scrape as any)?.transcript || '', tags: video.tags || [], urgency: video.urgency };
-    const handlers: Record<ExportFormat, () => [string, string, string]> = {
+    const handlers: Record<Exclude<ExportFormat, 'image'>, () => [string, string, string]> = {
       markdown: () => [exportToMarkdown([item], video.title), buildExportFilename('markdown', video.title), 'text/markdown'],
       csv: () => [exportToCSV([item]), buildExportFilename('csv', video.title), 'text/csv'],
       json: () => [exportToJSON([item]), buildExportFilename('json', video.title), 'application/json'],
       notion: () => [exportToNotion([item]), buildExportFilename('markdown', `${video.title}-notion`), 'text/markdown'],
       obsidian: () => [exportToObsidian([item]), buildExportFilename('markdown', `${video.title}-obsidian`), 'text/markdown'],
     };
-    const [content, filename, mimeType] = handlers[format]();
+    const [content, filename, mimeType] = handlers[format as Exclude<ExportFormat, 'image'>]();
     downloadFile(content, filename, mimeType);
   };
 

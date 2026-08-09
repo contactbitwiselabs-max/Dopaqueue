@@ -238,18 +238,18 @@ export default function App() {
 
       if (type === 'CAPTURE_SCREENSHOT_VISIBLE') {
         // Capture directly from the popup — no background message needed
-        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
 
         // Convert base64 to Blob
         const [header, b64] = dataUrl.split(',');
-        const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const mime = header.match(/:(.*?);/)?.[1] || 'image/png';
         const binary = atob(b64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         const blob = new Blob([bytes], { type: mime });
 
         // Save to IndexedDB
-        const blobId = await saveBlob(blob, 'image/jpeg');
+        const blobId = await saveBlob(blob, 'image/png');
         const tinyThumb = await compressDataUrl(dataUrl, 0.6, 200);
 
         const url = tab.url || '';
@@ -277,16 +277,16 @@ export default function App() {
       } else {
         // Area selection:
         // 1. Capture the full screen NOW while the popup is open and has permissions
-        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
         
         // 2. Convert and save to IndexedDB immediately
         const [header, b64] = dataUrl.split(',');
-        const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const mime = header.match(/:(.*?);/)?.[1] || 'image/png';
         const binary = atob(b64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         const blob = new Blob([bytes], { type: mime });
-        const fullBlobId = await saveBlob(blob, 'image/jpeg');
+        const fullBlobId = await saveBlob(blob, 'image/png');
 
         // 3. Inject the overlay UI into the page, passing the fullBlobId
         await chrome.scripting.executeScript({

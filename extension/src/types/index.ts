@@ -3,7 +3,7 @@
 export type ContentType = 'video' | 'short' | 'reel' | 'post' | 'image' | 'article' | 'screenshot' | 'link';
 export type UrgencyLevel = 'Tomorrow' | 'Weekend' | 'Reference' | 'Unscheduled';
 export type ThemeMode = 'light' | 'dark' | 'system';
-export type ExportFormat = 'markdown' | 'csv' | 'json' | 'notion' | 'obsidian';
+export type ExportFormat = 'markdown' | 'csv' | 'json' | 'notion' | 'obsidian' | 'image';
 export type AuthProvider = 'google' | 'github';
 export type BlobType = 'screenshot' | 'article' | 'image';
 
