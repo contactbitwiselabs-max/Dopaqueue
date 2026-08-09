@@ -107,7 +107,7 @@ export async function saveBlob(
 ): Promise<string> {
   const db = await openDB();
   const id = `blob_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  
+
   let itemId = '';
   let type: BlobType = 'screenshot';
   let dataStr = '';
@@ -117,12 +117,17 @@ export async function saveBlob(
     // Called as: saveBlob(blobOrDataUrl, mimeType?, type?, itemId?)
     if (arg1 instanceof Blob) {
       mimeType = (arg2 as string) || arg1.type || 'image/jpeg';
-      dataStr = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve((reader.result as string) || '');
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(arg1);
-      });
+      try {
+        const buffer = await arg1.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i += 8192) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+        }
+        dataStr = `data:${mimeType};base64,${btoa(binary)}`;
+      } catch (err) {
+        dataStr = '';
+      }
     } else {
       dataStr = arg1;
       mimeType = (arg2 as string) || 'image/jpeg';

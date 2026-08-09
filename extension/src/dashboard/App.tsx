@@ -359,6 +359,22 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
       : '12:00'
   );
   const [isExpiryDialogOpen, setIsExpiryDialogOpen] = useState(false);
+  const [showScreenshotPreview, setShowScreenshotPreview] = useState(false);
+  const [screenshotBlobData, setScreenshotBlobData] = useState<string | null>(null);
+
+  const isScreenshot = (video.type === 'screenshot' || video.contentType === 'screenshot');
+
+  useEffect(() => {
+    if (isScreenshot && video.blobId) {
+      getBlob(video.blobId).then(blob => {
+        if (blob?.data) setScreenshotBlobData(blob.data);
+      }).catch(() => {});
+    }
+  }, [isScreenshot, video.blobId]);
+
+  const handleCardClick = () => {
+    if (isScreenshot) setShowScreenshotPreview(true);
+  };
 
   useEffect(() => {
     isChromeAIAvailable().then(setChromeAIAvailable);
@@ -417,7 +433,10 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
   return (
     <HoverCard className="glass-card group flex flex-col h-full border border-[var(--dq-border)] hover:border-lime-500/20 transition-colors duration-300">
       {/* Thumbnail */}
-      <div className="relative h-36 bg-[var(--dq-surface)] rounded-t-2xl overflow-hidden">
+      <div
+        className={`relative h-36 bg-[var(--dq-surface)] rounded-t-2xl overflow-hidden${isScreenshot ? ' cursor-pointer' : ''}`}
+        onClick={isScreenshot ? handleCardClick : undefined}
+      >
         <SmartThumbnail video={video} typeCfg={typeCfg} />
         <div className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 max-w-[80%]">
           <Badge variant={typeCfg.variant}>{typeCfg.label}</Badge>
@@ -444,10 +463,20 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
 
       <div className="flex-1 flex flex-col p-4">
         {/* Title */}
-        <a href={video.url} target="_blank" rel="noreferrer" className="font-semibold text-sm text-[var(--dq-text)] line-clamp-2 hover:text-lime-300 transition-colors leading-snug mb-2 flex items-start gap-1.5 group/link">
-          <span className="flex-1">{video.title || 'Untitled'}</span>
-          <ExternalLink className="w-3.5 h-3.5 text-[var(--dq-text-muted)] group-hover/link:text-lime-400 shrink-0 mt-0.5 transition-colors" />
-        </a>
+        {isScreenshot ? (
+          <button
+            onClick={handleCardClick}
+            className="font-semibold text-sm text-[var(--dq-text)] line-clamp-2 hover:text-lime-300 transition-colors leading-snug mb-2 flex items-start gap-1.5 group/link text-left w-full"
+          >
+            <span className="flex-1">{video.title || 'Untitled'}</span>
+            <Camera className="w-3.5 h-3.5 text-[var(--dq-text-muted)] group-hover/link:text-lime-400 shrink-0 mt-0.5 transition-colors" />
+          </button>
+        ) : (
+          <a href={video.url} target="_blank" rel="noreferrer" className="font-semibold text-sm text-[var(--dq-text)] line-clamp-2 hover:text-lime-300 transition-colors leading-snug mb-2 flex items-start gap-1.5 group/link">
+            <span className="flex-1">{video.title || 'Untitled'}</span>
+            <ExternalLink className="w-3.5 h-3.5 text-[var(--dq-text-muted)] group-hover/link:text-lime-400 shrink-0 mt-0.5 transition-colors" />
+          </a>
+        )}
 
         {(() => {
           const authorName = scrape.channel || scrape.author || (video as any).channel || (video as any).author;
@@ -725,6 +754,46 @@ function VideoCard({ video, onRemove, onExport, onReadArticle, onUpdateTags, onU
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Screenshot Lightbox */}
+      {isScreenshot && showScreenshotPreview && (
+        <Dialog open={showScreenshotPreview} onOpenChange={setShowScreenshotPreview}>
+          <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden flex flex-col bg-[#0a0a0a] border-zinc-800 p-0">
+            <DialogHeader className="p-4 pb-2 border-b border-zinc-800 flex flex-row items-center gap-3 space-y-0">
+              <Camera className="w-4 h-4 text-lime-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <DialogTitle className="text-sm text-[var(--dq-text)] truncate">{video.title || 'Screenshot'}</DialogTitle>
+                <DialogDescription className="text-xs text-[var(--dq-text-muted)] mt-0.5">
+                  {video.sourceDomain || new URL(video.url || 'about:blank').hostname.replace(/^www\./, '')} · {formatDateTime(video.savedAt)}
+                </DialogDescription>
+              </div>
+              <a
+                href={video.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 text-xs text-lime-400 hover:text-lime-300 transition-colors shrink-0 px-2 py-1 rounded-md hover:bg-lime-500/10"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Visit page
+              </a>
+            </DialogHeader>
+            <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-zinc-950">
+              {screenshotBlobData ? (
+                <img
+                  src={screenshotBlobData}
+                  alt={video.title || 'Screenshot'}
+                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-3 text-[var(--dq-text-muted)]">
+                  <Camera className="w-12 h-12 opacity-30" />
+                  <p className="text-sm">Screenshot image unavailable</p>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </HoverCard>
   );
 }

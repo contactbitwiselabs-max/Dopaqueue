@@ -335,6 +335,13 @@ export function validateQueueItem(item: any): Partial<QueueItem> | null {
     note: item.note || undefined,
     expiryDate: typeof item.expiryDate === 'number' ? item.expiryDate : undefined,
     notifiedExpiry: Boolean(item.notifiedExpiry),
+    // Preserve blob/screenshot fields
+    blobId: typeof item.blobId === 'string' ? item.blobId : undefined,
+    sourceDomain: typeof item.sourceDomain === 'string' ? item.sourceDomain.slice(0, 200) : undefined,
+    collection: typeof item.collection === 'string' ? item.collection.slice(0, 100) : undefined,
+    authorImage: typeof item.authorImage === 'string' ? item.authorImage : undefined,
+    authorUrl2: typeof item.authorUrl2 === 'string' ? item.authorUrl2 : undefined,
+    description: typeof item.description === 'string' ? item.description.slice(0, 2000) : undefined,
   };
 
   // Remove null/undefined values

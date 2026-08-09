@@ -4,7 +4,11 @@
 // budgetMinutesUsed. Popup only reads game state and appends to the
 // queue, so there's a single writer for the time-based decay logic.
 
-import { supabaseClient } from '../shared/supabase.js';
+// supabase is loaded lazily via dynamic import() to avoid pulling GoTrue auth
+// library code into the service worker startup — GoTrue calls
+// addEventListener('visibilitychange', ...) at module evaluation time which
+// crashes MV3 service workers with "document is not defined".
+import './mock-dom';
 import { isMindlessScrollUrl, isScrollTimerUrl, STORAGE_KEYS, todayLocalDateString } from '../shared/constants.js';
 import {
   initStorage,
@@ -21,7 +25,11 @@ import {
   getSettings,
   localGameState,
 } from '../shared/storage.js';
+// NOTE: getActiveFocusedTab, safeSendResponse, and detectPlatformFromUrl are
+// all defined locally in this file — no external import needed.
+import { getBlob, saveBlob, deleteBlob, compressDataUrl } from '../shared/blobStore.js';
 import { autoSyncItem } from '../shared/sync.js';
+
 
 const BUDGET_TICK_ALARM = 'budgetTick';
 const REVIEW_DECK_ALARM = 'reviewDeckTick';
@@ -692,10 +700,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Merge tags: content scripts may send either 'tags' or 'scrapedTags'
       const rawTags = Array.isArray(message.tags) ? message.tags
         : Array.isArray(message.scrapedTags) ? message.scrapedTags
-        : [];
+          : [];
 
       const generateId = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
-      
+
       const entry = {
         id: generateId(),
         url,
@@ -768,6 +776,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // ─── Notification Click Handler ───────────────────────────────────────
+  chrome.notifications.onClicked.addListener((notificationId) => {
+    // If user clicks a notification (e.g. screenshot saved), open the dashboard
+    chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+    chrome.notifications.clear(notificationId);
+  });
+
   // ─── Screenshot handlers ──────────────────────────────────────────────────
   if (message?.type === 'CAPTURE_SCREENSHOT_VISIBLE') {
     (async () => {
@@ -775,9 +790,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const tab = await getActiveFocusedTab();
         if (!tab?.windowId) { safeSendResponse({ ok: false, error: 'No active window' }); return; }
         safeSendResponse({ ok: true }); // Immediately unblock popup
-        
+
         const fullDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
-        
+
         // Manually parse base64 to avoid fetch issues
         const [header, base64] = fullDataUrl.split(',');
         const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
@@ -787,7 +802,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const blob = new Blob([bytes], { type: mimeType });
 
         // Save blob
-        const { saveBlob, compressDataUrl } = await import('../shared/blobStore.js');
         const blobId = await saveBlob(blob, 'image/jpeg');
         const tinyThumb = await compressDataUrl(fullDataUrl, 0.6, 200);
 
@@ -809,12 +823,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           watched: false,
         };
 
-        const { addToQueue, getSettings } = await import('../shared/storage.js');
+        await initStorage();
         addToQueue(entry);
 
         const settings = getSettings();
         if (settings.autoSyncEnabled) {
-          const { autoSyncItem } = await import('../shared/sync.js');
           autoSyncItem(entry).catch(e => console.warn('Sync failed', e));
         }
 
@@ -824,7 +837,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           title: 'DopaQueue',
           message: 'Full page screenshot saved to Queue!',
         });
-        broadcastState();
       } catch (err) {
         console.error('Visible screenshot error:', err);
       }
@@ -832,130 +844,65 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === 'CAPTURE_SCREENSHOT_AREA') {
-    (async () => {
-      try {
-        const tab = await getActiveFocusedTab();
-        if (!tab?.id) { safeSendResponse({ ok: false, error: 'No active tab' }); return; }
 
-        safeSendResponse({ ok: true, status: 'overlay_injected' });
-
-        // Inject the overlay as an inline function — avoids hashed file-path issues in MV3.
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => {
-            // Don't inject twice
-            if (document.getElementById('dq-screenshot-overlay')) return;
-
-            const overlay = document.createElement('div');
-            overlay.id = 'dq-screenshot-overlay';
-            overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;cursor:crosshair;background:rgba(0,0,0,0.35);user-select:none;';
-
-            const selection = document.createElement('div');
-            selection.id = 'dq-screenshot-selection';
-            selection.style.cssText = 'position:absolute;border:2px solid #a3e635;background:rgba(163,230,53,0.08);box-shadow:0 0 0 9999px rgba(0,0,0,0.3);pointer-events:none;display:none;';
-
-            const hint = document.createElement('div');
-            hint.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-family:system-ui,sans-serif;font-size:15px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,0.8);pointer-events:none;text-align:center;line-height:1.5;';
-            hint.textContent = 'Drag to select the area to capture\nPress Esc to cancel';
-
-            overlay.appendChild(selection);
-            overlay.appendChild(hint);
-            document.body.appendChild(overlay);
-
-            let startX = 0, startY = 0, dragging = false;
-
-            function getRect(x1, y1, x2, y2) {
-              return { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) };
-            }
-            function updateSel(cx, cy) {
-              const r = getRect(startX, startY, cx, cy);
-              selection.style.left = r.x + 'px'; selection.style.top = r.y + 'px';
-              selection.style.width = r.width + 'px'; selection.style.height = r.height + 'px';
-            }
-            function cleanup() {
-              document.removeEventListener('keydown', onEsc);
-              overlay.remove();
-            }
-            function onEsc(e) {
-              if (e.key === 'Escape') { cleanup(); chrome.runtime.sendMessage({ type: 'SCREENSHOT_AREA_CANCELLED' }); }
-            }
-
-            overlay.addEventListener('mousedown', (e) => {
-              if (e.button !== 0) return;
-              dragging = true; startX = e.clientX; startY = e.clientY;
-              hint.style.display = 'none'; selection.style.display = 'block';
-              updateSel(e.clientX, e.clientY);
-            });
-            overlay.addEventListener('mousemove', (e) => { if (dragging) updateSel(e.clientX, e.clientY); });
-            overlay.addEventListener('mouseup', (e) => {
-              if (!dragging) return;
-              dragging = false;
-              const rect = getRect(startX, startY, e.clientX, e.clientY);
-              cleanup();
-              if (rect.width < 10 || rect.height < 10) {
-                chrome.runtime.sendMessage({ type: 'SCREENSHOT_AREA_CANCELLED' }); return;
-              }
-              chrome.runtime.sendMessage({
-                type: 'SCREENSHOT_AREA_SELECTED',
-                rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height), devicePixelRatio: window.devicePixelRatio || 1 },
-              });
-            });
-            document.addEventListener('keydown', onEsc);
-          },
-        });
-      } catch (err) {
-        console.error('Screenshot area init error:', err);
-      }
-    })();
-    return true;
-  }
 
 
   if (message?.type === 'SCREENSHOT_AREA_SELECTED') {
     (async () => {
       try {
         const tab = sender.tab || (await getActiveFocusedTab());
-        if (!tab?.windowId) { safeSendResponse({ ok: false, error: 'No active tab/window' }); return; }
-        const fullDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
+        if (!tab?.id) { safeSendResponse({ ok: false, error: 'No active tab' }); return; }
 
-        // Crop using OffscreenCanvas
-        const rect = message.rect;
-        const dpr = (typeof rect.devicePixelRatio === 'number' && rect.devicePixelRatio > 0)
-          ? rect.devicePixelRatio
-          : 1;
-        // Manually convert dataUrl to Blob to avoid fetch() issues in MV3 Service Workers
-        const [header, base64] = fullDataUrl.split(',');
+        // 1. Load the pre-captured full screen blob that the popup saved
+        const fullBlobEntry = await getBlob(message.blobId);
+        if (!fullBlobEntry?.data) {
+          throw new Error('Failed to load full screen capture from storage');
+        }
+
+        // Convert base64 back to Blob
+        const [header, base64] = fullBlobEntry.data.split(',');
         const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
         const binary = atob(base64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        const blob = new Blob([bytes], { type: mimeType });
-        const bitmap = await createImageBitmap(blob);
+        const fullBlob = new Blob([bytes], { type: mimeType });
+        const bitmap = await createImageBitmap(fullBlob);
 
-        const cropW = Math.round(rect.width * dpr);
-        const cropH = Math.round(rect.height * dpr);
+        // 2. Crop it
+        const rect = message.rect;
+        const dpr = (typeof rect.devicePixelRatio === 'number' && rect.devicePixelRatio > 0) ? rect.devicePixelRatio : 1;
+        const cropW = Math.max(1, Math.round(rect.width * dpr));
+        const cropH = Math.max(1, Math.round(rect.height * dpr));
+
         const canvas = new OffscreenCanvas(cropW, cropH);
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('No 2d context');
-
         ctx.drawImage(bitmap, rect.x * dpr, rect.y * dpr, rect.width * dpr, rect.height * dpr, 0, 0, cropW, cropH);
 
         const croppedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
 
-        // Save full image blob to IndexedDB
-        const { saveBlob, compressDataUrl } = await import('../shared/blobStore.js');
-        const blobId = await saveBlob(croppedBlob, 'image/jpeg');
+        // 3. Create tiny thumbnail
+        const thumbW = Math.min(200, cropW);
+        const thumbH = Math.round(cropH * (thumbW / cropW));
+        const thumbCanvas = new OffscreenCanvas(thumbW, thumbH);
+        const thumbCtx = thumbCanvas.getContext('2d');
+        if (thumbCtx) thumbCtx.drawImage(bitmap, rect.x * dpr, rect.y * dpr, rect.width * dpr, rect.height * dpr, 0, 0, thumbW, thumbH);
+        const thumbBlob = await thumbCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.6 });
 
-        // Create tiny 2KB thumbnail for instant UI display
-        const croppedDataUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve((reader.result as string) || '');
-          reader.readAsDataURL(croppedBlob);
-        });
-        const tinyThumb = await compressDataUrl(croppedDataUrl, 0.6, 200);
+        const thumbArrayBuffer = await thumbBlob.arrayBuffer();
+        const thumbUint8 = new Uint8Array(thumbArrayBuffer);
+        let thumbB64 = '';
+        for (let i = 0; i < thumbUint8.length; i += 8192) {
+          thumbB64 += String.fromCharCode(...thumbUint8.subarray(i, i + 8192));
+        }
+        const tinyThumb = `data:image/jpeg;base64,${btoa(thumbB64)}`;
 
-        // Create and save QueueItem
+        // 4. Save cropped blob, delete original full blob
+        const newBlobId = await saveBlob(croppedBlob, 'image/jpeg');
+        await deleteBlob(message.blobId).catch(() => { }); // cleanup original
+
+        // 5. Save to Queue
+        await initStorage();
         const url = tab.url || '';
         const domain = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
 
@@ -969,17 +916,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           type: 'screenshot',
           tags: [],
           sourceDomain: domain,
-          blobId,
+          blobId: newBlobId,
           savedAt: Date.now(),
           watched: false,
         };
 
-        const { addToQueue, getSettings } = await import('../shared/storage.js');
         addToQueue(entry);
 
         const settings = getSettings();
         if (settings.autoSyncEnabled) {
-          const { autoSyncItem } = await import('../shared/sync.js');
           autoSyncItem(entry).catch(e => console.warn('Sync failed', e));
         }
 
@@ -991,8 +936,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
 
         safeSendResponse({ ok: true });
-        broadcastState();
       } catch (err) {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: chrome.runtime.getURL('src/icons/icon48.png'),
+          title: 'DopaQueue Error',
+          message: `Area screenshot error: ${err instanceof Error ? err.message : String(err)}`,
+        });
         console.error('Error processing area screenshot:', err);
         safeSendResponse({ ok: false, error: String(err) });
       }
@@ -1001,7 +951,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === 'SCREENSHOT_AREA_CANCELLED') {
-    sendResponse({ ok: true });
+    if (message.blobId) {
+      deleteBlob(message.blobId).catch(() => { });
+    }
+    safeSendResponse({ ok: true });
     return false;
   }
 

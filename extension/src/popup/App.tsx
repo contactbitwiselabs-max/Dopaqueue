@@ -219,6 +219,23 @@ export default function App() {
         throw new Error('No active tab found');
       }
 
+      // Guard: captureVisibleTab and executeScript don't work on restricted pages
+      const tabUrl = tab.url || '';
+      if (
+        tabUrl.startsWith('chrome://') ||
+        tabUrl.startsWith('chrome-extension://') ||
+        tabUrl.startsWith('edge://') ||
+        tabUrl.startsWith('about:') ||
+        tabUrl.startsWith('devtools://') ||
+        tabUrl.startsWith('view-source:') ||
+        tabUrl === '' ||
+        tabUrl.startsWith('https://chrome.google.com/webstore') ||
+        tabUrl.startsWith('https://chromewebstore.google.com') ||
+        tabUrl.startsWith('https://microsoftedge.microsoft.com/addons')
+      ) {
+        throw new Error('Screenshots are not available on this page. Try a regular website.');
+      }
+
       if (type === 'CAPTURE_SCREENSHOT_VISIBLE') {
         // Capture directly from the popup — no background message needed
         const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
@@ -258,12 +275,24 @@ export default function App() {
         setTimeout(() => setSaveStatus('idle'), 3000);
 
       } else {
-        // Area selection: inject the overlay UI into the page
-        // The popup closes so the user can see the page and select an area.
-        // We listen for the result message before closing.
+        // Area selection:
+        // 1. Capture the full screen NOW while the popup is open and has permissions
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
+        
+        // 2. Convert and save to IndexedDB immediately
+        const [header, b64] = dataUrl.split(',');
+        const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: mime });
+        const fullBlobId = await saveBlob(blob, 'image/jpeg');
+
+        // 3. Inject the overlay UI into the page, passing the fullBlobId
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          func: () => {
+          args: [fullBlobId],
+          func: (injectedBlobId) => {
             if (document.getElementById('dq-screenshot-overlay')) return;
 
             const overlay = document.createElement('div');
@@ -296,8 +325,8 @@ export default function App() {
               document.removeEventListener('keydown', onEsc);
               overlay.remove();
             }
-            function onEsc(e) {
-              if (e.key === 'Escape') { cleanup(); chrome.runtime.sendMessage({ type: 'SCREENSHOT_AREA_CANCELLED' }); }
+            function onEsc(e: KeyboardEvent) {
+              if (e.key === 'Escape') { cleanup(); chrome.runtime.sendMessage({ type: 'SCREENSHOT_AREA_CANCELLED', blobId: injectedBlobId }); }
             }
 
             overlay.addEventListener('mousedown', (e) => {
@@ -313,10 +342,11 @@ export default function App() {
               const rect = getRect(startX, startY, e.clientX, e.clientY);
               cleanup();
               if (rect.width < 10 || rect.height < 10) {
-                chrome.runtime.sendMessage({ type: 'SCREENSHOT_AREA_CANCELLED' }); return;
+                chrome.runtime.sendMessage({ type: 'SCREENSHOT_AREA_CANCELLED', blobId: injectedBlobId }); return;
               }
               chrome.runtime.sendMessage({
                 type: 'SCREENSHOT_AREA_SELECTED',
+                blobId: injectedBlobId,
                 rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height), devicePixelRatio: window.devicePixelRatio || 1 },
               });
             });
@@ -324,7 +354,6 @@ export default function App() {
           },
         });
 
-        // Close the popup so the user can interact with the page overlay
         setSaveStatus('idle');
         window.close();
       }
