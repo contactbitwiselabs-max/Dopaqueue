@@ -2,27 +2,28 @@ import React from 'react';
 import { View, Text, Image, TouchableOpacity, Animated } from 'react-native';
 import withObservables from '@nozbe/with-observables';
 import QueueItem from '../database/models/QueueItem';
-import { CheckCheck, Trash2 } from 'lucide-react-native';
+import { CheckCheck, Trash2, Pin } from 'lucide-react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
+import { colors, spacing, typography, borderRadius, shadows } from '../constants/theme';
 
 // --- Helpers ---
 function getPlatformInfo(url: string, platform?: string): { label: string; color: string; bg: string } {
   const u = (platform || url || '').toLowerCase();
   if (u.includes('youtube') || u.includes('youtu.be')) return { label: 'YouTube', color: '#FF0000', bg: '#FEE2E2' };
-  if (u.includes('twitter') || u.includes('x.com'))   return { label: 'X (Twitter)', color: '#111827', bg: '#F3F4F6' };
+  if (u.includes('twitter') || u.includes('x.com'))   return { label: 'X (Twitter)', color: colors.text, bg: colors.surface };
   if (u.includes('instagram'))                         return { label: 'Instagram', color: '#c026d3', bg: '#FAE8FF' };
-  if (u.includes('tiktok'))                            return { label: 'TikTok', color: '#111827', bg: '#F3F4F6' };
+  if (u.includes('tiktok'))                            return { label: 'TikTok', color: colors.text, bg: colors.surface };
   if (u.includes('reddit'))                            return { label: 'Reddit', color: '#EA580C', bg: '#FFF7ED' };
-  if (u.includes('medium') || u.includes('.blog') || u.includes('substack')) return { label: 'Article', color: '#4B5563', bg: '#F9FAFB' };
-  return { label: 'Link', color: '#4B5563', bg: '#F3F4F6' };
+  if (u.includes('medium') || u.includes('.blog') || u.includes('substack')) return { label: 'Article', color: colors.textMuted, bg: colors.surface };
+  return { label: 'Link', color: colors.textMuted, bg: colors.surface };
 }
 
 function getUrgencyDot(urgency?: string): string | null {
   if (!urgency || urgency === 'Unscheduled') return null;
-  if (urgency === 'Tomorrow' || urgency === 'High') return '#EF4444'; // red
-  if (urgency === 'Weekend' || urgency === 'Medium') return '#EAB308'; // yellow
-  return '#3B82F6'; // blue – Whenever / Low
+  if (urgency === 'Tomorrow' || urgency === 'High') return colors.urgencyMustSee;
+  if (urgency === 'Weekend' || urgency === 'Medium') return colors.urgencySoon;
+  return colors.urgencyWhenever;
 }
 
 function timeAgo(ts: number): string {
@@ -41,9 +42,10 @@ interface Props {
   onPress: (item: QueueItem) => void;
   onArchive?: (item: QueueItem) => void;
   onDelete?: (item: QueueItem) => void;
+  onLongPress?: (item: QueueItem) => void;
 }
 
-const SaveItemComponent = ({ item, onPress, onArchive, onDelete }: Props) => {
+const SaveItemComponent = ({ item, onPress, onArchive, onDelete, onLongPress }: Props) => {
   const platformInfo = getPlatformInfo(item.url, item.platform);
   const urgencyColor = getUrgencyDot(item.urgency);
 
@@ -57,11 +59,11 @@ const SaveItemComponent = ({ item, onPress, onArchive, onDelete }: Props) => {
     return (
       <TouchableOpacity
         onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onDelete && onDelete(item); }}
-        style={{ width: 80, marginBottom: 12, marginRight: 16, borderRadius: 16, backgroundColor: '#EF4444', justifyContent: 'center', alignItems: 'center' }}
+        style={{ width: 80, marginBottom: spacing.sm + 4, marginRight: spacing.md, borderRadius: borderRadius.xl, backgroundColor: colors.danger, justifyContent: 'center', alignItems: 'center' }}
       >
         <Animated.View style={{ transform: [{ scale }], alignItems: 'center' }}>
-          <Trash2 color="#fff" size={22} />
-          <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700', marginTop: 4 }}>Delete</Text>
+          <Trash2 color={colors.textLight} size={22} />
+          <Text style={{ color: colors.textLight, fontSize: 11, fontWeight: '700', marginTop: spacing.xs }}>Delete</Text>
         </Animated.View>
       </TouchableOpacity>
     );
@@ -77,11 +79,11 @@ const SaveItemComponent = ({ item, onPress, onArchive, onDelete }: Props) => {
     return (
       <TouchableOpacity
         onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onArchive && onArchive(item); }}
-        style={{ width: 80, marginBottom: 12, marginLeft: 16, borderRadius: 16, backgroundColor: '#16a34a', justifyContent: 'center', alignItems: 'center' }}
+        style={{ width: 80, marginBottom: spacing.sm + 4, marginLeft: spacing.md, borderRadius: borderRadius.xl, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' }}
       >
         <Animated.View style={{ transform: [{ scale }], alignItems: 'center' }}>
-          <CheckCheck color="#fff" size={22} />
-          <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700', marginTop: 4 }}>Archive</Text>
+          <CheckCheck color={colors.textLight} size={22} />
+          <Text style={{ color: colors.textLight, fontSize: 11, fontWeight: '700', marginTop: spacing.xs }}>Archive</Text>
         </Animated.View>
       </TouchableOpacity>
     );
@@ -100,24 +102,20 @@ const SaveItemComponent = ({ item, onPress, onArchive, onDelete }: Props) => {
       <TouchableOpacity
         activeOpacity={0.75}
         onPress={() => { Haptics.selectionAsync(); onPress(item); }}
+        onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onLongPress && onLongPress(item); }}
         style={{
-          backgroundColor: '#ffffff',
-          marginHorizontal: 16,
-          marginBottom: 12,
-          borderRadius: 16,
-          padding: 12,
+          backgroundColor: colors.background,
+          marginHorizontal: spacing.md,
+          marginBottom: spacing.sm + 4,
+          borderRadius: borderRadius.xl,
+          padding: spacing.lg / 2,
           flexDirection: 'row',
           alignItems: 'center',
-          // Subtle card shadow
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.06,
-          shadowRadius: 4,
-          elevation: 2,
+          ...shadows.sm,
         }}
       >
         {/* Thumbnail */}
-        <View style={{ width: 90, height: 64, borderRadius: 10, overflow: 'hidden', backgroundColor: '#F3F4F6', flexShrink: 0 }}>
+        <View style={{ width: 90, height: 64, borderRadius: borderRadius.md + 2, overflow: 'hidden', backgroundColor: colors.surface, flexShrink: 0 }}>
           {item.thumbnail ? (
             <Image source={{ uri: item.thumbnail }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
           ) : (
@@ -129,38 +127,40 @@ const SaveItemComponent = ({ item, onPress, onArchive, onDelete }: Props) => {
           )}
           {/* Platform badge — small pill at bottom of thumb */}
           <View style={{
-            position: 'absolute', bottom: 4, left: 4,
-            backgroundColor: platformInfo.bg, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6,
+            position: 'absolute', bottom: spacing.xs, left: spacing.xs,
+            backgroundColor: platformInfo.bg, paddingHorizontal: 5, paddingVertical: 2, borderRadius: borderRadius.md - 2,
           }}>
             <Text style={{ fontSize: 9, fontWeight: '700', color: platformInfo.color }}>{platformInfo.label}</Text>
           </View>
         </View>
 
         {/* Content */}
-        <View style={{ flex: 1, marginLeft: 12, justifyContent: 'center' }}>
+        <View style={{ flex: 1, marginLeft: spacing.md, justifyContent: 'center' }}>
           {/* Title */}
-          <Text numberOfLines={2} style={{ fontSize: 14, fontWeight: '600', color: '#111827', lineHeight: 19 }}>
+          <Text numberOfLines={2} style={{ ...typography.bodyMedium, fontSize: 14, color: colors.text, lineHeight: 19 }}>
             {item.title || item.url}
           </Text>
           {/* Meta row */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6, flexWrap: 'wrap' }}>
-            <Text style={{ fontSize: 12, color: '#9CA3AF' }}>{timeAgo(item.savedAt)}</Text>
+            <Text style={{ ...typography.caption, color: colors.textMuted }}>{timeAgo(item.savedAt)}</Text>
             {item.collection ? (
-              <View style={{ backgroundColor: '#F3F4F6', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 99 }}>
-                <Text style={{ fontSize: 11, color: '#6B7280', fontWeight: '500' }}>#{item.collection}</Text>
+              <View style={{ backgroundColor: colors.surface, paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.full }}>
+                <Text style={{ fontSize: 11, color: colors.textMuted, fontWeight: '500' }}>#{item.collection}</Text>
               </View>
             ) : null}
           </View>
         </View>
 
-        {/* Urgency dot — top right corner */}
-        {urgencyColor ? (
-          <View style={{
-            position: 'absolute', top: 12, right: 12,
-            width: 8, height: 8, borderRadius: 4,
-            backgroundColor: urgencyColor,
-          }} />
-        ) : null}
+        {/* Urgency dot and Pin — top right corner */}
+        <View style={{ position: 'absolute', top: spacing.md, right: spacing.md, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {item.isPinned ? <Pin size={14} color={colors.warning} fill={colors.warning} /> : null}
+          {urgencyColor ? (
+            <View style={{
+              width: 8, height: 8, borderRadius: borderRadius.full,
+              backgroundColor: urgencyColor,
+            }} />
+          ) : null}
+        </View>
       </TouchableOpacity>
     </Swipeable>
   );

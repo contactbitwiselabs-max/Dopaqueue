@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb'
 
 export default appSchema({
-  version: 1,
+  version: 2,
   tables: [
     tableSchema({
       name: 'queue_items',
@@ -20,6 +20,8 @@ export default appSchema({
         { name: 'deleted', type: 'boolean' },
         { name: 'collection', type: 'string', isOptional: true },
         { name: 'expiry_date', type: 'number', isOptional: true },
+        { name: 'is_pinned', type: 'boolean' },
+        { name: 'tags', type: 'string', isOptional: true },
       ]
     }),
     tableSchema({

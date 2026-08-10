@@ -1,23 +1,24 @@
 import React, { useState } from 'react';
-import { View, Text, SafeAreaView, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, SafeAreaView, TouchableOpacity, FlatList } from 'react-native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import withObservables from '@nozbe/with-observables';
 import { database } from '../database';
 import QueueItem from '../database/models/QueueItem';
 import { Q } from '@nozbe/watermelondb';
 import SaveItem from '../components/SaveItem';
 import SaveDetailSheet from '../components/SaveDetailSheet';
+import { ChevronLeft } from 'lucide-react-native';
 import { colors, typography, spacing } from '../constants/theme';
-import { ArchiveRestore } from 'lucide-react-native';
+import EmptyInboxAnimation from '../components/EmptyInboxAnimation';
 
-interface Props {
-  archivedItems: QueueItem[];
-}
-
-const ArchiveScreenComponent = ({ archivedItems }: Props) => {
+const CollectionDetailScreenComponent = ({ queueItems }: { queueItems: QueueItem[] }) => {
+  const route = useRoute();
+  const navigation = useNavigation();
+  const { collectionName } = route.params as { collectionName: string };
   const [selectedItem, setSelectedItem] = useState<QueueItem | null>(null);
 
-  const handleUnarchive = async (item: QueueItem) => {
-    await database.write(async () => { await item.update(i => { i.watched = false; }); });
+  const handleArchive = async (item: QueueItem) => {
+    await database.write(async () => { await item.update(i => { i.watched = true; }); });
   };
   
   const handleDelete = async (item: QueueItem) => {
@@ -30,28 +31,28 @@ const ArchiveScreenComponent = ({ archivedItems }: Props) => {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
-      <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md }}>
-        <Text style={{ ...typography.h1, color: colors.text }}>Archive</Text>
-        <Text style={{ ...typography.body, color: colors.textMuted, marginTop: 4 }}>
-          {archivedItems.length} items completed
-        </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md }}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: spacing.md }}>
+          <ChevronLeft color={colors.text} size={28} />
+        </TouchableOpacity>
+        <Text style={{ flex: 1, ...typography.h1, color: colors.text }}>{collectionName}</Text>
       </View>
 
-      {archivedItems.length === 0 ? (
+      {queueItems.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ArchiveRestore color={colors.textLight} size={48} style={{ opacity: 0.2, marginBottom: spacing.md }} />
-          <Text style={{ ...typography.h3, color: colors.textMuted }}>Your archive is empty.</Text>
+          <EmptyInboxAnimation />
+          <Text style={{ ...typography.h3, color: colors.textMuted, marginTop: spacing.md }}>No items here yet.</Text>
         </View>
       ) : (
         <FlatList
-          data={archivedItems}
+          data={queueItems}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <SaveItem
               item={item}
               onPress={setSelectedItem}
               onLongPress={handleLongPress}
-              onArchive={handleUnarchive} // Archiving from Archive puts it back to Inbox
+              onArchive={handleArchive}
               onDelete={handleDelete}
             />
           )}
@@ -69,14 +70,16 @@ const ArchiveScreenComponent = ({ archivedItems }: Props) => {
   );
 };
 
-const enhance = withObservables([], () => ({
-  archivedItems: database.collections
+const enhance = withObservables(['route'], ({ route }) => ({
+  queueItems: database.collections
     .get<QueueItem>('queue_items')
     .query(
       Q.where('deleted', false),
-      Q.where('watched', true),
+      Q.where('watched', false),
+      Q.where('collection', route.params.collectionName),
+      Q.sortBy('is_pinned', Q.desc),
       Q.sortBy('saved_at', Q.desc)
     )
 }));
 
-export default enhance(ArchiveScreenComponent);
+export default enhance(CollectionDetailScreenComponent);

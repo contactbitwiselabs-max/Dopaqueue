@@ -2,13 +2,18 @@ import React, { useState } from 'react';
 import {
   View, Text, FlatList, SafeAreaView, TouchableOpacity, ScrollView,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import withObservables from '@nozbe/with-observables';
 import { database } from '../database';
 import QueueItem from '../database/models/QueueItem';
 import { Q } from '@nozbe/watermelondb';
 import SaveItem from '../components/SaveItem';
 import SaveDetailSheet from '../components/SaveDetailSheet';
-import { LayoutGrid, SlidersHorizontal } from 'lucide-react-native';
+import { LayoutGrid, SlidersHorizontal, Zap, List, KanbanSquare, Search } from 'lucide-react-native';
+import { colors, typography, spacing, borderRadius } from '../constants/theme';
+import EmptyInboxAnimation from '../components/EmptyInboxAnimation';
+import SaveCardGallery from '../components/SaveCardGallery';
+import SaveKanbanBoard from '../components/SaveKanbanBoard';
 
 // Filter pill definitions
 const FILTERS = [
@@ -24,19 +29,29 @@ interface Props {
 }
 
 const InboxScreenComponent = ({ queueItems }: Props) => {
+  const navigation = useNavigation<any>();
   const [activeFilter, setActiveFilter] = useState('all');
   const [selectedItem, setSelectedItem] = useState<QueueItem | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'gallery' | 'board'>('list');
 
-  const handleItemPress = (item: QueueItem) => {
-    setSelectedItem(item);
-  };
-
+  const handleItemPress = (item: QueueItem) => setSelectedItem(item);
+  
   const handleArchive = async (item: QueueItem) => {
     await database.write(async () => { await item.update(i => { i.watched = true; }); });
   };
-
+  
   const handleDelete = async (item: QueueItem) => {
     await database.write(async () => { await item.update(i => { i.deleted = true; }); });
+  };
+
+  const handleLongPress = async (item: QueueItem) => {
+    await database.write(async () => { await item.update(i => { i.isPinned = !i.isPinned; }); });
+  };
+
+  const toggleViewMode = () => {
+    if (viewMode === 'list') setViewMode('gallery');
+    else if (viewMode === 'gallery') setViewMode('board');
+    else setViewMode('list');
   };
 
   // Client-side filter
@@ -50,15 +65,20 @@ const InboxScreenComponent = ({ queueItems }: Props) => {
   });
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
       {/* ── Header ── */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
-        <Text style={{ flex: 1, fontSize: 28, fontWeight: '800', color: '#111827' }}>Inbox</Text>
-        <TouchableOpacity style={{ marginRight: 12 }}>
-          <LayoutGrid color="#6B7280" size={22} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md }}>
+        <Text style={{ flex: 1, ...typography.h1, color: colors.text }}>Inbox</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Search')} style={{ marginRight: spacing.md }}>
+          <Search color={colors.textMuted} size={22} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={toggleViewMode} style={{ marginRight: spacing.md }}>
+          {viewMode === 'list' ? <List color={colors.textMuted} size={22} /> :
+           viewMode === 'gallery' ? <LayoutGrid color={colors.textMuted} size={22} /> :
+           <KanbanSquare color={colors.textMuted} size={22} />}
         </TouchableOpacity>
         <TouchableOpacity>
-          <SlidersHorizontal color="#6B7280" size={22} />
+          <SlidersHorizontal color={colors.textMuted} size={22} />
         </TouchableOpacity>
       </View>
 
@@ -66,7 +86,7 @@ const InboxScreenComponent = ({ queueItems }: Props) => {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12, flexDirection: 'row', alignItems: 'center' }}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md, flexDirection: 'row', alignItems: 'center' }}
       >
         {FILTERS.map((f, index) => {
           const active = activeFilter === f.id;
@@ -77,14 +97,14 @@ const InboxScreenComponent = ({ queueItems }: Props) => {
               style={{
                 paddingHorizontal: 14,
                 paddingVertical: 7,
-                borderRadius: 99,
-                backgroundColor: active ? '#16a34a' : '#ffffff',
+                borderRadius: borderRadius.full,
+                backgroundColor: active ? colors.primary : colors.background,
                 borderWidth: 1,
-                borderColor: active ? '#16a34a' : '#E5E7EB',
-                marginRight: index < FILTERS.length - 1 ? 8 : 0,
+                borderColor: active ? colors.primary : colors.border,
+                marginRight: index < FILTERS.length - 1 ? spacing.sm : 0,
               }}
             >
-              <Text style={{ fontSize: 13, fontWeight: '600', color: active ? '#ffffff' : '#374151' }}>
+              <Text style={{ ...typography.bodyMedium, fontSize: 13, color: active ? colors.textLight : colors.textMuted }}>
                 {f.label}
               </Text>
             </TouchableOpacity>
@@ -94,55 +114,68 @@ const InboxScreenComponent = ({ queueItems }: Props) => {
 
       {/* ── List or Empty State ── */}
       {filteredItems.length === 0 ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
-          {/* Big green circle checkmark */}
-          <View style={{
-            width: 100, height: 100, borderRadius: 50,
-            backgroundColor: '#DCFCE7',
-            alignItems: 'center', justifyContent: 'center',
-            marginBottom: 24,
-          }}>
-            <View style={{
-              width: 72, height: 72, borderRadius: 36,
-              backgroundColor: '#16a34a',
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Text style={{ fontSize: 36, color: '#fff' }}>✓</Text>
-            </View>
-          </View>
-          <Text style={{ fontSize: 22, fontWeight: '800', color: '#111827', textAlign: 'center', marginBottom: 8 }}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xxl }}>
+          
+          <EmptyInboxAnimation />
+
+          <Text style={{ ...typography.h2, color: colors.text, textAlign: 'center', marginBottom: spacing.sm }}>
             You're all caught up!
           </Text>
-          <Text style={{ fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22 }}>
+          <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center', lineHeight: 22 }}>
             Your dopamine budget{'\n'}is balanced.
           </Text>
+          
           <TouchableOpacity
             style={{
-              marginTop: 28,
+              marginTop: spacing.xl,
               flexDirection: 'row', alignItems: 'center',
-              backgroundColor: '#16a34a',
-              paddingHorizontal: 24, paddingVertical: 14,
-              borderRadius: 99,
+              backgroundColor: colors.primary,
+              paddingHorizontal: spacing.lg, paddingVertical: 14,
+              borderRadius: borderRadius.full,
+              shadowColor: colors.primary,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 8,
+              elevation: 4,
             }}
           >
-            <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>⚡ Smart Save Something</Text>
+            <Zap color={colors.textLight} size={18} fill={colors.textLight} style={{ marginRight: 6 }} />
           </TouchableOpacity>
         </View>
       ) : (
-        <FlatList
-          data={filteredItems}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <SaveItem
-              item={item}
-              onPress={handleItemPress}
-              onArchive={handleArchive}
-              onDelete={handleDelete}
+        <View style={{ flex: 1 }}>
+          {viewMode === 'list' && (
+            <FlatList
+              data={filteredItems}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <SaveItem
+                  item={item}
+                  onPress={handleItemPress}
+                  onLongPress={handleLongPress}
+                  onArchive={handleArchive}
+                  onDelete={handleDelete}
+                />
+              )}
+              contentContainerStyle={{ paddingTop: spacing.xs, paddingBottom: 120 }}
+              showsVerticalScrollIndicator={false}
             />
           )}
-          contentContainerStyle={{ paddingTop: 4, paddingBottom: 120 }}
-          showsVerticalScrollIndicator={false}
-        />
+          {viewMode === 'gallery' && (
+            <SaveCardGallery
+              items={filteredItems}
+              onPress={handleItemPress}
+              onLongPress={handleLongPress}
+            />
+          )}
+          {viewMode === 'board' && (
+            <SaveKanbanBoard
+              items={filteredItems}
+              onPress={handleItemPress}
+              onLongPress={handleLongPress}
+            />
+          )}
+        </View>
       )}
 
       {/* ── Save Detail Bottom Sheet ── */}
@@ -161,6 +194,7 @@ const enhance = withObservables([], () => ({
     .query(
       Q.where('deleted', false),
       Q.where('watched', false),
+      Q.sortBy('is_pinned', Q.desc),
       Q.sortBy('saved_at', Q.desc)
     )
 }));

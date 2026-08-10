@@ -3,15 +3,17 @@ import {
   View, Text, ScrollView, SafeAreaView, TouchableOpacity, Modal,
   TextInput, Dimensions,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import withObservables from '@nozbe/with-observables';
 import { database } from '../database';
 import Collection from '../database/models/Collection';
 import QueueItem from '../database/models/QueueItem';
 import { Q } from '@nozbe/watermelondb';
 import { Plus, X, Brain, Popcorn, Code2, BookOpen, Lightbulb, Briefcase, Star, Heart, Music, Globe } from 'lucide-react-native';
+import { colors, spacing, typography, borderRadius, shadows } from '../constants/theme';
 
 const { width } = Dimensions.get('window');
-const CARD_SIZE = (width - 48) / 2; // 2 columns, 16px side padding + 16px gap
+const CARD_SIZE = (width - spacing.xxl) / 2; // 2 columns, padding considerations
 
 // Icon picker options for new collection modal
 const ICON_OPTIONS = [
@@ -27,21 +29,54 @@ const ICON_OPTIONS = [
   { key: 'globe',    icon: Globe,     color: '#0369A1', bg: '#E0F2FE' },
 ];
 
-const COLOR_OPTIONS = ['#16a34a', '#2563EB', '#7C3AED', '#DC2626', '#D97706', '#0D9488', '#E11D48', '#F59E0B'];
-
-// Preset collections to seed in case DB is empty (matching the mockup)
-const PRESET_COLLECTIONS = [
-  { name: 'Learn & Grow',    icon: 'brain',   color: '#7C3AED', bg: '#EDE9FE', count: 24 },
-  { name: 'Entertainment',   icon: 'popcorn', color: '#DC2626', bg: '#FEE2E2', count: 18 },
-  { name: 'Coding',          icon: 'code',    color: '#2563EB', bg: '#DBEAFE', count: 32 },
-  { name: 'Books & Articles',icon: 'book',    color: '#9333EA', bg: '#F3E8FF', count: 15 },
-  { name: 'Ideas & Inspiration', icon: 'idea', color: '#D97706', bg: '#FEF3C7', count: 9 },
-  { name: 'Work & Career',   icon: 'work',    color: '#0D9488', bg: '#CCFBF1', count: 12 },
-];
+const COLOR_OPTIONS = [colors.primary, colors.info, '#7C3AED', colors.danger, colors.warning, '#0D9488', '#E11D48', '#F59E0B'];
 
 function getIconConfig(key?: string) {
   return ICON_OPTIONS.find(i => i.key === key) || ICON_OPTIONS[0];
 }
+
+const CollectionCard = ({ collection, count, onPress }: { collection: Collection, count: number, onPress: () => void }) => {
+  const iconConf = getIconConfig((collection as any).icon);
+  const IconComp = iconConf.icon;
+  return (
+    <View style={{ flex: 1 }}>
+      <TouchableOpacity
+        onPress={onPress}
+        style={{
+          flex: 1,
+          backgroundColor: colors.background,
+          borderRadius: borderRadius.xl,
+          padding: spacing.md,
+          minHeight: 160,
+          ...shadows.sm,
+          justifyContent: 'space-between',
+        }}
+      >
+        <View style={{
+          width: 52, height: 52, borderRadius: borderRadius.lg,
+          backgroundColor: iconConf.bg,
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <IconComp color={collection.color || colors.primary} size={28} />
+        </View>
+        <View>
+          <Text style={{ ...typography.bodyMedium, fontSize: 15, color: colors.text, marginBottom: 2 }} numberOfLines={2}>
+            {collection.name}
+          </Text>
+          <View style={{ height: 3, backgroundColor: colors.surface, borderRadius: 2, marginTop: 6, overflow: 'hidden' }}>
+            <View style={{ width: `${Math.min(100, (count / 40) * 100)}%` as any, height: '100%', backgroundColor: collection.color || colors.primary, borderRadius: 2 }} />
+          </View>
+          <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 4 }}>{count} saved</Text>
+        </View>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+const EnhancedCollectionCard = withObservables(['collection'], ({ collection }: { collection: Collection }) => ({
+  collection,
+  count: database.collections.get<QueueItem>('queue_items').query(Q.where('collection', collection.name), Q.where('deleted', false)).observeCount()
+}))(CollectionCard);
 
 interface Props {
   collections: Collection[];
@@ -49,22 +84,11 @@ interface Props {
 }
 
 const CollectionsScreenComponent = ({ collections, totalSaved }: Props) => {
+  const navigation = useNavigation<any>();
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [newName, setNewName] = useState('');
   const [selectedIcon, setSelectedIcon] = useState('brain');
-  const [selectedColor, setSelectedColor] = useState('#16a34a');
-
-  // Merge real DB collections with presets for display
-  const displayItems = collections.length > 0
-    ? collections.map(c => ({
-        id: c.id,
-        name: c.name,
-        icon: (c as any).icon || 'brain',
-        color: c.color || '#16a34a',
-        bg: getIconConfig((c as any).icon).bg,
-        count: 0, // TODO: query count per collection
-      }))
-    : PRESET_COLLECTIONS.map((p, i) => ({ id: String(i), ...p }));
+  const [selectedColor, setSelectedColor] = useState(colors.primary);
 
   const handleCreateCollection = async () => {
     if (!newName.trim()) return;
@@ -79,72 +103,28 @@ const CollectionsScreenComponent = ({ collections, totalSaved }: Props) => {
     setAddModalVisible(false);
   };
 
-  const renderCollectionCard = (item: typeof displayItems[0]) => {
-    const iconConf = getIconConfig(item.icon);
-    const IconComp = iconConf.icon;
-    return (
-      <View key={item.id} style={{ flex: 1 }}>
-        <TouchableOpacity
-          style={{
-            flex: 1,
-            backgroundColor: '#ffffff',
-            borderRadius: 20,
-            padding: 16,
-            minHeight: 160,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.06,
-            shadowRadius: 4,
-            elevation: 2,
-            justifyContent: 'space-between',
-          }}
-        >
-          {/* Icon block */}
-          <View style={{
-            width: 52, height: 52, borderRadius: 14,
-            backgroundColor: iconConf.bg,
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <IconComp color={item.color} size={28} />
-          </View>
-          {/* Bottom text */}
-          <View>
-            <Text style={{ fontSize: 15, fontWeight: '700', color: '#111827', marginBottom: 2 }} numberOfLines={2}>
-              {item.name}
-            </Text>
-            {/* Progress bar */}
-            <View style={{ height: 3, backgroundColor: '#F3F4F6', borderRadius: 2, marginTop: 6, overflow: 'hidden' }}>
-              <View style={{ width: `${Math.min(100, (item.count / 40) * 100)}%` as any, height: '100%', backgroundColor: item.color, borderRadius: 2 }} />
-            </View>
-            <Text style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>{item.count} saved</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
       {/* ── Header ── */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16 }}>
-        <Text style={{ flex: 1, fontSize: 28, fontWeight: '800', color: '#111827' }}>Collections</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md }}>
+        <Text style={{ flex: 1, ...typography.h1, color: colors.text }}>Collections</Text>
         <TouchableOpacity
           onPress={() => setAddModalVisible(true)}
-          style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#16a34a', alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: 36, height: 36, borderRadius: borderRadius.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Plus color="#fff" size={20} />
+          <Plus color={colors.textLight} size={20} />
         </TouchableOpacity>
       </View>
 
       {/* ── 2-column Grid using ScrollView for cross-platform compatibility ── */}
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
-        {Array.from({ length: Math.ceil(displayItems.length / 2) }, (_, rowIndex) => {
-          const left = displayItems[rowIndex * 2];
-          const right = displayItems[rowIndex * 2 + 1];
+      <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+        {Array.from({ length: Math.ceil(collections.length / 2) }, (_, rowIndex) => {
+          const left = collections[rowIndex * 2];
+          const right = collections[rowIndex * 2 + 1];
           return (
-            <View key={rowIndex} style={{ flexDirection: 'row', gap: 16, marginBottom: 16 }}>
-              {left ? renderCollectionCard(left) : null}
-              {right ? renderCollectionCard(right) : <View style={{ flex: 1 }} />}
+            <View key={rowIndex} style={{ flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md }}>
+              {left ? <EnhancedCollectionCard collection={left} onPress={() => navigation.navigate('CollectionDetail', { collectionName: left.name })} /> : <View style={{ flex: 1 }} />}
+              {right ? <EnhancedCollectionCard collection={right} onPress={() => navigation.navigate('CollectionDetail', { collectionName: right.name })} /> : <View style={{ flex: 1 }} />}
             </View>
           );
         })}
@@ -155,21 +135,21 @@ const CollectionsScreenComponent = ({ collections, totalSaved }: Props) => {
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }} activeOpacity={1} onPress={() => setAddModalVisible(false)} />
         <View style={{
           position: 'absolute', bottom: 0, left: 0, right: 0,
-          backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-          padding: 24, paddingBottom: 40,
+          backgroundColor: colors.background, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+          padding: spacing.xl, paddingBottom: 40,
         }}>
           {/* Modal Header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
-            <Text style={{ flex: 1, fontSize: 20, fontWeight: '800', color: '#111827' }}>New Collection</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg }}>
+            <Text style={{ flex: 1, ...typography.h3, color: colors.text }}>New Collection</Text>
             <TouchableOpacity onPress={() => setAddModalVisible(false)}>
-              <X color="#9CA3AF" size={24} />
+              <X color={colors.textMuted} size={24} />
             </TouchableOpacity>
           </View>
 
           {/* Icon Preview */}
-          <View style={{ alignItems: 'center', marginBottom: 20 }}>
+          <View style={{ alignItems: 'center', marginBottom: spacing.lg }}>
             <View style={{
-              width: 80, height: 80, borderRadius: 24,
+              width: 80, height: 80, borderRadius: borderRadius.xl,
               backgroundColor: getIconConfig(selectedIcon).bg,
               alignItems: 'center', justifyContent: 'center',
             }}>
@@ -182,17 +162,17 @@ const CollectionsScreenComponent = ({ collections, totalSaved }: Props) => {
             value={newName}
             onChangeText={setNewName}
             placeholder="Collection Name"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.textMuted}
             style={{
-              backgroundColor: '#F9FAFB', borderRadius: 12, padding: 14,
-              fontSize: 16, color: '#111827', borderWidth: 1, borderColor: '#F3F4F6',
-              marginBottom: 20,
+              backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md,
+              ...typography.body, color: colors.text, borderWidth: 1, borderColor: colors.border,
+              marginBottom: spacing.lg,
             }}
           />
 
           {/* Choose Icon */}
-          <Text style={{ fontSize: 13, fontWeight: '600', color: '#6B7280', marginBottom: 10 }}>Choose Icon</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+          <Text style={{ ...typography.bodyMedium, fontSize: 13, color: colors.textMuted, marginBottom: spacing.sm }}>Choose Icon</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.lg }}>
             {ICON_OPTIONS.map(opt => {
               const Ic = opt.icon;
               const active = selectedIcon === opt.key;
@@ -201,7 +181,7 @@ const CollectionsScreenComponent = ({ collections, totalSaved }: Props) => {
                   key={opt.key}
                   onPress={() => setSelectedIcon(opt.key)}
                   style={{
-                    width: 48, height: 48, borderRadius: 14, marginRight: 10,
+                    width: 48, height: 48, borderRadius: borderRadius.lg, marginRight: spacing.sm,
                     backgroundColor: opt.bg,
                     alignItems: 'center', justifyContent: 'center',
                     borderWidth: active ? 2 : 0,
@@ -215,17 +195,17 @@ const CollectionsScreenComponent = ({ collections, totalSaved }: Props) => {
           </ScrollView>
 
           {/* Choose Color */}
-          <Text style={{ fontSize: 13, fontWeight: '600', color: '#6B7280', marginBottom: 10 }}>Choose Color</Text>
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24 }}>
+          <Text style={{ ...typography.bodyMedium, fontSize: 13, color: colors.textMuted, marginBottom: spacing.sm }}>Choose Color</Text>
+          <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl }}>
             {COLOR_OPTIONS.map(col => (
               <TouchableOpacity
                 key={col}
                 onPress={() => setSelectedColor(col)}
                 style={{
-                  width: 32, height: 32, borderRadius: 16,
+                  width: 32, height: 32, borderRadius: borderRadius.full,
                   backgroundColor: col,
                   borderWidth: selectedColor === col ? 3 : 0,
-                  borderColor: '#fff',
+                  borderColor: colors.textLight,
                   shadowColor: col,
                   shadowOpacity: selectedColor === col ? 0.5 : 0,
                   shadowOffset: { width: 0, height: 2 },
@@ -240,13 +220,13 @@ const CollectionsScreenComponent = ({ collections, totalSaved }: Props) => {
           <TouchableOpacity
             onPress={handleCreateCollection}
             style={{
-              backgroundColor: '#16a34a', borderRadius: 14,
-              paddingVertical: 16, alignItems: 'center',
+              backgroundColor: colors.primary, borderRadius: borderRadius.xl,
+              paddingVertical: spacing.md, alignItems: 'center',
               opacity: newName.trim().length > 0 ? 1 : 0.5,
             }}
             disabled={!newName.trim()}
           >
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>Create Collection</Text>
+            <Text style={{ ...typography.bodyMedium, fontSize: 16, color: colors.textLight }}>Create Collection</Text>
           </TouchableOpacity>
         </View>
       </Modal>

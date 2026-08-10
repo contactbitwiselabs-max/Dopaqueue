@@ -1,109 +1,141 @@
-import React from 'react';
-import { View, Text, SafeAreaView, ScrollView, TouchableOpacity, Switch, Image } from 'react-native';
-import { Settings, Bell, Moon, ChevronRight, LogOut, Cloud, Shield, Star } from 'lucide-react-native';
+import React, { useState } from 'react';
+import { View, Text, SafeAreaView, TouchableOpacity, ScrollView, Switch, Alert, ActivityIndicator } from 'react-native';
+import { Settings, User, Bell, Shield, LogOut, Cloud, ChevronRight } from 'lucide-react-native';
+import { typography, spacing, borderRadius, useTheme } from '../constants/theme';
+import { syncDatabase } from '../database/sync';
+
+interface SettingRowProps {
+  icon: React.ReactNode;
+  label: string;
+  right?: React.ReactNode;
+  textColor?: string;
+  borderBottom?: boolean;
+}
+
+const SettingRow = ({ icon, label, right, textColor, borderBottom = true }: SettingRowProps) => {
+  const { colors: themeColors } = useTheme();
+  return (
+    <View style={{ 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      padding: spacing.md, 
+      borderBottomWidth: borderBottom ? 1 : 0, 
+      borderBottomColor: themeColors.border 
+    }}>
+      <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: themeColors.surface, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md }}>
+        {icon}
+      </View>
+      <Text style={{ flex: 1, ...typography.body, color: textColor || themeColors.text }}>{label}</Text>
+      {right || <ChevronRight color={themeColors.textMuted} size={20} />}
+    </View>
+  );
+};
 
 export default function ProfileScreen() {
-  const [isDarkMode, setIsDarkMode] = React.useState(false);
-  const [notifications, setNotifications] = React.useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<string | null>(null);
+
+  const { colors: themeColors, isDark } = useTheme();
+
+  const handleSync = async () => {
+    try {
+      setIsSyncing(true);
+      await syncDatabase();
+      setLastSync(new Date().toLocaleTimeString());
+      Alert.alert('Sync Complete', 'Your queue is up to date.');
+    } catch (e: any) {
+      Alert.alert('Sync Failed', e.message || 'Please check your connection and Supabase credentials.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-        
-        {/* Header & Profile */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 }}>
-          <Text style={{ fontSize: 28, fontWeight: '800', color: '#111827', marginBottom: 24 }}>Profile</Text>
-          
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-              <Text style={{ fontSize: 28, fontWeight: '700', color: '#16a34a' }}>AM</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: themeColors.background }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+        {/* ── Header ── */}
+        <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.lg }}>
+          <Text style={{ ...typography.h1, color: themeColors.text }}>Profile</Text>
+        </View>
+
+        {/* ── Profile Info ── */}
+        <View style={{ alignItems: 'center', marginBottom: spacing.xxl }}>
+          <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: themeColors.primaryLight, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md }}>
+            <User color={themeColors.primaryDark} size={40} />
+          </View>
+          <Text style={{ ...typography.h2, color: themeColors.text, marginBottom: 4 }}>Alex Hunter</Text>
+          <Text style={{ ...typography.body, color: themeColors.textMuted }}>alex@dopaqueue.app</Text>
+        </View>
+
+        {/* ── Cloud Sync ── */}
+        <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.xl }}>
+          <Text style={{ ...typography.h3, color: themeColors.text, marginBottom: spacing.md }}>Cloud Sync</Text>
+          <View style={{ backgroundColor: themeColors.surface, borderRadius: borderRadius.lg, padding: spacing.md, gap: spacing.md }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                <Cloud color={themeColors.textMuted} size={24} />
+                <View>
+                  <Text style={{ ...typography.bodyMedium, color: themeColors.text }}>Supabase Sync</Text>
+                  <Text style={{ ...typography.caption, color: themeColors.textMuted }}>
+                    {lastSync ? `Last synced: ${lastSync}` : 'Sync your saves across devices'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={handleSync}
+                disabled={isSyncing}
+                style={{
+                  backgroundColor: themeColors.primary,
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: borderRadius.full,
+                  opacity: isSyncing ? 0.7 : 1
+                }}
+              >
+                {isSyncing ? (
+                  <ActivityIndicator color={themeColors.textLight} size="small" />
+                ) : (
+                  <Text style={{ ...typography.bodyMedium, color: themeColors.textLight, fontSize: 13 }}>Sync Now</Text>
+                )}
+              </TouchableOpacity>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 20, fontWeight: '700', color: '#111827' }}>Amaan</Text>
-              <Text style={{ fontSize: 15, color: '#6B7280', marginTop: 2 }}>amaan@example.com</Text>
-            </View>
-            <TouchableOpacity style={{ backgroundColor: '#F3F4F6', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 99 }}>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151' }}>Edit</Text>
-            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Premium Banner */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 32 }}>
-          <View style={{ backgroundColor: '#111827', borderRadius: 20, padding: 20, flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-              <Star color="#FBBF24" size={24} fill="#FBBF24" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#ffffff' }}>DopaQueue Pro</Text>
-              <Text style={{ fontSize: 13, color: '#9CA3AF', marginTop: 2 }}>Unlimited saves & AI tags</Text>
-            </View>
-            <TouchableOpacity style={{ backgroundColor: '#16a34a', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 99 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#ffffff' }}>Upgrade</Text>
-            </TouchableOpacity>
+        {/* ── Settings Sections ── */}
+        <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.xl }}>
+          <Text style={{ ...typography.h3, color: themeColors.text, marginBottom: spacing.md }}>Preferences</Text>
+          <View style={{ backgroundColor: themeColors.surface, borderRadius: borderRadius.lg, overflow: 'hidden' }}>
+            <SettingRow
+              icon={<Bell color={themeColors.textMuted} size={20} />}
+              label="Push Notifications"
+              right={<Switch value={notificationsEnabled} onValueChange={setNotificationsEnabled} trackColor={{ true: themeColors.primary }} />}
+            />
+            <SettingRow
+              icon={<Settings color={themeColors.textMuted} size={20} />}
+              label="Dark Mode"
+              right={<Switch value={isDark} disabled trackColor={{ true: themeColors.primary }} />}
+              borderBottom={false}
+            />
           </View>
         </View>
 
-        {/* Settings Sections */}
-        <View style={{ paddingHorizontal: 20 }}>
-          
-          <Text style={{ fontSize: 14, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12, marginLeft: 8 }}>
-            Preferences
-          </Text>
-          <View style={{ backgroundColor: '#ffffff', borderRadius: 20, overflow: 'hidden', marginBottom: 24 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}>
-              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-                <Moon color="#3B82F6" size={20} />
-              </View>
-              <Text style={{ flex: 1, fontSize: 16, fontWeight: '500', color: '#111827' }}>Dark Mode</Text>
-              <Switch 
-                value={isDarkMode} 
-                onValueChange={setIsDarkMode}
-                trackColor={{ false: '#E5E7EB', true: '#16a34a' }}
-              />
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
-              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-                <Bell color="#D97706" size={20} />
-              </View>
-              <Text style={{ flex: 1, fontSize: 16, fontWeight: '500', color: '#111827' }}>Push Notifications</Text>
-              <Switch 
-                value={notifications} 
-                onValueChange={setNotifications}
-                trackColor={{ false: '#E5E7EB', true: '#16a34a' }}
-              />
-            </View>
+        <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.xl }}>
+          <Text style={{ ...typography.h3, color: themeColors.text, marginBottom: spacing.md }}>Account</Text>
+          <View style={{ backgroundColor: themeColors.surface, borderRadius: borderRadius.lg, overflow: 'hidden' }}>
+            <SettingRow
+              icon={<Shield color={themeColors.textMuted} size={20} />}
+              label="Privacy & Security"
+            />
+            <SettingRow
+              icon={<LogOut color={themeColors.danger} size={20} />}
+              label="Sign Out"
+              textColor={themeColors.danger}
+              borderBottom={false}
+            />
           </View>
-
-          <Text style={{ fontSize: 14, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12, marginLeft: 8 }}>
-            Account
-          </Text>
-          <View style={{ backgroundColor: '#ffffff', borderRadius: 20, overflow: 'hidden', marginBottom: 24 }}>
-            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}>
-              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#F3E8FF', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-                <Cloud color="#9333EA" size={20} />
-              </View>
-              <Text style={{ flex: 1, fontSize: 16, fontWeight: '500', color: '#111827' }}>Cloud Sync</Text>
-              <Text style={{ fontSize: 14, color: '#6B7280', marginRight: 8 }}>Synced just now</Text>
-              <ChevronRight color="#D1D5DB" size={20} />
-            </TouchableOpacity>
-            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
-              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#FCE7F3', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-                <Shield color="#DB2777" size={20} />
-              </View>
-              <Text style={{ flex: 1, fontSize: 16, fontWeight: '500', color: '#111827' }}>Privacy & Security</Text>
-              <ChevronRight color="#D1D5DB" size={20} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Log Out */}
-          <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#FEF2F2', borderRadius: 20 }}>
-            <LogOut color="#DC2626" size={20} style={{ marginRight: 8 }} />
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#DC2626' }}>Log Out</Text>
-          </TouchableOpacity>
-
         </View>
-
       </ScrollView>
     </SafeAreaView>
   );

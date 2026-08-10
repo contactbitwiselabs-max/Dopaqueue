@@ -19,4 +19,6 @@ export default class QueueItem extends Model {
   @field('deleted') deleted
   @field('collection') collection
   @field('expiry_date') expiryDate
+  @field('is_pinned') isPinned
+  @field('tags') tags
 }

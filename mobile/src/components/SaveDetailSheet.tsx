@@ -5,6 +5,9 @@ import {
 } from 'react-native';
 import { ExternalLink, FolderOpen, Clock, PenLine, X, Plus, Hash } from 'lucide-react-native';
 import QueueItem from '../database/models/QueueItem';
+import { colors, spacing, typography, borderRadius } from '../constants/theme';
+import { scheduleReminder } from '../utils/notifications';
+import { Alert } from 'react-native';
 
 interface Props {
   item: QueueItem | null;
@@ -31,10 +34,10 @@ function getPlatformLabel(url: string, platform?: string): string {
 }
 
 const ACTION_BUTTONS = [
-  { id: 'open',       label: 'Open Link', Icon: ExternalLink, color: '#16a34a', bg: '#DCFCE7' },
-  { id: 'move',       label: 'Move',      Icon: FolderOpen,  color: '#2563EB', bg: '#DBEAFE' },
-  { id: 'timer',      label: 'Set Timer', Icon: Clock,       color: '#D97706', bg: '#FEF3C7' },
-  { id: 'note',       label: 'Add Note',  Icon: PenLine,     color: '#6B7280', bg: '#F9FAFB' },
+  { id: 'open',       label: 'Open Link', Icon: ExternalLink, color: colors.primary, bg: colors.primaryLight },
+  { id: 'move',       label: 'Move',      Icon: FolderOpen,  color: colors.info, bg: '#DBEAFE' },
+  { id: 'timer',      label: 'Set Timer', Icon: Clock,       color: colors.warning, bg: '#FEF3C7' },
+  { id: 'note',       label: 'Add Note',  Icon: PenLine,     color: colors.textMuted, bg: colors.surface },
 ];
 
 export default function SaveDetailSheet({ item, visible, onClose }: Props) {
@@ -43,6 +46,20 @@ export default function SaveDetailSheet({ item, visible, onClose }: Props) {
   if (!item) return null;
 
   const platform = getPlatformLabel(item.url, item.platform);
+
+  const handleAction = (id: string) => {
+    if (id === 'timer') {
+      Alert.alert(
+        'Set Reminder',
+        'When do you want to be reminded?',
+        [
+          { text: 'In 1 hour', onPress: () => { scheduleReminder(item, 3600); Alert.alert('Reminder set!'); } },
+          { text: 'Tomorrow', onPress: () => { scheduleReminder(item, 86400); Alert.alert('Reminder set!'); } },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+    }
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" statusBarTranslucent>
@@ -53,16 +70,16 @@ export default function SaveDetailSheet({ item, visible, onClose }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}
       >
-        <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden', maxHeight: '88%' }}>
+        <View style={{ backgroundColor: colors.background, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden', maxHeight: '88%' }}>
           {/* ── Header Thumbnail ── */}
           {item.thumbnail ? (
             <Image
               source={{ uri: item.thumbnail }}
-              style={{ width: '100%', height: 180, backgroundColor: '#F3F4F6' }}
+              style={{ width: '100%', height: 180, backgroundColor: colors.surface }}
               resizeMode="cover"
             />
           ) : (
-            <View style={{ width: '100%', height: 180, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: '100%', height: 180, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ fontSize: 48 }}>🔗</Text>
             </View>
           )}
@@ -71,60 +88,61 @@ export default function SaveDetailSheet({ item, visible, onClose }: Props) {
           <TouchableOpacity
             onPress={onClose}
             style={{
-              position: 'absolute', top: 12, right: 12,
-              width: 32, height: 32, borderRadius: 16,
+              position: 'absolute', top: spacing.md, right: spacing.md,
+              width: 32, height: 32, borderRadius: borderRadius.full,
               backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center',
             }}
           >
-            <X color="#fff" size={18} />
+            <X color={colors.textLight} size={18} />
           </TouchableOpacity>
 
-          <ScrollView style={{ paddingHorizontal: 20, paddingTop: 16 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }} showsVerticalScrollIndicator={false}>
             {/* ── Title ── */}
-            <Text style={{ fontSize: 20, fontWeight: '800', color: '#111827', lineHeight: 27, marginBottom: 10 }}>
+            <Text style={{ ...typography.h3, color: colors.text, lineHeight: 27, marginBottom: spacing.sm }}>
               {item.title || item.url}
             </Text>
 
             {/* ── Metadata Row ── */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-              <View style={{ backgroundColor: '#F3F4F6', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
-                <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: '600' }}>{platform}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: spacing.lg }}>
+              <View style={{ backgroundColor: colors.surface, paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm }}>
+                <Text style={{ ...typography.caption, color: colors.textMuted, fontWeight: '600' }}>{platform}</Text>
               </View>
-              <Text style={{ fontSize: 12, color: '#9CA3AF' }}>{timeAgo(item.savedAt)}</Text>
-              <Text style={{ fontSize: 12, color: '#9CA3AF' }}>• ~12 min</Text>
+              <Text style={{ ...typography.caption, color: colors.textMuted }}>{timeAgo(item.savedAt)}</Text>
+              <Text style={{ ...typography.caption, color: colors.textMuted }}>• ~12 min</Text>
             </View>
 
             {/* ── 4 Action Buttons ── */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xl }}>
               {ACTION_BUTTONS.map(({ id, label, Icon, color, bg }) => (
                 <TouchableOpacity
                   key={id}
+                  onPress={() => handleAction(id)}
                   style={{ alignItems: 'center', gap: 6 }}
                 >
                   <View style={{
-                    width: 52, height: 52, borderRadius: 16,
+                    width: 52, height: 52, borderRadius: borderRadius.xl,
                     backgroundColor: bg, alignItems: 'center', justifyContent: 'center',
                   }}>
                     <Icon color={color} size={22} />
                   </View>
-                  <Text style={{ fontSize: 11, color: '#6B7280', fontWeight: '500' }}>{label}</Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, fontWeight: '500' }}>{label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             {/* ── "Why I saved this" Notes ── */}
-            <Text style={{ fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 8 }}>Why I saved this</Text>
+            <Text style={{ ...typography.bodyMedium, color: colors.text, marginBottom: spacing.sm }}>Why I saved this</Text>
             <TextInput
               style={{
-                backgroundColor: '#F9FAFB',
-                borderRadius: 12, padding: 12,
-                fontSize: 14, color: '#111827',
-                borderWidth: 1, borderColor: '#F3F4F6',
+                backgroundColor: colors.surface,
+                borderRadius: borderRadius.lg, padding: spacing.md,
+                ...typography.body, color: colors.text,
+                borderWidth: 1, borderColor: colors.border,
                 minHeight: 80, textAlignVertical: 'top',
-                marginBottom: 12,
+                marginBottom: spacing.md,
               }}
               placeholder="Important insights, key takeaways…"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={colors.textMuted}
               value={note}
               onChangeText={setNote}
               multiline
@@ -132,15 +150,15 @@ export default function SaveDetailSheet({ item, visible, onClose }: Props) {
 
             {/* ── Tags Row ── */}
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', paddingBottom: 40 }}>
-              <View style={{ backgroundColor: '#F3F4F6', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99 }}>
-                <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: '500' }}>#tech</Text>
+              <View style={{ backgroundColor: colors.surface, paddingHorizontal: 10, paddingVertical: 5, borderRadius: borderRadius.full }}>
+                <Text style={{ fontSize: 12, color: colors.textMuted, fontWeight: '500' }}>#tech</Text>
               </View>
-              <View style={{ backgroundColor: '#F3F4F6', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99 }}>
-                <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: '500' }}>#ai</Text>
+              <View style={{ backgroundColor: colors.surface, paddingHorizontal: 10, paddingVertical: 5, borderRadius: borderRadius.full }}>
+                <Text style={{ fontSize: 12, color: colors.textMuted, fontWeight: '500' }}>#ai</Text>
               </View>
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Plus color="#9CA3AF" size={14} />
-                <Text style={{ fontSize: 12, color: '#9CA3AF' }}>Add Tag</Text>
+                <Plus color={colors.textMuted} size={14} />
+                <Text style={{ fontSize: 12, color: colors.textMuted }}>Add Tag</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
