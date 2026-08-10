@@ -36,7 +36,12 @@
           }
         }
       ],
-      "react-native-android-widget"
+      [
+        "react-native-android-widget",
+        {
+          "widgets": []
+        }
+      ]
     ],
     "scheme": "dopaqueue"
   }

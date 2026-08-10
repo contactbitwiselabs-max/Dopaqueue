@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { useShareIntent } from 'expo-share-intent';
 import { DatabaseProvider } from './src/database/DatabaseProvider';
 import { database } from './src/database';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Inbox, FolderOpen, Search, PlusCircle } from 'lucide-react-native';
+import { Inbox, FolderOpen, Clock, BarChart2, User, Plus } from 'lucide-react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
 import QueueItem from './src/database/models/QueueItem';
-import './global.css'; 
+import './global.css';
+import SmartSaveBar from './src/components/SmartSaveBar';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -21,12 +22,15 @@ Notifications.setNotificationHandler({
 
 import InboxScreen from './src/screens/InboxScreen';
 import CollectionsScreen from './src/screens/CollectionsScreen';
-import SearchScreen from './src/screens/SearchScreen';
+import FocusScreen from './src/screens/FocusScreen';
+import StatsScreen from './src/screens/StatsScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
 
 export default function App() {
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
+  const [saveBarVisible, setSaveBarVisible] = useState(false);
   const [showSaveToast, setShowSaveToast] = useState(false);
   const [savedItemTitle, setSavedItemTitle] = useState('');
 
@@ -48,23 +52,22 @@ export default function App() {
   useEffect(() => {
     async function processShareIntent() {
       if (hasShareIntent && shareIntent.value) {
+        setSaveBarVisible(true); // open the save bar with the shared link
         try {
           await database.write(async () => {
             const newItem = await database.get<QueueItem>('queue_items').create(item => {
               item.url = shareIntent.value || '';
-              item.title = 'Saved Link'; 
+              item.title = 'Saved Link';
               item.savedAt = Date.now();
               item.watched = false;
               item.deleted = false;
             });
             setSavedItemTitle(newItem.url);
           });
-          
           setShowSaveToast(true);
           setTimeout(() => setShowSaveToast(false), 4000);
-          
         } catch (e) {
-          console.error("Save intent failed", e);
+          console.error('Save intent failed', e);
         } finally {
           resetShareIntent();
         }
@@ -73,86 +76,187 @@ export default function App() {
     processShareIntent();
   }, [hasShareIntent, shareIntent, resetShareIntent]);
 
-  return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+  const handleSaveFromBar = async (data: { url: string; note: string; urgency: string; tag: string; collection: string }) => {
+    try {
+      await database.write(async () => {
+        await database.get<QueueItem>('queue_items').create(item => {
+          item.url = data.url;
+          item.title = 'Saved Link';
+          item.savedAt = Date.now();
+          item.watched = false;
+          item.deleted = false;
+          if (data.urgency) item.urgency = data.urgency;
+          if (data.collection) item.collection = data.collection;
+        });
+      });
+      setShowSaveToast(true);
+      setTimeout(() => setShowSaveToast(false), 3000);
+    } catch (e) {
+      console.error('Save from bar failed', e);
+    }
+  };
+
+  const appContent = (
+    <GestureHandlerRootView style={{ flex: 1, width: '100%', height: '100%' }}>
       <DatabaseProvider>
         <NavigationContainer>
           <Tab.Navigator
             screenOptions={{
-              tabBarActiveTintColor: '#15803d', // dopa-green
-              tabBarInactiveTintColor: '#6b7280', // dopa-muted
+              tabBarActiveTintColor: '#16a34a',
+              tabBarInactiveTintColor: '#9ca3af',
               headerShown: false,
+              tabBarLabelStyle: {
+                fontSize: 10,
+                fontWeight: '600',
+                marginTop: -4,
+              },
               tabBarStyle: {
                 borderTopWidth: 1,
-                borderTopColor: '#e5e7eb', // dopa-border
-                paddingTop: 5,
-                height: 60,
-                paddingBottom: 10,
+                borderTopColor: '#f3f4f6',
+                paddingTop: 8,
+                height: 80,
+                paddingBottom: 24,
+                backgroundColor: '#ffffff',
+                elevation: 0,
+                shadowOpacity: 0,
               }
             }}
           >
-            <Tab.Screen 
-              name="InboxTab" 
-              component={InboxScreen} 
+            <Tab.Screen
+              name="InboxTab"
+              component={InboxScreen}
               options={{
                 title: 'Inbox',
                 tabBarIcon: ({ color, size }) => <Inbox color={color} size={size} />
               }}
             />
-            <Tab.Screen 
-              name="SearchTab" 
-              component={SearchScreen} 
-              options={{
-                title: 'Search',
-                tabBarIcon: ({ color, size }) => <Search color={color} size={size} />
-              }}
-            />
-            <Tab.Screen 
-              name="CollectionsTab" 
-              component={CollectionsScreen} 
+            <Tab.Screen
+              name="CollectionsTab"
+              component={CollectionsScreen}
               options={{
                 title: 'Collections',
                 tabBarIcon: ({ color, size }) => <FolderOpen color={color} size={size} />
               }}
             />
+            <Tab.Screen
+              name="FocusTab"
+              component={FocusScreen}
+              options={{
+                title: 'Focus',
+                tabBarIcon: ({ color, size }) => <Clock color={color} size={size} />
+              }}
+            />
+            <Tab.Screen
+              name="StatsTab"
+              component={StatsScreen}
+              options={{
+                title: 'Stats',
+                tabBarIcon: ({ color, size }) => <BarChart2 color={color} size={size} />
+              }}
+            />
+            <Tab.Screen
+              name="ProfileTab"
+              component={ProfileScreen}
+              options={{
+                title: 'Profile',
+                tabBarIcon: ({ color, size }) => <User color={color} size={size} />
+              }}
+            />
           </Tab.Navigator>
         </NavigationContainer>
 
-        {/* Quick Add FAB globally overlaid */}
-        <TouchableOpacity 
-          className="absolute bottom-24 right-6 bg-dopa-green rounded-full p-4 shadow-lg flex items-center justify-center"
+        {/* ── Global FAB ── */}
+        <TouchableOpacity
           style={styles.fab}
-          onPress={() => console.log('Quick Add tapped')}
+          onPress={() => setSaveBarVisible(true)}
         >
-          <PlusCircle color="#fff" size={28} />
+          <Plus color="#fff" size={26} strokeWidth={2.5} />
         </TouchableOpacity>
 
-        {/* Smart Save Bar */}
+        {/* ── Save success toast ── */}
         {showSaveToast && (
-          <View style={styles.toastContainer} className="absolute bottom-24 left-5 right-24 bg-dopa-green p-4 rounded-xl shadow-lg flex-row justify-between items-center">
-            <View className="flex-1 mr-3">
-              <Text className="text-white font-bold">Saved to Inbox</Text>
-              <Text className="text-white/80 text-sm" numberOfLines={1}>{savedItemTitle}</Text>
-            </View>
-            <TouchableOpacity className="bg-white/20 px-3 py-1 rounded-full">
-              <Text className="text-white font-medium">Tag</Text>
-            </TouchableOpacity>
+          <View style={styles.toast}>
+            <Text style={styles.toastText}>✓ Saved to Inbox</Text>
           </View>
         )}
+
+        {/* ── Smart Save Bar Modal ── */}
+        <SmartSaveBar
+          visible={saveBarVisible}
+          onClose={() => setSaveBarVisible(false)}
+          onSave={handleSaveFromBar}
+        />
       </DatabaseProvider>
     </GestureHandlerRootView>
   );
+
+  if (Platform.OS === 'web') {
+    return (
+      <View style={styles.webContainer}>
+        <View style={styles.mobileWrapper}>
+          {appContent}
+        </View>
+      </View>
+    );
+  }
+
+  return appContent;
 }
 
 const styles = StyleSheet.create({
   fab: {
+    position: 'absolute',
+    bottom: 96,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#16a34a',
+    alignItems: 'center',
+    justifyContent: 'center',
     elevation: 8,
-    shadowColor: '#15803d',
-    shadowOpacity: 0.3,
+    shadowColor: '#16a34a',
+    shadowOpacity: 0.4,
     shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
+    shadowRadius: 12,
   },
-  toastContainer: {
-    elevation: 6,
-  }
+  toast: {
+    position: 'absolute',
+    bottom: 100,
+    left: 24,
+    right: 24,
+    backgroundColor: '#111827',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  toastText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  webContainer: {
+    flex: 1,
+    backgroundColor: '#e5e7eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100vh' as any,
+    width: '100vw' as any,
+  },
+  mobileWrapper: {
+    width: 375,
+    height: 812,
+    maxHeight: '95vh' as any,
+    backgroundColor: '#fff',
+    borderRadius: 40,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.15,
+    shadowRadius: 40,
+    elevation: 20,
+    borderWidth: 10,
+    borderColor: '#111827',
+  },
 });

@@ -1,0 +1,122 @@
+# Dopaqueue Mobile — Todoist & Notion Feature Analysis
+
+## Why Users Leave Basic Apps
+
+The gap that Dopaqueue fills sits between:
+- **Bookmarks** (save and forget, no organization)
+- **Todoist** (great for tasks, terrible for saving media/links)
+- **Notion** (powerful but overwhelming, slow on mobile, not built for quick capture)
+- **Pocket/Raindrop** (read-later only, no task management, no reminders)
+
+**Dopaqueue's sweet spot:** Save anything instantly + lightweight task management around those saves + beautiful views to actually revisit them.
+
+---
+
+## Todoist Features → Dopaqueue Adaptation
+
+| Todoist Feature | What It Does | Dopaqueue Adaptation | Priority |
+|---|---|---|---|
+| **Quick Add + Natural Language** | Type "Buy milk tomorrow p1" and it auto-parses date + priority | **Smart Save Bar:** Paste a link + type "watch this weekend #focus" → auto-assigns date, collection, tags | v1 |
+| **Inbox** | Uncategorized dump zone. Process later | **Save Inbox:** All new saves land here. Swipe to organize or archive | v1 |
+| **Projects** | Hierarchical folders | **Collections** (already planned). Add support for nested sub-collections | v1 |
+| **Priority Levels (P1-P4)** | Color-coded urgency | **Urgency Flags:** 🔴 Must See, 🟡 Soon, 🔵 Whenever (maps to extension's urgency system) | v1 |
+| **Labels/Tags** | Cross-project categorization | **Tags** (already planned) with auto-suggest based on content type | v1 |
+| **Due Dates + Reminders** | Schedule when to do something | **Save Timer:** "Remind me in 2h / Tomorrow / This Weekend." Push notification links back to the save | v1 |
+| **Recurring Tasks** | "Every Monday" | **Weekly Review Prompt:** "You have 12 unreviewed saves from this week" — Sunday evening nudge | v2 |
+| **Filters & Custom Views** | "Show me all P1 tasks due this week" | **Smart Filters:** Filter by platform + tag + urgency + date range. Save custom filter as a "Smart Collection" | v2 |
+| **Sections** | Group items within a project | **Collection Sections:** Within a collection, group items by status (To Watch / In Progress / Done) | v2 |
+| **Karma / Productivity Score** | Gamification — points for completing tasks | **Save Streak + Review Score:** Track saves processed vs accumulated. Weekly score | v2 |
+| **Comments on Tasks** | Add notes to a task | **Notes on Saves:** Already planned — quick text or voice note per save | v1 |
+| **Subtasks** | Break a task into steps | Not applicable for saves — skip | — |
+| **Completed View** | See what you've done | **Archive:** View all items marked as "Done" / "Watched" with satisfaction stats | v1 |
+
+---
+
+## Notion Features → Dopaqueue Adaptation
+
+| Notion Feature | What It Does | Dopaqueue Adaptation | Priority |
+|---|---|---|---|
+| **Multiple Views (List/Board/Gallery)** | See same data differently | **View Switcher:** Toggle between List View (compact, Todoist-style), Card/Gallery View (thumbnails, Pinterest-style), and Board View (Kanban by status) | v1 |
+| **Properties/Metadata** | Custom fields on items | **Auto-Properties:** Platform, content type, domain, save date, tags, urgency — all auto-detected. User can add notes + timer | v1 |
+| **Favorites / Pinned** | Quick access to important items | **Pinned Saves:** Long-press → "Pin to top." Pinned items always appear first | v1 |
+| **Templates** | Reusable structures | **Save Templates:** "Research Mode" (auto-tag #research, assign to Research collection, set reminder for tomorrow). User creates presets for different save workflows | v2 |
+| **Linked Databases** | Same items appear in multiple views | **Smart Collections:** A save can belong to multiple collections. A "Smart Collection" auto-populates based on filters (e.g., "All YouTube videos tagged #learn") | v2 |
+| **Toggle Blocks** | Expand/collapse sections | **Collapsible Sections:** In collection view, sections collapse/expand cleanly | v1 |
+| **Breadcrumb Navigation** | Know where you are in hierarchy | **Breadcrumb Bar:** Inbox > Collections > Focus > Item Detail | v1 |
+| **Page Content** | Rich text editor inside each page | **Save Detail Page:** Open a save to see full metadata, thumbnail, notes, link, tags — but NOT a full rich text editor (keep it simple) | v1 |
+| **Cover Images** | Visual headers | **Collection Covers:** Collections show the thumbnail of the first item as a cover image, or user picks one | v2 |
+| **Databases** | Structured tables | Too complex — skip. Our views (list/board/gallery) cover this without the complexity | — |
+
+---
+
+## The "Migration Magnet" Features
+
+These are the specific features that make users of basic apps think *"I need to switch to Dopaqueue"*:
+
+### From Notes Apps (Google Keep, Apple Notes)
+> **What they lack:** No link preview, no auto-metadata, no platform detection, no media handling
+> **Dopaqueue wins with:** Automatic rich link previews, thumbnail extraction, platform badges, and the Share Intent save flow
+
+### From Todoist
+> **What it lacks:** Todoist is terrible at saving links/media. It treats URLs as plain text with no preview
+> **Dopaqueue wins with:** First-class link/media handling + Todoist-level organization (priorities, due dates, projects)
+
+### From Notion
+> **What it lacks:** Notion is painfully slow on mobile, requires too many taps to save something, and has no Share Intent integration
+> **Dopaqueue wins with:** 1-tap saving, instant offline performance, and the same organizational power in a fraction of the complexity
+
+### From Pocket/Raindrop
+> **What they lack:** No task management, no reminders, no urgency levels, no "process your saves" workflow
+> **Dopaqueue wins with:** Inbox Zero flow, save timers, urgency flags, and the swipe-to-process UX
+
+---
+
+## Complete Feature Roadmap
+
+### v1 (Launch)
+- Share Intent instant save (1 tap)
+- Smart Save Bar with natural language parsing
+- Inbox with swipe-to-process (keep / archive / delete)
+- Collections with presets (Focus, Important, Fun, Entertaining, Reference)
+- Tags with auto-suggest
+- Urgency flags (🔴🟡🔵)
+- Save Timer / Reminders with push notifications
+- Quick Notes on saves
+- 3 View modes: List / Card Gallery / Board (Kanban)
+- Pinned Saves
+- Auto platform detection + badges
+- Offline-first with WatermelonDB
+- Supabase sync (manual + auto)
+- Archive (completed/watched items)
+- Breadcrumb navigation
+- Dark/Light mode (system-aware)
+- Haptic feedback on save
+- Save Detail page
+- Collapsible sections
+- Search (full-text across everything)
+- Onboarding (3 screens)
+
+### v2 (Post-Launch)
+- Smart Collections (auto-filter based rules)
+- Save Templates / Presets
+- Collection Covers
+- Weekly Review prompt + notification
+- Save Streak + Review Score
+- Filters & Custom Views
+- Nested sub-collections
+- Collection Sections (To Watch / In Progress / Done)
+- Home Screen Widget
+
+### v3 (Growth)
+- Daily Save Limit Nudge
+- Share to Specific Collection (learned from usage)
+- Reading/Watch Progress tracking
+- Cross-device save notification ("Saved on phone, continue on desktop")
+
+---
+
+> [!IMPORTANT]
+> **Icon selected:** Option C (Queue Lines — forest green). ✅
+> **Features:** All tiers included in the roadmap above.
+> 
+> **Ready to start coding?** Approve this plan and I'll initialize the Expo project with the full v1 feature set architecture.

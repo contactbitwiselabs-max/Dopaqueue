@@ -1,13 +1,17 @@
 import { Database } from '@nozbe/watermelondb'
-import SQLiteAdapter from '@nozbe/watermelondb/adapters/sqlite'
+import LokiJSAdapter from '@nozbe/watermelondb/adapters/lokijs'
 
 import schema from './schema'
 import QueueItem from './models/QueueItem'
 import Collection from './models/Collection'
 
-const adapter = new SQLiteAdapter({
+const adapter = new LokiJSAdapter({
   schema,
-  jsi: true,
+  useWebWorker: false,
+  useIncrementalIndexedDB: true,
+  onQuotaExceededError: (error) => {
+    console.error('Quota exceeded', error)
+  },
   onSetUpError: error => {
     console.error("Database setup failed", error)
   }
