@@ -13,3 +13,18 @@ export async function scheduleReminder(item: QueueItem, secondsFromNow: number) 
     trigger,
   });
 }
+
+export async function scheduleWeeklyReview() {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Weekly Review Time! 🏆',
+      body: 'Time to clear out your Dopaqueue inbox and process this week\'s saves.',
+    },
+    trigger: {
+      weekday: 1, // Sunday
+      hour: 18,   // 6:00 PM
+      minute: 0,
+      repeats: true,
+    },
+  });
+}

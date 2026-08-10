@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, SafeAreaView, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, SafeAreaView, TouchableOpacity, ScrollView } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import withObservables from '@nozbe/with-observables';
 import { database } from '../database';
@@ -8,13 +8,15 @@ import { Q } from '@nozbe/watermelondb';
 import SaveItem from '../components/SaveItem';
 import SaveDetailSheet from '../components/SaveDetailSheet';
 import { ChevronLeft } from 'lucide-react-native';
-import { colors, typography, spacing } from '../constants/theme';
+import { typography, spacing, useTheme } from '../constants/theme';
 import EmptyInboxAnimation from '../components/EmptyInboxAnimation';
 
 const CollectionDetailScreenComponent = ({ queueItems }: { queueItems: QueueItem[] }) => {
   const route = useRoute();
   const navigation = useNavigation();
+  const { colors: themeColors } = useTheme();
   const { collectionName } = route.params as { collectionName: string };
+  
   const [selectedItem, setSelectedItem] = useState<QueueItem | null>(null);
 
   const handleArchive = async (item: QueueItem) => {
@@ -29,36 +31,49 @@ const CollectionDetailScreenComponent = ({ queueItems }: { queueItems: QueueItem
     await database.write(async () => { await item.update(i => { i.isPinned = !i.isPinned; }); });
   };
 
+  const toWatch = queueItems.filter(i => !i.status || i.status === 'To Watch');
+  const inProgress = queueItems.filter(i => i.status === 'In Progress');
+  const done = queueItems.filter(i => i.status === 'Done');
+
+  const renderSection = (title: string, items: QueueItem[]) => {
+    if (items.length === 0) return null;
+    return (
+      <View style={{ marginBottom: spacing.xl }}>
+        <Text style={{ ...typography.h3, color: themeColors.text, marginBottom: spacing.md, paddingHorizontal: spacing.lg }}>{title}</Text>
+        {items.map(item => (
+          <SaveItem
+            key={item.id}
+            item={item}
+            onPress={setSelectedItem}
+            onLongPress={handleLongPress}
+            onArchive={handleArchive}
+            onDelete={handleDelete}
+          />
+        ))}
+      </View>
+    );
+  };
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: themeColors.surface }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md }}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: spacing.md }}>
-          <ChevronLeft color={colors.text} size={28} />
+          <ChevronLeft color={themeColors.text} size={28} />
         </TouchableOpacity>
-        <Text style={{ flex: 1, ...typography.h1, color: colors.text }}>{collectionName}</Text>
+        <Text style={{ flex: 1, ...typography.h1, color: themeColors.text }}>{collectionName}</Text>
       </View>
 
       {queueItems.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <EmptyInboxAnimation />
-          <Text style={{ ...typography.h3, color: colors.textMuted, marginTop: spacing.md }}>No items here yet.</Text>
+          <Text style={{ ...typography.h3, color: themeColors.textMuted, marginTop: spacing.md }}>No items here yet.</Text>
         </View>
       ) : (
-        <FlatList
-          data={queueItems}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <SaveItem
-              item={item}
-              onPress={setSelectedItem}
-              onLongPress={handleLongPress}
-              onArchive={handleArchive}
-              onDelete={handleDelete}
-            />
-          )}
-          contentContainerStyle={{ paddingTop: spacing.xs, paddingBottom: 120 }}
-          showsVerticalScrollIndicator={false}
-        />
+        <ScrollView contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+          {renderSection('To Watch', toWatch)}
+          {renderSection('In Progress', inProgress)}
+          {renderSection('Done', done)}
+        </ScrollView>
       )}
 
       <SaveDetailSheet

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, SafeAreaView, TouchableOpacity, Modal,
-  TextInput, Dimensions,
+  TextInput, Dimensions, Switch, Image
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import withObservables from '@nozbe/with-observables';
@@ -9,64 +9,84 @@ import { database } from '../database';
 import Collection from '../database/models/Collection';
 import QueueItem from '../database/models/QueueItem';
 import { Q } from '@nozbe/watermelondb';
-import { Plus, X, Brain, Popcorn, Code2, BookOpen, Lightbulb, Briefcase, Star, Heart, Music, Globe } from 'lucide-react-native';
-import { colors, spacing, typography, borderRadius, shadows } from '../constants/theme';
+import { Plus, X, Brain, Popcorn, Code2, BookOpen, Lightbulb, Briefcase, Star, Heart, Music, Globe, Sparkles } from 'lucide-react-native';
+import { spacing, typography, borderRadius, shadows, useTheme } from '../constants/theme';
 
 const { width } = Dimensions.get('window');
-const CARD_SIZE = (width - spacing.xxl) / 2; // 2 columns, padding considerations
+const CARD_SIZE = (width - spacing.xxl) / 2;
 
-// Icon picker options for new collection modal
 const ICON_OPTIONS = [
-  { key: 'brain',    icon: Brain,     color: '#7C3AED', bg: '#EDE9FE' },
-  { key: 'popcorn',  icon: Popcorn,   color: '#DC2626', bg: '#FEE2E2' },
-  { key: 'code',     icon: Code2,     color: '#2563EB', bg: '#DBEAFE' },
-  { key: 'book',     icon: BookOpen,  color: '#9333EA', bg: '#F3E8FF' },
-  { key: 'idea',     icon: Lightbulb, color: '#D97706', bg: '#FEF3C7' },
-  { key: 'work',     icon: Briefcase, color: '#0D9488', bg: '#CCFBF1' },
-  { key: 'star',     icon: Star,      color: '#F59E0B', bg: '#FEF3C7' },
-  { key: 'heart',    icon: Heart,     color: '#E11D48', bg: '#FFE4E6' },
-  { key: 'music',    icon: Music,     color: '#8B5CF6', bg: '#EDE9FE' },
-  { key: 'globe',    icon: Globe,     color: '#0369A1', bg: '#E0F2FE' },
+  { key: 'brain',    icon: Brain },
+  { key: 'popcorn',  icon: Popcorn },
+  { key: 'code',     icon: Code2 },
+  { key: 'book',     icon: BookOpen },
+  { key: 'idea',     icon: Lightbulb },
+  { key: 'work',     icon: Briefcase },
+  { key: 'star',     icon: Star },
+  { key: 'heart',    icon: Heart },
+  { key: 'music',    icon: Music },
+  { key: 'globe',    icon: Globe },
 ];
-
-const COLOR_OPTIONS = [colors.primary, colors.info, '#7C3AED', colors.danger, colors.warning, '#0D9488', '#E11D48', '#F59E0B'];
 
 function getIconConfig(key?: string) {
   return ICON_OPTIONS.find(i => i.key === key) || ICON_OPTIONS[0];
 }
 
 const CollectionCard = ({ collection, count, onPress }: { collection: Collection, count: number, onPress: () => void }) => {
+  const { colors: themeColors, isDark } = useTheme();
   const iconConf = getIconConfig((collection as any).icon);
   const IconComp = iconConf.icon;
+  const isSmart = (collection as any).isSmart;
+  const coverImage = (collection as any).coverImage;
+  const cardColor = (collection as any).color || themeColors.primary;
+
   return (
     <View style={{ flex: 1 }}>
       <TouchableOpacity
         onPress={onPress}
         style={{
           flex: 1,
-          backgroundColor: colors.background,
+          backgroundColor: themeColors.background,
           borderRadius: borderRadius.xl,
-          padding: spacing.md,
           minHeight: 160,
           ...shadows.sm,
-          justifyContent: 'space-between',
+          overflow: 'hidden',
         }}
       >
+        {/* Cover Image or Color Block */}
+        {coverImage ? (
+          <Image source={{ uri: coverImage }} style={{ width: '100%', height: 70, backgroundColor: cardColor }} />
+        ) : (
+          <View style={{ width: '100%', height: 70, backgroundColor: cardColor, opacity: isDark ? 0.2 : 0.15 }} />
+        )}
+
+        {/* Icon (overlapping) */}
         <View style={{
-          width: 52, height: 52, borderRadius: borderRadius.lg,
-          backgroundColor: iconConf.bg,
+          position: 'absolute', top: 50, left: spacing.md,
+          width: 40, height: 40, borderRadius: borderRadius.md,
+          backgroundColor: themeColors.surface,
           alignItems: 'center', justifyContent: 'center',
+          ...shadows.sm,
         }}>
-          <IconComp color={collection.color || colors.primary} size={28} />
+          <IconComp color={cardColor} size={22} />
         </View>
-        <View>
-          <Text style={{ ...typography.bodyMedium, fontSize: 15, color: colors.text, marginBottom: 2 }} numberOfLines={2}>
+
+        {/* Smart Badge */}
+        {isSmart && (
+          <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: 'rgba(0,0,0,0.5)', padding: 4, borderRadius: 100 }}>
+            <Sparkles color="#FBBF24" size={14} />
+          </View>
+        )}
+
+        {/* Content */}
+        <View style={{ padding: spacing.md, paddingTop: 28, flex: 1, justifyContent: 'flex-end' }}>
+          <Text style={{ ...typography.bodyMedium, fontSize: 15, color: themeColors.text, marginBottom: 2 }} numberOfLines={2}>
             {collection.name}
           </Text>
-          <View style={{ height: 3, backgroundColor: colors.surface, borderRadius: 2, marginTop: 6, overflow: 'hidden' }}>
-            <View style={{ width: `${Math.min(100, (count / 40) * 100)}%` as any, height: '100%', backgroundColor: collection.color || colors.primary, borderRadius: 2 }} />
+          <View style={{ height: 3, backgroundColor: themeColors.surface, borderRadius: 2, marginTop: 6, overflow: 'hidden' }}>
+            <View style={{ width: `${Math.min(100, (count / 40) * 100)}%` as any, height: '100%', backgroundColor: cardColor, borderRadius: 2 }} />
           </View>
-          <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 4 }}>{count} saved</Text>
+          <Text style={{ ...typography.caption, color: themeColors.textMuted, marginTop: 4 }}>{count} saved</Text>
         </View>
       </TouchableOpacity>
     </View>
@@ -80,43 +100,51 @@ const EnhancedCollectionCard = withObservables(['collection'], ({ collection }: 
 
 interface Props {
   collections: Collection[];
-  totalSaved: number;
 }
 
-const CollectionsScreenComponent = ({ collections, totalSaved }: Props) => {
+const CollectionsScreenComponent = ({ collections }: Props) => {
   const navigation = useNavigation<any>();
+  const { colors: themeColors, isDark } = useTheme();
+  
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [newName, setNewName] = useState('');
   const [selectedIcon, setSelectedIcon] = useState('brain');
-  const [selectedColor, setSelectedColor] = useState(colors.primary);
+  const [selectedColor, setSelectedColor] = useState(themeColors.primary);
+  const [isSmart, setIsSmart] = useState(false);
+  const [filterRules, setFilterRules] = useState('');
+
+  const COLOR_OPTIONS = [themeColors.primary, themeColors.info, '#7C3AED', themeColors.danger, themeColors.warning, '#0D9488', '#E11D48', '#F59E0B'];
 
   const handleCreateCollection = async () => {
     if (!newName.trim()) return;
     await database.write(async () => {
       await database.get<Collection>('collections').create(c => {
         c.name = newName.trim();
-        c.color = selectedColor;
+        (c as any).color = selectedColor;
         (c as any).icon = selectedIcon;
+        (c as any).isSmart = isSmart;
+        if (isSmart) (c as any).filterRules = filterRules;
       });
     });
     setNewName('');
+    setIsSmart(false);
+    setFilterRules('');
     setAddModalVisible(false);
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: themeColors.surface }}>
       {/* ── Header ── */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md }}>
-        <Text style={{ flex: 1, ...typography.h1, color: colors.text }}>Collections</Text>
+        <Text style={{ flex: 1, ...typography.h1, color: themeColors.text }}>Collections</Text>
         <TouchableOpacity
           onPress={() => setAddModalVisible(true)}
-          style={{ width: 36, height: 36, borderRadius: borderRadius.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: 36, height: 36, borderRadius: borderRadius.full, backgroundColor: themeColors.primary, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Plus color={colors.textLight} size={20} />
+          <Plus color={themeColors.textLight} size={20} />
         </TouchableOpacity>
       </View>
 
-      {/* ── 2-column Grid using ScrollView for cross-platform compatibility ── */}
       <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
         {Array.from({ length: Math.ceil(collections.length / 2) }, (_, rowIndex) => {
           const left = collections[rowIndex * 2];
@@ -132,29 +160,18 @@ const CollectionsScreenComponent = ({ collections, totalSaved }: Props) => {
 
       {/* ── Add Collection Modal ── */}
       <Modal visible={addModalVisible} transparent animationType="slide">
-        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }} activeOpacity={1} onPress={() => setAddModalVisible(false)} />
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} activeOpacity={1} onPress={() => setAddModalVisible(false)} />
         <View style={{
           position: 'absolute', bottom: 0, left: 0, right: 0,
-          backgroundColor: colors.background, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+          backgroundColor: themeColors.background, borderTopLeftRadius: 28, borderTopRightRadius: 28,
           padding: spacing.xl, paddingBottom: 40,
         }}>
           {/* Modal Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg }}>
-            <Text style={{ flex: 1, ...typography.h3, color: colors.text }}>New Collection</Text>
+            <Text style={{ flex: 1, ...typography.h3, color: themeColors.text }}>New Collection</Text>
             <TouchableOpacity onPress={() => setAddModalVisible(false)}>
-              <X color={colors.textMuted} size={24} />
+              <X color={themeColors.textMuted} size={24} />
             </TouchableOpacity>
-          </View>
-
-          {/* Icon Preview */}
-          <View style={{ alignItems: 'center', marginBottom: spacing.lg }}>
-            <View style={{
-              width: 80, height: 80, borderRadius: borderRadius.xl,
-              backgroundColor: getIconConfig(selectedIcon).bg,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              {(() => { const I = getIconConfig(selectedIcon).icon; return <I color={getIconConfig(selectedIcon).color} size={40} />; })()}
-            </View>
           </View>
 
           {/* Collection Name */}
@@ -162,16 +179,39 @@ const CollectionsScreenComponent = ({ collections, totalSaved }: Props) => {
             value={newName}
             onChangeText={setNewName}
             placeholder="Collection Name"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={themeColors.textMuted}
             style={{
-              backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md,
-              ...typography.body, color: colors.text, borderWidth: 1, borderColor: colors.border,
+              backgroundColor: themeColors.surface, borderRadius: borderRadius.lg, padding: spacing.md,
+              ...typography.body, color: themeColors.text, borderWidth: 1, borderColor: themeColors.border,
               marginBottom: spacing.lg,
             }}
           />
 
+          {/* Smart Collection Toggle */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: isSmart ? spacing.md : spacing.xl }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Sparkles color={themeColors.warning} size={18} />
+              <Text style={{ ...typography.bodyMedium, color: themeColors.text }}>Smart Collection</Text>
+            </View>
+            <Switch value={isSmart} onValueChange={setIsSmart} trackColor={{ true: themeColors.primary }} />
+          </View>
+
+          {isSmart && (
+            <TextInput
+              value={filterRules}
+              onChangeText={setFilterRules}
+              placeholder="e.g., #tech or youtube.com"
+              placeholderTextColor={themeColors.textMuted}
+              style={{
+                backgroundColor: themeColors.surface, borderRadius: borderRadius.lg, padding: spacing.md,
+                ...typography.body, color: themeColors.text, borderWidth: 1, borderColor: themeColors.border,
+                marginBottom: spacing.xl,
+              }}
+            />
+          )}
+
           {/* Choose Icon */}
-          <Text style={{ ...typography.bodyMedium, fontSize: 13, color: colors.textMuted, marginBottom: spacing.sm }}>Choose Icon</Text>
+          <Text style={{ ...typography.bodyMedium, fontSize: 13, color: themeColors.textMuted, marginBottom: spacing.sm }}>Choose Icon</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.lg }}>
             {ICON_OPTIONS.map(opt => {
               const Ic = opt.icon;
@@ -182,51 +222,29 @@ const CollectionsScreenComponent = ({ collections, totalSaved }: Props) => {
                   onPress={() => setSelectedIcon(opt.key)}
                   style={{
                     width: 48, height: 48, borderRadius: borderRadius.lg, marginRight: spacing.sm,
-                    backgroundColor: opt.bg,
+                    backgroundColor: active ? selectedColor : themeColors.surface,
                     alignItems: 'center', justifyContent: 'center',
-                    borderWidth: active ? 2 : 0,
-                    borderColor: opt.color,
+                    borderWidth: active ? 0 : 1,
+                    borderColor: themeColors.border,
                   }}
                 >
-                  <Ic color={opt.color} size={24} />
+                  <Ic color={active ? '#FFF' : themeColors.textMuted} size={24} />
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
 
-          {/* Choose Color */}
-          <Text style={{ ...typography.bodyMedium, fontSize: 13, color: colors.textMuted, marginBottom: spacing.sm }}>Choose Color</Text>
-          <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl }}>
-            {COLOR_OPTIONS.map(col => (
-              <TouchableOpacity
-                key={col}
-                onPress={() => setSelectedColor(col)}
-                style={{
-                  width: 32, height: 32, borderRadius: borderRadius.full,
-                  backgroundColor: col,
-                  borderWidth: selectedColor === col ? 3 : 0,
-                  borderColor: colors.textLight,
-                  shadowColor: col,
-                  shadowOpacity: selectedColor === col ? 0.5 : 0,
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowRadius: 4,
-                  elevation: selectedColor === col ? 4 : 0,
-                }}
-              />
-            ))}
-          </View>
-
           {/* Create Button */}
           <TouchableOpacity
             onPress={handleCreateCollection}
             style={{
-              backgroundColor: colors.primary, borderRadius: borderRadius.xl,
+              backgroundColor: themeColors.primary, borderRadius: borderRadius.xl,
               paddingVertical: spacing.md, alignItems: 'center',
               opacity: newName.trim().length > 0 ? 1 : 0.5,
             }}
             disabled={!newName.trim()}
           >
-            <Text style={{ ...typography.bodyMedium, fontSize: 16, color: colors.textLight }}>Create Collection</Text>
+            <Text style={{ ...typography.bodyMedium, fontSize: 16, color: themeColors.textLight }}>Create Collection</Text>
           </TouchableOpacity>
         </View>
       </Modal>
@@ -236,7 +254,6 @@ const CollectionsScreenComponent = ({ collections, totalSaved }: Props) => {
 
 const enhance = withObservables([], () => ({
   collections: database.collections.get<Collection>('collections').query(Q.sortBy('name', Q.asc)),
-  totalSaved: database.collections.get<QueueItem>('queue_items').query(Q.where('deleted', false)).observeCount(),
 }));
 
 export default enhance(CollectionsScreenComponent);

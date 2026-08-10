@@ -3,8 +3,8 @@ import {
   View, Text, TextInput, TouchableOpacity, Modal,
   KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
-import { X, Flag, Tag, FolderOpen, Clock } from 'lucide-react-native';
-import { colors, spacing, typography, borderRadius } from '../constants/theme';
+import { X, Flag, Tag, FolderOpen, Clock, Zap } from 'lucide-react-native';
+import { typography, spacing, borderRadius, useTheme } from '../constants/theme';
 import { database } from '../database';
 import QueueItem from '../database/models/QueueItem';
 
@@ -45,9 +45,28 @@ function parseNLP(text: string): { urgency: string; tag: string; clean: string }
 }
 
 export default function SmartSaveBar({ visible, onClose, onSave }: Props) {
+  const { colors: themeColors, isDark } = useTheme();
+
   const [inputText, setInputText] = useState('');
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [uniqueTags, setUniqueTags] = useState<string[]>([]);
+  
+  // Save Templates (Presets)
+  const TEMPLATES = [
+    { id: 'research', label: 'Research', icon: '🧠', tag: 'research', collection: 'Learn & Grow' },
+    { id: 'watch', label: 'Watch Later', icon: '🍿', tag: 'video', collection: 'Watchlist' },
+    { id: 'read', label: 'Read Later', icon: '📖', tag: 'article', collection: 'Reading List' },
+  ];
+
+  const applyTemplate = (template: typeof TEMPLATES[0]) => {
+    let newText = inputText;
+    if (!newText.includes(`#${template.tag}`)) {
+      newText += ` #${template.tag}`;
+    }
+    setInputText(newText);
+    // Note: To fully implement collection setting we would need to pass it to onSave.
+    // We'll rely on the text input parser or future context for now.
+  };
 
   useEffect(() => {
     if (visible) {
@@ -203,18 +222,43 @@ export default function SmartSaveBar({ visible, onClose, onSave }: Props) {
             </View>
           </ScrollView>
 
+          {/* ── Save Templates ── */}
+          <Text style={{ ...typography.caption, color: themeColors.textMuted, marginBottom: 8, marginTop: 8 }}>Templates</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {TEMPLATES.map(tmpl => (
+                <TouchableOpacity
+                  key={tmpl.id}
+                  onPress={() => applyTemplate(tmpl)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 6,
+                    paddingHorizontal: 12, paddingVertical: 8,
+                    borderRadius: borderRadius.full,
+                    backgroundColor: themeColors.surface,
+                    borderWidth: 1, borderColor: themeColors.border,
+                  }}
+                >
+                  <Text>{tmpl.icon}</Text>
+                  <Text style={{ ...typography.bodyMedium, fontSize: 13, color: themeColors.text }}>
+                    {tmpl.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+
           {/* ── Save Button ── */}
           <TouchableOpacity
             onPress={handleSave}
             disabled={!inputText.trim()}
             style={{
-              backgroundColor: colors.primary,
+              backgroundColor: themeColors.primary,
               borderRadius: borderRadius.xl, paddingVertical: 16,
               alignItems: 'center',
               opacity: inputText.trim() ? 1 : 0.4,
             }}
           >
-            <Text style={{ ...typography.bodyMedium, fontSize: 16, color: colors.textLight }}>
+            <Text style={{ ...typography.bodyMedium, fontSize: 16, color: themeColors.textLight }}>
               {hasUrl ? '⚡ Save to Inbox' : '⚡ Smart Save'}
             </Text>
           </TouchableOpacity>
