@@ -194,8 +194,8 @@ export default function App() {
         <DatabaseProvider>
           <NavigationContainer
             ref={navigationRef}
-            onReady={() => setCurrentRoute(navigationRef.getCurrentRoute()?.name)}
-            onStateChange={() => setCurrentRoute(navigationRef.getCurrentRoute()?.name)}
+            onReady={() => setCurrentRoute((navigationRef.getCurrentRoute() as any)?.name)}
+            onStateChange={() => setCurrentRoute((navigationRef.getCurrentRoute() as any)?.name)}
           >
             <Stack.Navigator initialRouteName={isFirstLaunch ? "Onboarding" : "MainTabs"} screenOptions={{ headerShown: false, animation: 'fade' }}>
               <Stack.Screen name="Onboarding" component={OnboardingScreen} />
