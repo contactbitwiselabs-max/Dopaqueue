@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { useShareIntent } from 'expo-share-intent';
 import { DatabaseProvider } from './src/database/DatabaseProvider';
 import { database, seedDatabase } from './src/database';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Inbox, FolderOpen, Archive, BarChart2, User, Plus } from 'lucide-react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
@@ -19,6 +22,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -107,6 +112,9 @@ export default function App() {
   const [saveBarVisible, setSaveBarVisible] = useState(false);
   const [showSaveToast, setShowSaveToast] = useState(false);
   const [isFirstLaunch, setIsFirstLaunch] = useState<boolean | null>(null);
+  const [sharedValue, setSharedValue] = useState<string | undefined>(undefined);
+  const navigationRef = useNavigationContainerRef();
+  const [currentRoute, setCurrentRoute] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     async function checkOnboarding() {
@@ -134,7 +142,8 @@ export default function App() {
 
   useEffect(() => {
     async function processShareIntent() {
-      if (hasShareIntent && shareIntent.value) {
+      if (hasShareIntent && (shareIntent as any).value) {
+        setSharedValue((shareIntent as any).value);
         setSaveBarVisible(true);
         resetShareIntent();
       }
@@ -147,13 +156,24 @@ export default function App() {
       await database.write(async () => {
         await database.get<QueueItem>('queue_items').create(item => {
           item.url = data.url;
-          item.title = 'Saved Link';
+          item.title = data.url ? 'Saved Link' : (data.note.length > 20 ? data.note.substring(0, 20) + '...' : data.note || 'Saved Note');
           item.savedAt = Date.now();
           item.watched = false;
           item.deleted = false;
           if (data.urgency) item.urgency = data.urgency;
           if (data.collection) item.collection = data.collection;
-          if (data.tag) item.note = `#${data.tag}`;
+          
+          let finalNote = data.note;
+          if (data.tag) {
+            if (!finalNote) finalNote = `#${data.tag}`;
+            else if (!finalNote.includes(`#${data.tag}`)) finalNote += ` #${data.tag}`;
+          }
+          if (finalNote) item.note = finalNote;
+
+          const lowerUrl = data.url.toLowerCase();
+          if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) item.platform = 'YouTube';
+          else if (lowerUrl.includes('instagram.com')) item.platform = 'Instagram';
+          else if (lowerUrl.includes('twitter.com') || lowerUrl.includes('x.com')) item.platform = 'Twitter';
         });
       });
       setShowSaveToast(true);
@@ -170,8 +190,13 @@ export default function App() {
   const appContent = (
     <GestureHandlerRootView style={{ flex: 1, width: '100%', height: '100%' }}>
       <SafeAreaProvider>
-        <DatabaseProvider database={database}>
-          <NavigationContainer>
+        <StatusBar style="auto" />
+        <DatabaseProvider>
+          <NavigationContainer
+            ref={navigationRef}
+            onReady={() => setCurrentRoute(navigationRef.getCurrentRoute()?.name)}
+            onStateChange={() => setCurrentRoute(navigationRef.getCurrentRoute()?.name)}
+          >
             <Stack.Navigator initialRouteName={isFirstLaunch ? "Onboarding" : "MainTabs"} screenOptions={{ headerShown: false, animation: 'fade' }}>
               <Stack.Screen name="Onboarding" component={OnboardingScreen} />
               <Stack.Screen name="MainTabs" component={TabNavigator} />
@@ -180,12 +205,14 @@ export default function App() {
             </Stack.Navigator>
           </NavigationContainer>
 
-          <TouchableOpacity
-            style={styles.fab}
-            onPress={() => setSaveBarVisible(true)}
-          >
-            <Plus color="#fff" size={26} strokeWidth={2.5} />
-          </TouchableOpacity>
+          {currentRoute !== 'Onboarding' && (
+            <TouchableOpacity
+              style={styles.fab}
+              onPress={() => setSaveBarVisible(true)}
+            >
+              <Plus color="#fff" size={26} strokeWidth={2.5} />
+            </TouchableOpacity>
+          )}
 
           {showSaveToast && (
             <View style={styles.toast}>
@@ -196,7 +223,11 @@ export default function App() {
           {/* ── Smart Save Bar Modal ── */}
           <SmartSaveBar
             visible={saveBarVisible}
-            onClose={() => setSaveBarVisible(false)}
+            initialValue={sharedValue}
+            onClose={() => {
+              setSaveBarVisible(false);
+              setSharedValue(undefined);
+            }}
             onSave={handleSaveFromBar}
           />
         </DatabaseProvider>

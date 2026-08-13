@@ -149,6 +149,13 @@ const SaveItemComponent = ({ item, onPress, onArchive, onDelete, onLongPress }: 
               </View>
             ) : null}
           </View>
+          
+          {/* Mini Progress Bar */}
+          {(item as any).progressPercent > 0 && (
+            <View style={{ height: 4, backgroundColor: colors.surface, borderRadius: 2, marginTop: 8, overflow: 'hidden', width: '80%' }}>
+              <View style={{ width: `${(item as any).progressPercent}%`, height: '100%', backgroundColor: colors.primary }} />
+            </View>
+          )}
         </View>
 
         {/* Urgency dot and Pin — top right corner */}

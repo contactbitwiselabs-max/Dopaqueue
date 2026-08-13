@@ -22,4 +22,5 @@ export default class QueueItem extends Model {
   @field('is_pinned') isPinned
   @field('tags') tags
   @field('status') status
+  @field('progress_percent') progressPercent
 }

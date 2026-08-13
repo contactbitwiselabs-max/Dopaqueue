@@ -1,7 +1,7 @@
 import { Database } from '@nozbe/watermelondb'
 import LokiJSAdapter from '@nozbe/watermelondb/adapters/lokijs'
 
-import schema from './schema'
+import { schema } from './schema'
 import QueueItem from './models/QueueItem'
 import Collection from './models/Collection'
 

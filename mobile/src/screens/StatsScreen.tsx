@@ -37,7 +37,7 @@ const StatsScreenComponent = ({ queueItems }: Props) => {
     const tagCounts: Record<string, number> = {};
     queueItems.forEach(item => {
       if (item.tags) {
-        item.tags.split(',').forEach(t => {
+        item.tags.split(',').forEach((t: string) => {
           const cleanTag = t.replace('#', '').trim();
           if (cleanTag) tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + 1;
         });

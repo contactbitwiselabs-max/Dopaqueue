@@ -5,12 +5,13 @@ import { field, date } from '@nozbe/watermelondb/decorators'
 export default class Collection extends Model {
   static table = 'collections'
 
-  @field('name') name!: string;
-  @field('icon') icon?: string;
-  @field('cover_image') coverImage?: string;
-  @field('parent_id') parentId?: string;
-  @field('is_smart') isSmart?: boolean;
-  @field('filter_rules') filterRules?: string;
-  @date('created_at') createdAt!: number;
-  @date('updated_at') updatedAt!: number;
+  @field('name') name
+  @field('icon') icon
+  @field('color') color
+  @field('cover_image') coverImage
+  @field('parent_id') parentId
+  @field('is_smart') isSmart
+  @field('filter_rules') filterRules
+  @date('created_at') createdAt
+  @date('updated_at') updatedAt
 }

@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, SafeAreaView, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Dimensions, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius } from '../constants/theme';
-import { Zap, Layers, Sparkles, ArrowRight, Check } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 
@@ -11,22 +11,19 @@ const ONBOARDING_STEPS = [
   {
     title: 'Save Anything Instantly',
     description: 'Stop losing links in your notes app. Use the Share button from any app to instantly save videos, articles, and ideas to Dopaqueue.',
-    Icon: Zap,
-    color: colors.primary,
+    image: require('../../assets/onboarding_step_1.png'),
     bg: colors.primaryLight
   },
   {
     title: 'Smart Organization',
     description: 'Our natural language Smart Save bar lets you assign tags, collections, and due dates just by typing.',
-    Icon: Sparkles,
-    color: colors.info,
+    image: require('../../assets/onboarding_step_2.png'),
     bg: '#DBEAFE'
   },
   {
     title: 'Achieve Inbox Zero',
     description: 'Process your saves like an email inbox. Swipe right to archive, swipe left to delete. Keep your dopamine budget balanced.',
-    Icon: Layers,
-    color: colors.warning,
+    image: require('../../assets/onboarding_step_3.png'),
     bg: '#FEF3C7'
   }
 ];
@@ -49,6 +46,12 @@ export default function OnboardingScreen() {
     }
   };
 
+  const handlePrevious = () => {
+    if (currentIndex > 0) {
+      scrollRef.current?.scrollTo({ x: width * (currentIndex - 1), animated: true });
+    }
+  };
+
   const onScroll = (e: any) => {
     const x = e.nativeEvent.contentOffset.x;
     setCurrentIndex(Math.round(x / width));
@@ -56,6 +59,16 @@ export default function OnboardingScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* ── Header ── */}
+      <View style={{ paddingHorizontal: spacing.xl, paddingTop: spacing.xl, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ ...typography.bodyMedium, color: colors.textMuted, fontWeight: '600' }}>
+          Step {currentIndex + 1} of {ONBOARDING_STEPS.length}
+        </Text>
+        <TouchableOpacity onPress={completeOnboarding}>
+          <Text style={{ ...typography.bodyMedium, color: colors.primary, fontWeight: '700' }}>Skip</Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         ref={scrollRef}
         horizontal
@@ -66,11 +79,10 @@ export default function OnboardingScreen() {
         bounces={false}
       >
         {ONBOARDING_STEPS.map((step, index) => {
-          const { Icon } = step;
           return (
             <View key={index} style={{ width, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl }}>
-              <View style={{ width: 120, height: 120, borderRadius: 60, backgroundColor: step.bg, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xxl }}>
-                <Icon color={step.color} size={56} />
+              <View style={{ width: 280, height: 280, marginBottom: spacing.xxl, alignItems: 'center', justifyContent: 'center' }}>
+                <Image source={step.image} style={{ width: '100%', height: '100%', resizeMode: 'contain' }} />
               </View>
               <Text style={{ ...typography.h1, color: colors.text, textAlign: 'center', marginBottom: spacing.md }}>
                 {step.title}
@@ -85,6 +97,15 @@ export default function OnboardingScreen() {
 
       {/* ── Footer ── */}
       <View style={{ paddingHorizontal: spacing.xl, paddingBottom: spacing.xxl, paddingTop: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        {/* Previous Button */}
+        {currentIndex > 0 ? (
+          <TouchableOpacity onPress={handlePrevious} style={{ padding: 12 }}>
+            <Text style={{ ...typography.bodyMedium, color: colors.textMuted, fontWeight: '600' }}>Back</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 60 }} />
+        )}
+
         {/* Pagination Dots */}
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {ONBOARDING_STEPS.map((_, idx) => (
@@ -108,19 +129,14 @@ export default function OnboardingScreen() {
             paddingHorizontal: spacing.lg,
             paddingVertical: 14,
             borderRadius: borderRadius.full,
-            flexDirection: 'row',
+            width: currentIndex === ONBOARDING_STEPS.length - 1 ? 140 : 110,
             alignItems: 'center',
-            gap: 8
+            justifyContent: 'center',
           }}
         >
-          <Text style={{ ...typography.bodyMedium, color: colors.textLight }}>
+          <Text style={{ ...typography.bodyMedium, color: colors.textLight, fontWeight: '700' }}>
             {currentIndex === ONBOARDING_STEPS.length - 1 ? 'Get Started' : 'Next'}
           </Text>
-          {currentIndex === ONBOARDING_STEPS.length - 1 ? (
-            <Check color={colors.textLight} size={18} />
-          ) : (
-            <ArrowRight color={colors.textLight} size={18} />
-          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>

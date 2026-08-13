@@ -33,30 +33,31 @@ export async function syncDatabase() {
             updated: [],
             deleted: [],
           }
-        },
+        } as any,
         timestamp: Date.now(),
       }
     },
     pushChanges: async ({ changes, lastPulledAt }) => {
       // Push local changes to Supabase
+      const c = changes as any;
       
       // Handle QueueItems
-      if (changes.queue_items.created.length > 0) {
-        await supabase.from('queue_items').insert(changes.queue_items.created)
+      if (c.queue_items.created.length > 0) {
+        await supabase.from('queue_items').insert(c.queue_items.created)
       }
-      if (changes.queue_items.updated.length > 0) {
+      if (c.queue_items.updated.length > 0) {
         // Handle upserts
-        for (const item of changes.queue_items.updated) {
+        for (const item of c.queue_items.updated) {
            await supabase.from('queue_items').update(item).eq('id', item.id)
         }
       }
       
       // Handle Collections
-      if (changes.collections.created.length > 0) {
-        await supabase.from('collections').insert(changes.collections.created)
+      if (c.collections.created.length > 0) {
+        await supabase.from('collections').insert(c.collections.created)
       }
-      if (changes.collections.updated.length > 0) {
-        for (const item of changes.collections.updated) {
+      if (c.collections.updated.length > 0) {
+        for (const item of c.collections.updated) {
            await supabase.from('collections').update(item).eq('id', item.id)
         }
       }

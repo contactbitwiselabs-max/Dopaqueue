@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Dopaqueue",
-    "slug": "dopaqueue-mobile",
+    "slug": "amaan",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -20,10 +20,17 @@
         {
           "action": "VIEW",
           "data": [
-            { "scheme": "https" },
-            { "scheme": "http" }
+            {
+              "scheme": "https"
+            },
+            {
+              "scheme": "http"
+            }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -43,6 +50,29 @@
         }
       ]
     ],
-    "scheme": "dopaqueue"
+    "scheme": "dopaqueue",
+    "extra": {
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "ShareExtension",
+                  "bundleIdentifier": "com.dopaqueue.app.share-extension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.dopaqueue.app"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "45c5e6ac-04e1-4701-9f5e-60ad3ed06ef0"
+      }
+    },
+    "owner": "devxamaans-team"
   }
 }

@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb'
 
 export const schema = appSchema({
-  version: 3,
+  version: 4,
   tables: [
     tableSchema({
       name: 'queue_items',
@@ -23,6 +23,7 @@ export const schema = appSchema({
         { name: 'is_pinned', type: 'boolean', isOptional: true },
         { name: 'tags', type: 'string', isOptional: true },
         { name: 'status', type: 'string', isOptional: true },
+        { name: 'progress_percent', type: 'number', isOptional: true },
       ]
     }),
     tableSchema({

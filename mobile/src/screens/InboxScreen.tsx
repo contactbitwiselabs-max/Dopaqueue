@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-  View, Text, FlatList, SafeAreaView, TouchableOpacity, ScrollView, Modal,
+  View, Text, FlatList, TouchableOpacity, ScrollView, Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import withObservables from '@nozbe/with-observables';
 import { database } from '../database';
@@ -9,7 +10,7 @@ import QueueItem from '../database/models/QueueItem';
 import { Q } from '@nozbe/watermelondb';
 import SaveItem from '../components/SaveItem';
 import SaveDetailSheet from '../components/SaveDetailSheet';
-import { LayoutGrid, SlidersHorizontal, Zap, List, KanbanSquare, Search, X } from 'lucide-react-native';
+import { LayoutGrid, SlidersHorizontal, List, KanbanSquare, Search, X } from 'lucide-react-native';
 import { typography, spacing, borderRadius, useTheme } from '../constants/theme';
 import EmptyInboxAnimation from '../components/EmptyInboxAnimation';
 import SaveCardGallery from '../components/SaveCardGallery';
@@ -132,10 +133,10 @@ const InboxScreenComponent = ({ queueItems }: Props) => {
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xxl }}>
           <EmptyInboxAnimation />
           <Text style={{ ...typography.h2, color: themeColors.text, textAlign: 'center', marginBottom: spacing.sm }}>
-            You're all caught up!
+            Inbox is Empty
           </Text>
           <Text style={{ ...typography.body, color: themeColors.textMuted, textAlign: 'center', lineHeight: 22 }}>
-            Your dopamine budget{'\n'}is balanced.
+            Save links, notes, and tasks{'\n'}using the + button.
           </Text>
         </View>
       ) : (

@@ -40,15 +40,12 @@ export function DopaqueueWidget({ items }: WidgetData) {
       </FlexWidget>
 
       {items.length === 0 ? (
-        <FlexWidget style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <FlexWidget style={{ alignItems: 'center', justifyContent: 'center' }}>
           <TextWidget text="All caught up!" style={{ color: '#6B7280', fontSize: 14 }} />
         </FlexWidget>
       ) : (
-        <ListWidget
-          style={{ flex: 1 }}
-          itemCount={Math.min(items.length, 5)} // Show top 5
-          renderItem={({ index }) => {
-            const item = items[index];
+        <FlexWidget style={{ flex: 1 }}>
+          {items.slice(0, 5).map((item, index) => {
             const isHigh = item.urgency === 'High' || item.urgency === 'Tomorrow';
             return (
               <FlexWidget
@@ -57,7 +54,7 @@ export function DopaqueueWidget({ items }: WidgetData) {
                   flexDirection: 'row',
                   alignItems: 'center',
                   paddingVertical: 8,
-                  borderBottomWidth: index === items.length - 1 ? 0 : 1,
+                  borderBottomWidth: index === Math.min(items.length, 5) - 1 ? 0 : 1,
                   borderColor: '#374151',
                 }}
               >
@@ -72,13 +69,13 @@ export function DopaqueueWidget({ items }: WidgetData) {
                 />
                 <TextWidget
                   text={item.title || 'Saved Link'}
-                  style={{ color: '#F9FAFB', fontSize: 14, flex: 1 }}
+                  style={{ color: '#F9FAFB', fontSize: 14 }}
                   maxLines={1}
                 />
               </FlexWidget>
             );
-          }}
-        />
+          })}
+        </FlexWidget>
       )}
     </FlexWidget>
   );

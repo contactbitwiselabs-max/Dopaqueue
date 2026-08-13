@@ -1,7 +1,7 @@
 import { Database } from '@nozbe/watermelondb'
 import SQLiteAdapter from '@nozbe/watermelondb/adapters/sqlite'
 
-import schema from './schema'
+import { schema } from './schema'
 import QueueItem from './models/QueueItem'
 import Collection from './models/Collection'
 

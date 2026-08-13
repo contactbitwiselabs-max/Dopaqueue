@@ -1,68 +1,68 @@
 import React from 'react';
-import { View, Text, SafeAreaView, ScrollView, Image } from 'react-native';
+import { View, Text, SafeAreaView, ScrollView, Image, StyleSheet } from 'react-native';
 import QueueItem from '../database/models/QueueItem';
 import { Clock, Tag, ExternalLink } from 'lucide-react-native';
+import { colors, spacing, typography, borderRadius } from '../constants/theme';
 
 export default function SaveDetailScreen({ route }: any) {
-  // In a real app with navigation setup, we'd pass the item ID and fetch via withObservables
   const item: QueueItem = route?.params?.item;
 
   if (!item) {
     return (
-      <View className="flex-1 items-center justify-center">
-        <Text>Item not found.</Text>
+      <View style={styles.centerContainer}>
+        <Text style={styles.errorText}>Item not found.</Text>
       </View>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      <ScrollView className="flex-1">
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.scrollView}>
         {item.thumbnail ? (
           <Image 
             source={{ uri: item.thumbnail }} 
-            className="w-full h-64 bg-gray-100" 
+            style={styles.image} 
             resizeMode="cover" 
           />
         ) : (
-          <View className="w-full h-64 bg-gray-100 items-center justify-center">
-            <ExternalLink color="#9ca3af" size={48} />
+          <View style={styles.placeholderImage}>
+            <ExternalLink color={colors.textMuted} size={48} />
           </View>
         )}
         
-        <View className="p-5">
-          <View className="flex-row items-center justify-between mb-3">
+        <View style={styles.content}>
+          <View style={styles.metaRow}>
             {item.platform && (
-              <View className="bg-dopa-green/10 px-3 py-1 rounded-full">
-                <Text className="text-xs font-bold text-dopa-green">{item.platform.toUpperCase()}</Text>
+              <View style={styles.platformBadge}>
+                <Text style={styles.platformText}>{item.platform.toUpperCase()}</Text>
               </View>
             )}
-            <View className="flex-row items-center">
-              <Clock color="#9ca3af" size={14} />
-              <Text className="text-xs text-gray-400 ml-1">
+            <View style={styles.dateRow}>
+              <Clock color={colors.textMuted} size={14} />
+              <Text style={styles.dateText}>
                 {new Date(item.savedAt).toLocaleDateString()}
               </Text>
             </View>
           </View>
           
-          <Text className="text-2xl font-bold text-gray-900 mb-4">{item.title}</Text>
+          <Text style={styles.title}>{item.title}</Text>
           
-          <View className="bg-gray-50 p-4 rounded-xl mb-4 border border-gray-100">
-            <Text className="text-sm text-gray-600 mb-1">Source URL</Text>
-            <Text className="text-sm text-blue-600 font-medium" numberOfLines={1}>{item.url}</Text>
+          <View style={styles.urlContainer}>
+            <Text style={styles.urlLabel}>Source URL</Text>
+            <Text style={styles.urlText} numberOfLines={1}>{item.url}</Text>
           </View>
 
           {item.note && (
-            <View className="mb-4">
-              <Text className="text-sm font-semibold text-gray-900 mb-2">Notes</Text>
-              <Text className="text-base text-gray-700 leading-relaxed">{item.note}</Text>
+            <View style={styles.noteContainer}>
+              <Text style={styles.noteLabel}>Notes</Text>
+              <Text style={styles.noteText}>{item.note}</Text>
             </View>
           )}
 
           {item.collection && (
-            <View className="flex-row items-center">
-              <Tag color="#15803d" size={16} />
-              <Text className="text-sm font-medium text-dopa-green ml-2">{item.collection}</Text>
+            <View style={styles.collectionRow}>
+              <Tag color={colors.primary} size={16} />
+              <Text style={styles.collectionText}>{item.collection}</Text>
             </View>
           )}
         </View>
@@ -70,3 +70,107 @@ export default function SaveDetailScreen({ route }: any) {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  centerContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorText: {
+    color: colors.text,
+  },
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  image: {
+    width: '100%',
+    height: 256,
+    backgroundColor: colors.surface,
+  },
+  placeholderImage: {
+    width: '100%',
+    height: 256,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  content: {
+    padding: spacing.lg,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  platformBadge: {
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+  },
+  platformText: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dateText: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginLeft: 4,
+  },
+  title: {
+    ...typography.h2,
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  urlContainer: {
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  urlLabel: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginBottom: 4,
+  },
+  urlText: {
+    ...typography.bodyMedium,
+    color: colors.info,
+  },
+  noteContainer: {
+    marginBottom: spacing.md,
+  },
+  noteLabel: {
+    ...typography.bodyMedium,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  noteText: {
+    ...typography.body,
+    color: colors.text,
+    lineHeight: 24,
+  },
+  collectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  collectionText: {
+    ...typography.bodyMedium,
+    color: colors.primary,
+    marginLeft: spacing.sm,
+  },
+});

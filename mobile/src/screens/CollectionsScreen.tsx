@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
-  View, Text, ScrollView, SafeAreaView, TouchableOpacity, Modal,
-  TextInput, Dimensions, Switch, Image
+  View, Text, ScrollView, TouchableOpacity, Modal,
+  TextInput, Dimensions, Switch, Image, Alert
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import withObservables from '@nozbe/with-observables';
 import { database } from '../database';
@@ -32,7 +33,7 @@ function getIconConfig(key?: string) {
   return ICON_OPTIONS.find(i => i.key === key) || ICON_OPTIONS[0];
 }
 
-const CollectionCard = ({ collection, count, onPress }: { collection: Collection, count: number, onPress: () => void }) => {
+const CollectionCard = ({ collection, count, onPress, onLongPress }: { collection: Collection, count: number, onPress: () => void, onLongPress?: () => void }) => {
   const { colors: themeColors, isDark } = useTheme();
   const iconConf = getIconConfig((collection as any).icon);
   const IconComp = iconConf.icon;
@@ -44,6 +45,7 @@ const CollectionCard = ({ collection, count, onPress }: { collection: Collection
     <View style={{ flex: 1 }}>
       <TouchableOpacity
         onPress={onPress}
+        onLongPress={onLongPress}
         style={{
           flex: 1,
           backgroundColor: themeColors.background,
@@ -117,19 +119,40 @@ const CollectionsScreenComponent = ({ collections }: Props) => {
 
   const handleCreateCollection = async () => {
     if (!newName.trim()) return;
+    const now = Date.now();
     await database.write(async () => {
       await database.get<Collection>('collections').create(c => {
         c.name = newName.trim();
         (c as any).color = selectedColor;
         (c as any).icon = selectedIcon;
         (c as any).isSmart = isSmart;
+        (c as any).createdAt = now;
+        (c as any).updatedAt = now;
         if (isSmart) (c as any).filterRules = filterRules;
       });
     });
+    // Reset form state
     setNewName('');
     setIsSmart(false);
     setFilterRules('');
+    setSelectedIcon('brain');
+    setSelectedColor(themeColors.primary);
     setAddModalVisible(false);
+  };
+
+  const handleDeleteCollection = (collection: Collection) => {
+    Alert.alert(
+      'Delete Collection',
+      `Are you sure you want to delete "${collection.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: async () => {
+          await database.write(async () => {
+            await collection.destroyPermanently();
+          });
+        }}
+      ]
+    );
   };
 
   return (
@@ -151,8 +174,8 @@ const CollectionsScreenComponent = ({ collections }: Props) => {
           const right = collections[rowIndex * 2 + 1];
           return (
             <View key={rowIndex} style={{ flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md }}>
-              {left ? <EnhancedCollectionCard collection={left} onPress={() => navigation.navigate('CollectionDetail', { collectionName: left.name })} /> : <View style={{ flex: 1 }} />}
-              {right ? <EnhancedCollectionCard collection={right} onPress={() => navigation.navigate('CollectionDetail', { collectionName: right.name })} /> : <View style={{ flex: 1 }} />}
+              {left ? <EnhancedCollectionCard collection={left} onPress={() => navigation.navigate('CollectionDetail', { collectionName: left.name })} onLongPress={() => handleDeleteCollection(left)} /> : <View style={{ flex: 1 }} />}
+              {right ? <EnhancedCollectionCard collection={right} onPress={() => navigation.navigate('CollectionDetail', { collectionName: right.name })} onLongPress={() => handleDeleteCollection(right)} /> : <View style={{ flex: 1 }} />}
             </View>
           );
         })}
