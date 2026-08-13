@@ -36,7 +36,9 @@ jobs:
         env:
           EXPO_NO_TELEMETRY: true
 
-      - name: 🔨 Build APK
+      - name: Build Android App
+        env:
+          NODE_OPTIONS: --max_old_space_size=8192
         run: ./gradlew assembleRelease
         working-directory: ./mobile/android
 
